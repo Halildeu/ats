@@ -1,7 +1,7 @@
 name: ci
 
-# ATS-0009: self-hosted runner (staging-sw, label ats-ci) + container job (host
-# kirletmez, provenance) + minimum permissions. Maliyetsiz private CI (dar-A).
+# Public repo → GitHub-hosted runner (ücretsiz + güvenli). ATS-0009: ats public
+# yapıldığı için self-hosted KALDIRILDI (public + self-hosted = fork-PR RCE riski).
 
 on:
   push:
@@ -13,23 +13,22 @@ permissions:
 
 jobs:
   boundary-guard:
-    runs-on: [self-hosted, ats-ci]
-    container:
-      image: node:20-bookworm
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: ATS-0001 boundary guard
         run: bash scripts/check-boundary.sh
 
   contracts:
-    runs-on: [self-hosted, ats-ci]
-    container:
-      image: node:20-bookworm
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: contracts
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
       - name: install
         run: npm install --no-audit --no-fund
       - name: typecheck
