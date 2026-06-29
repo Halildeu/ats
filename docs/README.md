@@ -17,7 +17,26 @@
 | [ATS-0005](./adr/ATS-0005-ai-governance-assist-vs-conduct-bias-audit.md) | AI-governance (assist-vs-conduct + EU AI Act) | Accepted |
 | [ATS-0006](./adr/ATS-0006-sovereign-on-prem-sku-gated.md) | sovereign/on-prem SKU (gated) | Accepted |
 | [ATS-0007](./adr/ATS-0007-security-key-management-threat-model.md) | security & key-management threat model | Accepted |
-| [ATS-0008](./adr/ATS-0008-system-architecture-frame.md) | **system architecture frame (servis/MFE + stack-lock)** | Proposed→Ready |
+| [ATS-0008](./adr/ATS-0008-system-architecture-frame.md) | system architecture frame (servis/MFE + stack-lock) | Accepted |
+| [ATS-0009](./adr/ATS-0009-ci-runner-architecture.md) | CI runner architecture (public → GitHub-hosted) | Accepted |
 
-## G0 (design-partner gate kit)
+## G0 (design-partner gate kit + turnkey)
 [G0/](./G0/) — gate · ICP · LOI · scope-freeze · execution-system · pilot-open-checklist · one-pager · outreach
+- **[g0-turnkey-decision-pack.md](./G0/g0-turnkey-decision-pack.md)** — M6 7-kriter kanıt matrisi + ICP scoring + DPO/IT-ATS script + GO/NO-GO (owner çalıştırır)
+- [prospect-tracker.csv](./G0/prospect-tracker.csv) — design-partner pipeline
+
+## Eval (ATS-0004 Gate C)
+- [eval/golden-fixture-collection-pack.md](./eval/golden-fixture-collection-pack.md) — consent/protocol/redaction/manifest/annotation/rubric (G0 kriter 6 enabler)
+- rig: `../ai/eval-harness/`
+
+## Procurement / DPO due-diligence (A-lite — TASLAK)
+[procurement/](./procurement/) — DPA · DPIA · data-processing-record · security-posture-whitepaper · incident-response-runbook · ai-transparency · eu-ai-act-readiness-checklist (hepsi template + disclaimer; owner/legal doldurur)
+
+## Competitive
+- [competitive/battle-card.md](./competitive/battle-card.md) — rakip haritası + DPO/LOI itiraz→cevap
+
+## Implementation (main'de, CI-yeşil)
+- `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)
+- `../backend/` — ats-core skeleton (shared-kernel + contracts-java + ArchUnit)
+- `../ai/eval-harness/` — Gate C rig
+- `../.github/workflows/` — ci (boundary+contracts+backend) + security (gitleaks+dependency-review)
