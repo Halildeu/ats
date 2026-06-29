@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "surface:gen": "node --experimental-strip-types tools/extract-surface.ts"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

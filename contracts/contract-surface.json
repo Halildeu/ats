@@ -1,0 +1,462 @@
+{
+  "contracts": {
+    "AIProvider": [
+      {
+        "name": "cite",
+        "params": [
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:CitationResult"
+      },
+      {
+        "name": "transcribe",
+        "params": [
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:TranscriptResult"
+      }
+    ],
+    "ATSConnector": [
+      {
+        "name": "exportPacket",
+        "params": [
+          {
+            "type": "dto:TenantContext",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "dto:EvidencePacketRef",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "enum:EMAIL|PDF|SECURE_LINK|WEBHOOK",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:ExportResult"
+      },
+      {
+        "name": "writeBack",
+        "params": [
+          {
+            "type": "dto:TenantContext",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "dto:EvidencePacketRef",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "dto:WriteBackTarget",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:void"
+      }
+    ],
+    "EvidenceLedger": [
+      {
+        "name": "append",
+        "params": [
+          {
+            "type": "dto:EvidenceEvent",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:LedgerEntry"
+      },
+      {
+        "name": "appendTombstoneEvent",
+        "params": [
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:ActorId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:InterviewId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:EvidenceId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:LedgerEntry"
+      },
+      {
+        "name": "getById",
+        "params": [
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:EvidenceId",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:LedgerEntry"
+      },
+      {
+        "name": "list",
+        "params": [
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "dto:LedgerListFilter",
+            "optional": true,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:array:dto:LedgerEntry"
+      }
+    ],
+    "IdentityTenant": [
+      {
+        "name": "assertTenantScope",
+        "params": [
+          {
+            "type": "dto:TenantContext",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:void"
+      },
+      {
+        "name": "resolveTenant",
+        "params": [
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:TenantContext"
+      }
+    ]
+  },
+  "dtos": {
+    "TranscriptSegment": [
+      {
+        "name": "endMs",
+        "type": "number",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "speaker",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "startMs",
+        "type": "number",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "TranscriptResult": [
+      {
+        "name": "language",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "segments",
+        "type": "array:dto:TranscriptSegment",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "CitationResult": [
+      {
+        "name": "claim",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "entailment",
+        "type": "enum:INSUFFICIENT|NOT_SUPPORTED|SUPPORTED",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "sourceSegmentRefs",
+        "type": "array:string",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "EvidencePacketRef": [
+      {
+        "name": "interviewId",
+        "type": "id:InterviewId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "packetId",
+        "type": "id:PacketId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "tenantId",
+        "type": "id:TenantId",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "ExportResult": [
+      {
+        "name": "artifactRef",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "target",
+        "type": "enum:EMAIL|PDF|SECURE_LINK|WEBHOOK",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "WriteBackTarget": [
+      {
+        "name": "atsName",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "externalRef",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "EvidenceEvent": [
+      {
+        "name": "actorId",
+        "type": "id:ActorId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "contentHash",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "eventType",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "idempotencyKey",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "interviewId",
+        "type": "id:InterviewId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "occurredAt",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "payload",
+        "type": "Json",
+        "optional": true,
+        "nullable": false
+      },
+      {
+        "name": "tenantId",
+        "type": "id:TenantId",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "LedgerEntry": [
+      {
+        "name": "actorId",
+        "type": "id:ActorId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "contentHash",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "entryHash",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "eventType",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "evidenceId",
+        "type": "id:EvidenceId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "idempotencyKey",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "interviewId",
+        "type": "id:InterviewId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "occurredAt",
+        "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "payload",
+        "type": "Json",
+        "optional": true,
+        "nullable": false
+      },
+      {
+        "name": "previousHash",
+        "type": "string",
+        "optional": false,
+        "nullable": true
+      },
+      {
+        "name": "sequence",
+        "type": "number",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "tenantId",
+        "type": "id:TenantId",
+        "optional": false,
+        "nullable": false
+      }
+    ],
+    "LedgerListFilter": [
+      {
+        "name": "eventType",
+        "type": "string",
+        "optional": true,
+        "nullable": false
+      },
+      {
+        "name": "interviewId",
+        "type": "id:InterviewId",
+        "optional": true,
+        "nullable": false
+      }
+    ],
+    "TenantContext": [
+      {
+        "name": "actorId",
+        "type": "id:ActorId",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "tenantId",
+        "type": "id:TenantId",
+        "optional": false,
+        "nullable": false
+      }
+    ]
+  },
+  "enums": {
+    "ExportTarget": [
+      "EMAIL",
+      "PDF",
+      "SECURE_LINK",
+      "WEBHOOK"
+    ],
+    "OutcomeCode": [
+      "DENIED",
+      "INVALID",
+      "NOT_CONFIGURED",
+      "NOT_FOUND",
+      "OK",
+      "TENANT_SCOPE_VIOLATION",
+      "UNAUTHENTICATED",
+      "UNSUPPORTED_IN_GATE"
+    ]
+  }
+}

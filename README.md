@@ -34,8 +34,11 @@ Platform iç paketlerine **kod bağımlılığı YASAK**; reuse yalnız yayınla
 ```bash
 cd contracts
 npm install
-npm run typecheck   # tsc --noEmit
-npm test            # vitest contract tests
+npm run typecheck     # tsc --noEmit
+npm test              # vitest contract tests (+ surface drift guard)
+npm run surface:gen   # TS yüzeyi değişince contract-surface.json + .tokens.txt yeniden üret
 bash ../scripts/check-boundary.sh
 ```
+
+**Contract shape parity (machine-enforced):** TS↔Java tip/DTO/enum drift'i artık testle yakalanır (`contracts/PARITY.md`): `tools/extract-surface.ts` TS kaynağından token-projeksiyonu üretir; `surface-parity.contract.test.ts` (TS) + `SurfaceParityTest.java` (Java reflection) aynı `contract-surface.tokens.txt`'e karşı doğrular.
 
