@@ -4,7 +4,7 @@
 
 Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalışan, Türkçe/on-prem opsiyonlu, kaynak-alıntılı, insan-onaylı, denetlenebilir mülakat **kanıt dosyası** add-on'u. Full ATS DEĞİL (land-and-expand, gated). Bağımsız multi-tenant SaaS.
 
-> Mimari/güven ADR'leri: [docs/adr/](./docs/adr/) (ATS-0001..0009, public). **Strateji/GTM/G0/rekabet/procurement kanonu: private `Halildeu/ats-strategy` repo** (CONFIDENTIAL).
+> Mimari/güven ADR'leri: [docs/adr/](./docs/adr/) (ATS-0001..0005, 0007 public). **Strateji/GTM/G0/rekabet/procurement + iç-mühendislik ADR'leri (0006/0008/0009): private `Halildeu/ats-strategy`** (CONFIDENTIAL).
 
 ## ⛔ Gate disiplini (kritik)
 

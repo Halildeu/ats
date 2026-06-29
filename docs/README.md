@@ -11,10 +11,9 @@
 | [ATS-0003](./adr/ATS-0003-kvkk-recording-consent-worm-vs-deletion.md) | KVKK/recording-consent + WORM≠deletion | Accepted |
 | [ATS-0004](./adr/ATS-0004-mulakat-ai-citation-eval-human-approval.md) | mülakat-AI (citation + eval + human-approval) | Accepted |
 | [ATS-0005](./adr/ATS-0005-ai-governance-assist-vs-conduct-bias-audit.md) | AI-governance (assist-vs-conduct + EU AI Act) | Accepted |
-| [ATS-0006](./adr/ATS-0006-sovereign-on-prem-sku-gated.md) | sovereign/on-prem SKU (gated) | Accepted |
 | [ATS-0007](./adr/ATS-0007-security-key-management-threat-model.md) | security & key-management threat model | Accepted |
-| [ATS-0008](./adr/ATS-0008-system-architecture-frame.md) | system architecture frame (servis/MFE + stack-lock) | Accepted |
-| [ATS-0009](./adr/ATS-0009-ci-runner-architecture.md) | CI runner architecture (public → GitHub-hosted) | Accepted |
+
+> **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
 ## Implementation (public, CI-yeşil)
 - `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)

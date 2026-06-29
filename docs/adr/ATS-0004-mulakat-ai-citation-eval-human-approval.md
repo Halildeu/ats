@@ -8,9 +8,10 @@
 
 ## Bağlam
 
-Flagship yetenek = **citation-grounded mülakat scorecard**. Rekabet analizi §3.3 kilit bulgu: global mülakat-zekâsı pazarının iki açık boşluğu = (1) **gerçek per-claim, alıntı-çapalı citation** (Metaview/BrightHire dahil kimse yayınlamıyor), (2) **on-prem/egemen + İngilizce-dışı** stack (endüstri cloud-API bağımlı, Türkçe zayıf). İkisi de **Faz 24 varlıklarımıza birebir denk**:
-- **ADR-0043** citation foundation: extract-then-abstract + **entailment** (substring-match DEĞİL), signed-polarity, fail-closed; gerçek-LLM ile kanıtlanmış (#179).
-- Türkçe STT (faster-whisper) + diarization (pyannote) + **self-host LLM** (denetim PC RTX 4070, ollama) + WireGuard data-plane.
+Flagship yetenek = **citation-grounded mülakat scorecard**. İki tasarım hedefi: (1) **gerçek per-claim, alıntı-çapalı citation** (entailment-temelli, substring değil), (2) **on-prem/egemen + Türkçe** destekli stack. Teknik temel:
+- Citation: extract-then-abstract + **entailment** (signed-polarity, fail-closed).
+- Türkçe STT (faster-whisper) + diarization (pyannote) + **self-host LLM** seçeneği.
+> (Rekabet konumlama + iç altyapı detayı: private `ats-strategy`.)
 
 ## Karar
 
