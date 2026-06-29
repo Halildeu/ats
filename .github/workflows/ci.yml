@@ -1,28 +1,35 @@
 name: ci
 
+# ATS-0009: self-hosted runner (staging-sw, label ats-ci) + container job (host
+# kirletmez, provenance) + minimum permissions. Maliyetsiz private CI (dar-A).
+
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   boundary-guard:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ats-ci]
+    container:
+      image: node:20-bookworm
     steps:
       - uses: actions/checkout@v4
       - name: ATS-0001 boundary guard
         run: bash scripts/check-boundary.sh
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ats-ci]
+    container:
+      image: node:20-bookworm
     defaults:
       run:
         working-directory: contracts
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - name: install
         run: npm install --no-audit --no-fund
       - name: typecheck
