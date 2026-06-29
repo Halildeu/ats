@@ -1,0 +1,10 @@
+{
+  "_note": "PLACEHOLDER hedefler — gerçek değil. golden Türkçe panel fixture'da KİLİTLENECEK (ATS-0004 / pilot-open Gate C). Aşağısı sektör-referans başlangıç bandıdır; ilk fixture ölçümünden sonra owner+cross-AI ile sabitlenir.",
+  "_status": "uncalibrated",
+  "wer_max": 0.15,
+  "der_max": 0.15,
+  "citation_precision_min": 0.90,
+  "citation_recall_min": 0.80,
+  "unsupported_claim_rate_max": 0.02,
+  "fail_closed_rate_min": 1.0
+}

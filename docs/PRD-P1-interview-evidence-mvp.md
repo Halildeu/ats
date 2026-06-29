@@ -2,7 +2,7 @@
 
 - **Durum:** İSKELET — cross-AI **AGREE** (Codex thread 019ef420, "altitude doğru" + on-prem netleştirmesi absorb). Partner-spesifik acceptance kriterleri + sayısal eşikler **[G0-KİLİTLİ]** — G0=GO + golden fixture sonrası sabitlenir. **Detaylı build G0=GO sonrası** (3-AI mutabakat disiplini).
 - **Tarih:** 2026-06-23 · **Board:** [ats#2](https://github.com/Halildeu/ats/issues/2)
-- **Kaynak:** [MASTER-PLAN v3](./00-ATS-MASTER-PLAN.md) M3/§8 · [scope-freeze](./G0/g0-p1-scope-freeze.md) · ADR [0001-0007](./adr/) · [eval-harness](./eval-harness/) · [pilot-open checklist](./G0/g0-pilot-open-release-checklist.md)
+- **Kaynak:** [MASTER-PLAN v3](./00-ATS-MASTER-PLAN.md) M3/§8 · [scope-freeze](./G0/g0-p1-scope-freeze.md) · ADR [0001-0008](./adr/) · [eval-harness](../ai/eval-harness/) · [pilot-open checklist](./G0/g0-pilot-open-release-checklist.md)
 
 ## 1. Problem & hedef
 Regüle kurumlarda mülakat kararları denetlenebilir kanıta dayanmalı; bugün dağınık not/hafıza. Hedef: mevcut ATS üstünde çalışan, Türkçe/on-prem, **kaynak-alıntılı, insan-onaylı, denetlenebilir mülakat kanıt dosyası** üretmek. Konum: **evidence-first** (AI kanıt üretir, insan karar verir).
@@ -35,7 +35,7 @@ User: recruiter/HM/interviewer · Operational owner: TA/HR · Veto: Legal/Compli
 - **Egemenlik** (TR-residency/on-prem-capable; SKU gate'li) — ATS-0006. **Netleştirme (Codex):** P1 hedefi = egemenlik/**on-prem-uyumlu pilot deployment boundary**; paketlenmiş, tekrar-satılabilir, çok-kiracılı **on-prem SKU kapsam DIŞI** (G0 sonrası ayrı karar). "on-prem" = pilot deployment uyumu; "on-prem-SKU YASAK" = ürünleştirilmiş paket.
 
 ## 6. AI kalite kabulü (Gate C — eval-harness)
-WER/DER ≤ **[G0-KİLİTLİ]** · citation precision ≥ **[G0-KİLİTLİ]** · recall ≥ **[G0-KİLİTLİ]** · unsupported-claim ≤ **[G0-KİLİTLİ]** · **fail-closed = %100 (sert)**. Ölçüm: [eval-harness](./eval-harness/) golden Türkçe fixture'da; eşikler kalibre + kilitli olmadan pilot-open yeşil değil.
+WER/DER ≤ **[G0-KİLİTLİ]** · citation precision ≥ **[G0-KİLİTLİ]** · recall ≥ **[G0-KİLİTLİ]** · unsupported-claim ≤ **[G0-KİLİTLİ]** · **fail-closed = %100 (sert)**. Ölçüm: [ai/eval-harness](../ai/eval-harness/) golden Türkçe fixture'da; eşikler kalibre + kilitli olmadan pilot-open yeşil değil.
 
 ## 7. Acceptance kriterleri (MVP — iskelet)
 - [ ] F1-F10 fonksiyonel + acceptance-contract (fixture→expected→test/demo→review) — [execution-system](./G0/g0-execution-system.md)
