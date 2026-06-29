@@ -65,6 +65,7 @@ const SENTINELS = [
   "authz.tenant_boundary.violation",
   "admin.breakglass.invoked",
   "evidence.tombstone.appended",
+  "evidence.human_decision.finalized",
   "privacy.erasure.executed",
   "ai_pipeline.prompt_injection.blocked",
 ];

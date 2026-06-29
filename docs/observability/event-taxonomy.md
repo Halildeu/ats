@@ -51,6 +51,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **evidence.append.succeeded** | evidence | info | id-only | ledger_entry_ref | gate-locked |
 | **evidence.append.failed** | evidence | error | id-only | reason_code | gate-locked |
 | **evidence.tombstone.appended** | evidence | notice | id-only | actor_ref, reason_code | gate-locked |
+| **evidence.human_decision.finalized** | evidence | notice | id-only | actor_ref, ledger_entry_ref | gate-locked |
 | **evidence.recording.started** | evidence | info | id-only | actor_ref | gate-locked |
 | **evidence.recording.stopped** | evidence | notice | id-only | actor_ref | gate-locked |
 | **evidence.recording.blocked_no_consent** | evidence | warning | id-only | reason_code | gate-locked |
@@ -90,7 +91,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 - **§0 zarf** bölümünde (yalnız o section'da) kanonik ZORUNLU alanlar eksiksiz listeli.
 - **§2 Event kaydı** section'ındaki **her data satırı** (bold-bağımsız) parse edilir: `event_type` regex + tekillik + geçerli category/severity/pii_class/status; `Required-extra` hücresi **zarf-üstü** olay-spesifik alanları işaret eder; yalnız izinli opsiyonel alan (`actor_ref`/`reason_code`/`ledger_entry_ref`/`target_ref`) veya `—` içerir (zorunlu zarf alanı — örn. `source` — burada tekrarlanmaz).
 - **Yasak pii_class** (`raw-pii`/`content`/`secret`) §2 event satırının `pii_class` hücresinde görünemez → exit 1 (§1 tanım tablosu serbest; yalnız event satırı kısıtlı).
-- **Sentinel event ID silme guard'ı:** kritik denetim event'leri (`authz.tenant_boundary.violation`, `admin.breakglass.invoked`, `evidence.tombstone.appended`, `privacy.erasure.executed`, `ai_pipeline.prompt_injection.blocked`) silinemez.
+- **Sentinel event ID silme guard'ı:** kritik denetim event'leri (`authz.tenant_boundary.violation`, `admin.breakglass.invoked`, `evidence.tombstone.appended`, `evidence.human_decision.finalized`, `privacy.erasure.executed`, `ai_pipeline.prompt_injection.blocked`) silinemez.
 - Minimum satır eşiği (regression guard).
 
 ## 4. Bağlantı
