@@ -82,13 +82,13 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **privacy.dsar.fulfilled** | privacy | notice | id-only | actor_ref | gate-locked |
 | **privacy.erasure.executed** | privacy | notice | id-only | actor_ref, reason_code | gate-locked |
 | **privacy.retention.purged** | privacy | notice | id-only | reason_code | gate-locked |
-| **security.config.loaded** | security | info | none | source | design |
-| **system.startup** | system | info | none | source | design |
+| **security.config.loaded** | security | info | none | — | design |
+| **system.startup** | system | info | none | — | design |
 
 ## 3. Doğrulama (drift-guard `scripts/check-event-taxonomy.mjs`)
 
 - **§0 zarf** bölümünde (yalnız o section'da) kanonik ZORUNLU alanlar eksiksiz listeli.
-- **§2 Event kaydı** section'ındaki **her data satırı** (bold-bağımsız) parse edilir: `event_type` regex + tekillik + geçerli category/severity/pii_class/status; `Required-extra` hücresi yalnız izinli opsiyonel alanları (`actor_ref`/`reason_code`/`ledger_entry_ref`/`target_ref`/`source`) içerir.
+- **§2 Event kaydı** section'ındaki **her data satırı** (bold-bağımsız) parse edilir: `event_type` regex + tekillik + geçerli category/severity/pii_class/status; `Required-extra` hücresi **zarf-üstü** olay-spesifik alanları işaret eder; yalnız izinli opsiyonel alan (`actor_ref`/`reason_code`/`ledger_entry_ref`/`target_ref`) veya `—` içerir (zorunlu zarf alanı — örn. `source` — burada tekrarlanmaz).
 - **Yasak pii_class** (`raw-pii`/`content`/`secret`) §2 event satırının `pii_class` hücresinde görünemez → exit 1 (§1 tanım tablosu serbest; yalnız event satırı kısıtlı).
 - **Sentinel event ID silme guard'ı:** kritik denetim event'leri (`authz.tenant_boundary.violation`, `admin.breakglass.invoked`, `evidence.tombstone.appended`, `privacy.erasure.executed`, `ai_pipeline.prompt_injection.blocked`) silinemez.
 - Minimum satır eşiği (regression guard).

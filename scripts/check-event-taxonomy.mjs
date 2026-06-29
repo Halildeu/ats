@@ -50,12 +50,13 @@ const SEVERITIES = new Set(["debug", "info", "notice", "warning", "error", "crit
 const PII_ALLOWED = new Set(["none", "id-only", "pseudonymized"]);
 const PII_FORBIDDEN = new Set(["raw-pii", "content", "secret"]);
 const STATUS = new Set(["enforced (CI)", "enforced (repo-test)", "gate-locked", "design"]);
+// Required-extra = zarf-ÜSTÜ olay-spesifik alanlar. Zorunlu zarf alanları (source/trace_id
+// vb.) burada tekrarlanamaz — yalnız opsiyonel havuzdan alan veya "—".
 const EXTRA_ALLOWED = new Set([
   "actor_ref",
   "reason_code",
   "ledger_entry_ref",
   "target_ref",
-  "source",
   "—",
   "-",
 ]);

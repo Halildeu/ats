@@ -2,7 +2,7 @@
 
 - **Durum:** Önerildi (cross-AI review bekliyor)
 - **Tarih:** 2026-06-29
-- **Bağlam kaynağı:** Gate-safe hardening backlog #3 (Codex thread 019f12e2, REVISE→AGREE) · [[ATS-0003]] WORM evidence-ledger · [[ATS-0007]] threat model (T-R1/T-R2 repudiation, **T-I6** operasyonel log PII sızıntısı) · [docs/security/threat-register.md](../security/threat-register.md)
+- **Bağlam kaynağı:** Gate-safe hardening backlog #3 (Codex thread 019f12e2) · cross-AI PR review thread 019f1354 (REVISE absorb iter-2) · [[ATS-0003]] WORM evidence-ledger · [[ATS-0007]] threat model (T-R1/T-R2 repudiation, **T-I6** operasyonel log PII sızıntısı) · [docs/security/threat-register.md](../security/threat-register.md)
 - **Karar tipi:** Gözlemlenebilirlik / denetim mimarisi (gate-safe; emisyon kodu P1)
 
 ## Bağlam
@@ -22,7 +22,7 @@ Bu ADR **2. düzlemi** karara bağlar. Olmazsa: prompt-injection/tenant-leak/bre
 `schema_version` · `event_type` (kanonik tip ID) · `event_id` (olay-örneği benzersiz ID) · `category` · `severity` · `occurred_at` (ISO-8601 UTC) · `tenant_id` (opak) · `correlation_id` · `trace_id` · `source` (servis) · `outcome`. Opsiyonel: `span_id` · `actor_ref` (pseudonim/opak) · `reason_code` · `environment` · `deployment_version` · `ledger_entry_ref` · `target_ref`. **`event_type` (sınıf) ≠ `event_id` (örnek)** ayrımı zorunlu; `schema_version` forward-compat sağlar.
 
 ### 2. PII sınıflandırması (redaction invariant)
-Her event bir `pii_class` beyan eder. **İzinli:** `none` · `id-only` (opak ID/hash) · `pseudonymized`. **YASAK (fail-closed):** `raw-pii` (aday adı/email/telefon/CV içeriği) · `content` (transkript/medya gövdesi) · `secret` (token/anahtar/parola). Yasak sınıf taksonomide görünemez (drift-guard reddeder); kod-seviyede serializer allow-list + redaksiyon zorunlu (P1 emisyon).
+Her event bir `pii_class` beyan eder. **İzinli:** `none` · `id-only` (opak ID/hash) · `pseudonymized`. **YASAK (fail-closed):** `raw-pii` (aday adı/email/telefon/CV içeriği) · `content` (transkript/medya gövdesi) · `secret` (token/anahtar/parola). Yasak sınıflar registry'de **tanımlıdır** ama **§2 event satırının `pii_class` hücresinde kullanılamaz** (drift-guard CI-enforced reddeder); kod-seviyede serializer allow-list + redaksiyon **ayrı** ve zorunlu (P1 emisyon, gate-locked).
 
 ### 3. Korelasyon & izlenebilirlik
 Dağıtık iz **W3C Trace Context** (`traceparent`) ile taşınır: `trace_id`/`span_id` standardın `trace-id`/`parent-id` alanlarıdır. `correlation_id` ise **uygulama-seviyesi** iş-akışı korelasyonudur (standardın birebir karşılığı değil) ve **opak** olmalıdır — tenant/aday/email/domain encode **edemez**. Aynı iş-akışının tüm event'leri tek correlation_id ile bağlanır. Güvenlik/denetim event'leri (auth/authz/admin/security/consent/privacy) **silinmez, örneklenmez (no-sampling)**.
@@ -35,7 +35,7 @@ Güvenlik/denetim event'leri ≥ yasal saklama süresi (KVKK + iş gereksinimi; 
 
 ## Sonuçlar
 
-**Olumlu:** procurement-ready denetlenebilirlik (DPIA/security-whitepaper girdisi); T-R1/T-R2 repudiation + tenant-leak tespiti adli-iz kazanır; T-I6 PII-log-sızıntısı **registry düzeyinde fail-closed tasarlanır** (yasak `pii_class` taksonomide imkânsız, drift-guard CI-enforced) — **runtime redaksiyon enforcement P1 gate-locked** (serializer allow-list); on-prem "egress yok" iddiası somutlanır.
+**Olumlu:** procurement-ready denetlenebilirlik (DPIA/security-whitepaper girdisi); T-R1/T-R2 repudiation + tenant-leak tespiti adli-iz kazanır; T-I6 PII-log-sızıntısı **registry düzeyinde fail-closed tasarlanır** (yasak `pii_class` §2 event registry satırlarında imkânsız, drift-guard CI-enforced) — **runtime redaksiyon enforcement P1 gate-locked** (serializer allow-list); on-prem "egress yok" iddiası somutlanır.
 **Olumsuz:** envelope + redaction P1 emisyon-kodunda disiplin ister (serializer allow-list); correlation_id propagation servis-sınırı tutarlılığı gerektirir; no-sampling güvenlik-event'i log hacmini artırır.
 
 ## Gate disiplini
@@ -50,4 +50,4 @@ Bu ADR + taksonomi-registry + drift-guard **gate-safe** (tasarım + makine-doğr
 
 ## Bağlantı
 - Kanonik registry: [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) (drift-guard: `scripts/check-event-taxonomy.mjs`, CI job `event-taxonomy-guard`).
-- [[ATS-0003]] WORM evidence-ledger (iş-kanıtı düzlemi) · [[ATS-0007]] §3 RBAC/break-glass, §6 egress-allowlist · [docs/security/threat-register.md](../security/threat-register.md) T-R1/T-R2/P-L1.
+- [[ATS-0003]] WORM evidence-ledger (iş-kanıtı düzlemi) · [[ATS-0007]] §3 RBAC/break-glass, §6 egress-allowlist · [docs/security/threat-register.md](../security/threat-register.md) **T-I6** (operasyonel log PII sızıntısı) · T-R1/T-R2 (repudiation). (P-L1 yalnız tombstone/linkability bağlamında; operasyonel log değil.)
