@@ -11,6 +11,7 @@ import java.util.List;
 /**
  * ATS-0001 #2 EvidenceLedger (TS mirror) — WORM append-only (ADR-0003).
  * update/delete/overwrite/purge YOK; silme ayrı append-only tombstone event'i.
+ * Tip/shape parity: TS contracts/ ile hizalı (PARITY.md).
  */
 public interface EvidenceLedger {
 
@@ -25,12 +26,26 @@ public interface EvidenceLedger {
             String contentHash,
             JsonValue.JsonObject payload) {}
 
+    /**
+     * LedgerEntry TS canonical ile aynı düz (flat) shape: EvidenceEvent alanları +
+     * ledger alanları (TS `LedgerEntry extends EvidenceEvent` karşılığı).
+     */
     record LedgerEntry(
+            TenantId tenantId,
+            ActorId actorId,
+            InterviewId interviewId,
+            String eventType,
+            String occurredAt,
+            String idempotencyKey,
+            String contentHash,
+            JsonValue.JsonObject payload,
             EvidenceId evidenceId,
             long sequence,
             String previousHash,
-            String entryHash,
-            EvidenceEvent event) {}
+            String entryHash) {}
+
+    /** TS LedgerListFilter mirror — alanlar nullable (opsiyonel filtre). */
+    record LedgerListFilter(InterviewId interviewId, String eventType) {}
 
     Outcome<LedgerEntry> append(EvidenceEvent event);
 
@@ -41,5 +56,6 @@ public interface EvidenceLedger {
 
     Outcome<LedgerEntry> getById(TenantId tenantId, EvidenceId id);
 
-    Outcome<List<LedgerEntry>> list(TenantId tenantId, String eventTypeOrNull);
+    /** filter null olabilir (TS opsiyonel filter); alanları null ise o kriter uygulanmaz. */
+    Outcome<List<LedgerEntry>> list(TenantId tenantId, LedgerListFilter filter);
 }
