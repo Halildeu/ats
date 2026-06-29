@@ -6,9 +6,9 @@
  *  1. 25 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
  *  2. Sözlük: sensitivity/plane/deletion/WORM/WORM-identity-binding/transfer/status.
  *  3. İnvariantlar:
- *     1) content/raw-pii/secret 'worm-ledger'de OLAMAZ.
- *     2) worm-ledger → WORM=EVET + deletion=tombstone-append + identity-binding∈{HMAC-destroyable,no-subject}.
- *     3) content/raw-pii/secret → deletion∈{hard-delete,crypto-erase,transient} (silinebilir; KVKK).
+ *     1) content/raw-pii/secret/mixed 'worm-ledger'de OLAMAZ.
+ *     2) worm-ledger → WORM=EVET + deletion=tombstone-append + WORM-identity-binding∈{HMAC-destroyable,no-subject}; WORM-dışı satır → n/a.
+ *     3) content/raw-pii/secret/mixed → deletion∈{hard-delete,crypto-erase,transient} (silinebilir; KVKK).
  *     4) kms-vault → sensitivity=secret.
  *     5) ai_provider_payload → transfer∈{self-host-only,no-train-DPA,SCC,KVKK-açık-rıza} (düz none yasak).
  *     6) legal_basis + retention dolu, [DOLDUR] yok.

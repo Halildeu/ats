@@ -17,10 +17,9 @@
 - **status:** `gate-locked` (runtime/P1) · `design` (veri-modeli kararı). *(Data-class satırı `enforced` İDDİA ETMEZ — enforce edilen, bu register'ın `data-lifecycle-guard` bütünlüğüdür.)*
 
 ### İnvariantlar (guard zorlar)
-1. `content`/`raw-pii`/`secret` sensitivity **`worm-ledger` plane'de TUTULAMAZ** ([[ATS-0003]]: ledger meta+hash).
+1. `content`/`raw-pii`/`secret`/`mixed` sensitivity **`worm-ledger` plane'de TUTULAMAZ** ([[ATS-0003]]: ledger meta+hash).
 2. `worm-ledger` → `WORM=EVET` + `deletion=tombstone-append` + `WORM-identity-binding ∈ {HMAC-destroyable, no-subject}` (statik linklenebilir hash YASAK — hash-tuzağı). WORM-dışı satır → `n/a`.
-2b. `mixed` sensitivity de **sensitive** sayılır (worm-ledger YASAK + silinebilir olmalı — content gizleme bypass guard'ı).
-3. `content`/`raw-pii`/`secret` → `deletion ∈ {hard-delete, crypto-erase, transient}` (asla tombstone/n/a — silinebilir olmalı, KVKK silme hakkı).
+3. `content`/`raw-pii`/`secret`/`mixed` → `deletion ∈ {hard-delete, crypto-erase, transient}` (asla tombstone/n/a — silinebilir olmalı, KVKK silme hakkı).
 4. `kms-vault` plane → `sensitivity=secret`.
 5. `ai_provider_payload` → `transfer ∈ {self-host-only, no-train-DPA, SCC, KVKK-açık-rıza}` (düz `none` YASAK — T-I5 provider kanalı saklanamaz).
 6. Her satır `legal_basis` + `retention` dolu (`[DOLDUR]` YASAK); data-class **tekil** (duplicate YASAK).
