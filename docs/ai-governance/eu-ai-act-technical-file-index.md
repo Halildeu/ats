@@ -28,22 +28,32 @@
 | **Art.14** | Human oversight | [[ATS-0005]] (assist-vs-conduct; otomatik karar YOK) + [[ATS-0004]] human-approval | gate-locked | human-oversight state-machine standardı (round-2 #3) + P1 |
 | **Art.15** | Accuracy, robustness, cybersecurity | [docs/security/threat-register.md](../security/threat-register.md) + [[ATS-0007]] + [docs/adr/ATS-0004-mulakat-ai-citation-eval-human-approval.md](../adr/ATS-0004-mulakat-ai-citation-eval-human-approval.md) (eval-gate) | p1-evidence-required | WER/DER/citation baseline gerçek fixture (P1; owner sağlar) |
 | **Art.16** | Provider yükümlülükleri (genel) | bu indeks + [[ATS-0005]] + [[ATS-0007]] | owner-evidence-required | QMS+kayıt+beyan+post-market süreçleri owner |
-| **Art.17** | Quality management system (QMS) | PRIVATE:ats-strategy/docs/procurement/quality-management-system.md + [[ATS-0009]] | owner-evidence-required | QMS süreç dokümantasyonu owner |
+| **Art.17** | Quality management system (QMS) | PRIVATE:ats-strategy/docs/procurement/quality-management-system.md (PRIVATE ADR ATS-0009 CI-runner) | owner-evidence-required | QMS süreç dokümantasyonu owner |
 | **Art.18** | Dokümantasyon saklama (10 yıl) | [docs/privacy/data-lifecycle-register.md](../privacy/data-lifecycle-register.md) (worm_metadata/retention) + [[ATS-0003]] | gate-locked | 10-yıl saklama politikası runtime P1 + owner |
 | **Art.19** | Provider otomatik-log saklama | [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) + [docs/privacy/data-lifecycle-register.md](../privacy/data-lifecycle-register.md) (audit_event) | gate-locked | log saklama süresi runtime P1 |
 | **Art.20** | Düzeltici eylem + bilgilendirme görevi | PRIVATE:ats-strategy/docs/procurement/incident-response-runbook.md + [[ATS-0007]] | owner-evidence-required | düzeltici-eylem + yetkili bildirim süreci owner |
+| **Art.21** | Yetkili makamlarla işbirliği (gerekçeli talepte doc+log erişimi) | PRIVATE:ats-strategy/docs/procurement/authority-cooperation-procedure.md + [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) | owner-evidence-required | yetkili-makam talep/yanıt + doc/log erişim süreci owner |
 | **Art.26** | Deployer yükümlülükleri (müşteri) | [[ATS-0005]] (rol ayrımı) + PRIVATE:ats-strategy/docs/procurement/deployer-guidance.md | owner-evidence-required | provider-side deployer-enablement paketi owner |
 | **Art.43** | Conformity assessment (Annex III iç-kontrol) | bu indeks + PRIVATE:ats-strategy/docs/procurement/eu-ai-act-readiness-checklist.md | owner-evidence-required | iç-kontrol conformity yürütümü owner |
 | **Art.47** | AB uygunluk beyanı (EU declaration) | PRIVATE:ats-strategy/docs/procurement/eu-declaration-of-conformity.md | owner-evidence-required | conformity sonrası beyan owner |
+| **Art.48** | CE işareti + eşlik eden dokümantasyon | PRIVATE:ats-strategy/docs/procurement/ce-marking-packaging-docs.md | owner-evidence-required | CE marking + accompanying-docs owner |
 | **Art.49** | AB veritabanı kaydı (registration) | PRIVATE:ats-strategy/docs/procurement/eu-database-registration.md | owner-evidence-required | yüksek-riskli sistem kaydı owner |
 | **Art.50** | Transparency (AI etkileşim/üretim açıklaması) | [[ATS-0005]] + [[ATS-0003]] (rıza/aydınlatma) | design | UI disclosure metni P1 |
 | **Art.72** | Post-market monitoring (provider) | [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) + PRIVATE:ats-strategy/docs/procurement/post-market-monitoring-plan.md | owner-evidence-required | post-market izleme planı yürütümü owner |
 | **Art.73** | Ciddi olay bildirimi (serious incident) | PRIVATE:ats-strategy/docs/procurement/incident-response-runbook.md + [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) | owner-evidence-required | ciddi-olay tespit+bildirim süreci owner |
 
+## 1b. Koşullu / deployment-bağımlı yükümlülükler (required-set DIŞI)
+
+Her kurulumda provider-core olmayan; AB-pazar rotası / reseller-zinciri / deployer-FRIA senaryosunda aktive olur (owner kararı):
+- **Art.22** — AB-dışı provider için **yetkili temsilci** (AB pazarına girişte).
+- **Art.25** — value-chain / distributor / importer sorumluluk geçişi (reseller zinciri).
+- **Art.27** — deployer **FRIA** (temel hak etki değerlendirmesi) desteği (müşteri-facing enablement).
+
 ## 2. Doğrulama (drift-guard `scripts/check-eu-ai-act-index.mjs`)
 
-- Required AB AI Act maddeleri (19: Art.9/10/11/12/13/14/15/16/17/18/19/20/26/43/47/49/50/72/73) hepsi mevcut + tekil.
-- Statü sözlük-geçerli; **YASAK overclaim ifadeleri** (EN+TR compliance/conformity eşanlamlıları) indekste görünemez.
+- Required AB AI Act maddeleri (21: Art.9/10/11/12/13/14/15/16/17/18/19/20/21/26/43/47/48/49/50/72/73) hepsi mevcut + tekil.
+- Statü sözlük-geçerli; **YASAK overclaim ifadeleri** (EN+TR uygunluk/uyum iddiası eşanlamlıları; standalone `conformity` legal terim olarak serbest) indekste görünemez.
+- Tüm `[[ATS-XXXX]]` referansları docs/adr'de mevcut olmalı (kopuk-ADR-ref reddi).
 - `Mapped artefakt` hücresindeki **her markdown-link path mevcut olmalı** (ölü-link reddi); satır en az bir çözülür anchor (path / `[[ATS-XXXX]]` / `PRIVATE:<path>`) taşımalı.
 - **Evidence-binding:** `p1-evidence-required` → residual'da `P1`; `owner-evidence-required` → residual'da `owner`/`operatör` (statü kanıt-ihtiyacını residual'a bağlar).
 

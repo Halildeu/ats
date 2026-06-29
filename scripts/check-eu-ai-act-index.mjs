@@ -22,7 +22,8 @@ const STATUS = new Set(["design", "gate-locked", "p1-evidence-required", "owner-
 const FORBIDDEN = /\b(compliant|in compliance|conformant|conformity achieved|certified|fully meets|meets requirements|guaranteed|ai act ready|market-ready|lawful|uygundur|uyumlu(?:dur)?|gereklilikleri karşılar|tam karşılar)\b/i;
 const REQUIRED = [
   "Art.9", "Art.10", "Art.11", "Art.12", "Art.13", "Art.14", "Art.15", "Art.16", "Art.17",
-  "Art.18", "Art.19", "Art.20", "Art.26", "Art.43", "Art.47", "Art.49", "Art.50", "Art.72", "Art.73",
+  "Art.18", "Art.19", "Art.20", "Art.21", "Art.26", "Art.43", "Art.47", "Art.48", "Art.49",
+  "Art.50", "Art.72", "Art.73",
 ];
 
 const adrDir = join(REPO, "docs/adr");
@@ -64,8 +65,10 @@ for (const line of lines) {
   for (const lp of linkPaths) {
     if (!existsSync(join(REPO, resolveRepoPath(lp)))) errors.push(`${art}: ölü mapped-link "${lp}"`);
   }
-  // en az bir çözülür anchor
+  // tüm [[ATS-XXXX]] referansları docs/adr'de mevcut olmalı (kopuk-ADR-ref reddi)
   const adrRefs = [...mapped.matchAll(/\[\[(ATS-\d+)\]\]/g)].map((m) => m[1]);
+  for (const id of adrRefs) if (!adrExists(id)) errors.push(`${art}: kopuk ADR ref [[${id}]] (docs/adr'de yok — private ise [[]] kullanma)`);
+  // en az bir çözülür anchor
   const privateRef = /PRIVATE:\S+\/\S+/.test(mapped); // PRIVATE:<path-like> (bare PRIVATE bypass değil)
   const anchorOk = linkPaths.length > 0 || adrRefs.some(adrExists) || privateRef;
   if (!anchorOk) errors.push(`${art}: çözülür anchor yok (path/[[ATS-XXXX]]/PRIVATE:<path>): "${mapped}"`);
