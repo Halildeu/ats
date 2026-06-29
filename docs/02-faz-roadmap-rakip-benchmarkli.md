@@ -99,7 +99,7 @@ ATS-0001 mimari/reuse-sınırı (AI-native + sovereign-ready) · 0002 multi-tena
 ## 5. Sıradaki adımlar (owner onayı sonrası)
 1. Bu fazlı roadmap'i **GitHub Project board**'a epic (Faz 0–E) + issue (özellik) olarak dök.
 2. **PRD** (Faz A-C kapsamı, acceptance kriterleri) + **ATS-0001 ADR** draft → cross-AI (Codex) review.
-3. Repo'ları oluştur (biz) → Salih'i davet (`salihkorkmazk@gmail.com`).
+3. Repo'ları oluştur (biz) → Salih'i davet (`<collaborator-email>` (PII — özel kanalda)).
 4. Faz 0 scaffold + Faz A ilk slice → Salih'e ilk board issue (Zeynep-tarzı).
 
 Açık kalan (bloklamıyor, faz-önceliği ayarı): İlk pilot ICP (regüle sektör mü, hangi dikey?), Kariyer.net BD başlangıç zamanı, reuse fiziksel sınırı (cluster/namespace).
