@@ -1,0 +1,39 @@
+{
+  "_synthetic": true,
+  "_note": "SENTETİK self-test fixture — gerçek mülakat DEĞİL. Yalnız harness'in uçtan uca çalıştığını kanıtlar. Gerçek golden fixture (rıza-alınmış Türkçe panel kaydı) owner/Zeynep tarafından eklenecek (G0 M6 kriter 6).",
+  "id": "synthetic-001",
+  "reference": {
+    "transcript": "merhaba ben üç yıl python ile çalıştım ve bir ekip yönettim",
+    "speakers": [
+      {"start": 0.0, "end": 2.0, "speaker": "interviewer"},
+      {"start": 2.0, "end": 6.0, "speaker": "candidate"}
+    ]
+  },
+  "hypothesis": {
+    "transcript": "merhaba ben üç yıl python ile çalıştım ve bir ekip yonettim",
+    "speakers": [
+      {"start": 0.0, "end": 2.0, "speaker": "S1"},
+      {"start": 2.0, "end": 6.0, "speaker": "S2"}
+    ]
+  },
+  "claims": [
+    {
+      "claim_text": "3 yıl Python deneyimi",
+      "predicted_citation": {"start": 11, "end": 40},
+      "shown_as_supported": true,
+      "ground_truth_valid_spans": [{"start": 11, "end": 40}]
+    },
+    {
+      "claim_text": "ekip yönetimi",
+      "predicted_citation": {"start": 44, "end": 59},
+      "shown_as_supported": true,
+      "ground_truth_valid_spans": [{"start": 44, "end": 59}]
+    },
+    {
+      "claim_text": "yüksek lisans derecesi (transkriptte yok)",
+      "predicted_citation": null,
+      "shown_as_supported": false,
+      "ground_truth_valid_spans": []
+    }
+  ]
+}

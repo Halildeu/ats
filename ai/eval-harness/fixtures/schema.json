@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Golden interview fixture (ATS-0004 eval)",
+  "type": "object",
+  "required": ["id", "reference", "hypothesis", "claims"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {"type": "string"},
+    "_synthetic": {"type": "boolean", "description": "true = self-test, gerçek mülakat değil"},
+    "reference": {
+      "type": "object",
+      "required": ["transcript", "speakers"],
+      "additionalProperties": false,
+      "properties": {
+        "transcript": {"type": "string", "description": "insan-doğrulanmış ground-truth transkript"},
+        "speakers": {"$ref": "#/$defs/segments"}
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "required": ["transcript", "speakers"],
+      "additionalProperties": false,
+      "properties": {
+        "transcript": {"type": "string", "description": "STT çıktısı (sistem)"},
+        "speakers": {"$ref": "#/$defs/segments"}
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim_text", "predicted_citation", "shown_as_supported", "ground_truth_valid_spans"],
+        "additionalProperties": false,
+        "properties": {
+          "claim_text": {"type": "string"},
+          "predicted_citation": {
+            "oneOf": [{"type": "null"}, {"$ref": "#/$defs/span"}],
+            "description": "sistemin gösterdiği alıntı (transkript char-offset) veya null"
+          },
+          "shown_as_supported": {"type": "boolean", "description": "iddia 'desteklenmiş/onaylı' diye sunuldu mu"},
+          "ground_truth_valid_spans": {
+            "type": "array", "items": {"$ref": "#/$defs/span"},
+            "description": "geçerli destekleyici span(lar); boş => desteklenemez iddia"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "required": ["start", "end"],
+      "additionalProperties": false,
+      "properties": {"start": {"type": "number"}, "end": {"type": "number"}}
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "speaker"],
+        "additionalProperties": false,
+        "properties": {
+          "start": {"type": "number"}, "end": {"type": "number"}, "speaker": {"type": "string"}
+        }
+      }
+    }
+  }
+}

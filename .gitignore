@@ -8,7 +8,8 @@ coverage/
 # python
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
 
 # java
 target/
