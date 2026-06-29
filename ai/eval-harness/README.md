@@ -42,7 +42,7 @@ python3 run_eval.py path/to/golden.json  # gerçek golden Türkçe fixture
 | unsupported_claim_rate | desteksiz ama gösterilen iddia | ≤ 0.02 |
 | **fail_closed_rate** | desteksiz iddianın bastırılma oranı | **= 1.0 (SERT)** |
 
-## Kalibrasyon (yapılacak — owner/Zeynep)
+## Kalibrasyon (yapılacak — operator-provided)
 1. Rıza-alınmış gerçek **Türkçe panel mülakat** fixture'ı ekle (`fixtures/`, `_synthetic` YOK).
 2. `run_eval.py` ile baseline ölç.
 3. Owner + cross-AI ile `thresholds.json` değerlerini **kilitle** (`_status: "calibrated"`).

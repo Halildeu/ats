@@ -13,6 +13,6 @@
 cd ai/eval-harness
 python3 -m pytest tests/ -q       # harness sağlığı → 11/11, exit 0
 python3 run_eval.py               # sentetik self-test → exit 1 (fail-closed, BEKLENEN; pilot kararı VERMEZ)
-python3 run_eval.py golden.json   # gerçek golden Türkçe fixture (owner/Zeynep sağlar)
+python3 run_eval.py golden.json   # gerçek golden Türkçe fixture (operator-provided / consented)
 ```
 Eşikler `thresholds.json` **uncalibrated placeholder** — golden Türkçe fixture'da kilitlenmeden pilot-open Gate C yeşil sayılmaz (ATS-0004). CI'a bağlama billing düzelince (PR-with-workflow).
