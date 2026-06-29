@@ -1,6 +1,6 @@
 name: security
 
-# ATS-0007 supply-chain: secret-scan (gitleaks) + dependency-review (vuln/lisans).
+# ATS-0007 supply-chain: secret-scan (gitleaks) + dependency-review (vuln).
 # Native GitHub secret-scanning + push-protection da AÇIK (repo ayarı). Action SHA-pin.
 
 on:
@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   gitleaks:
@@ -19,9 +20,13 @@ jobs:
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          # gitleaks v2: PR scan için GITHUB_TOKEN zorunlu.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-review:
-    # PR'larda yeni bağımlılıkların güvenlik/lisans incelemesi (public'te ücretsiz).
+    # PR'larda yeni bağımlılıkların güvenlik incelemesi (public'te ücretsiz;
+    # Dependency graph repo ayarı açık olmalı — gh api vulnerability-alerts ile açıldı).
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
