@@ -1,2 +1,8 @@
-prospect,sektor,butce_sahibi,mevcut_ats,kayit_izni,roller,yillik_mulakat_hacmi,hukuki_blocker,sart_entegrasyon,kabul_fiyat,icp_skoru_18,loi_durum,dpo_durum,ats_teyit_durum,go_skoru,notlar
-# ÖRNEK (sil): Örnek Bank,finans,CHRO-onaylı,Greenhouse,DPO-on-onay,recruiter+HM,420,yok,export-OK,seat-bazli,15,LOI-bekliyor,DPO-gorusme-planli,export-teyit,CONDITIONAL,kayit-izni-yazili-bekleniyor
+prospect,sektor,iliski,butce_sahibi,mevcut_ats,kayit_izni,roller,yillik_mulakat_hacmi,hukuki_blocker,sart_entegrasyon,kabul_fiyat,icp_skoru_18,loi_durum,dpo_durum,ats_teyit_durum,go_skoru,notlar
+# ÖRNEK (sil): Örnek Bank,finans,non-friendly,CHRO-onaylı,Greenhouse,DPO-on-onay,recruiter+HM,420,yok,export-OK,seat-bazli,15,LOI-bekliyor,DPO-gorusme-planli,export-teyit,CONDITIONAL,kayit-izni-yazili-bekleniyor
+# --- HOLDING-İÇİ İLK ADAYLAR (isim DOLDUR) ---
+[holding insaat kurumu],insaat,friendly,?,?,?,saha+ofis,?,?,?,?,?,?,?,?,?,golden-fixture-adayi
+[holding turizm kurumu],turizm,friendly,?,?,?,sezonsal-yuksek-hacim,?,?,?,?,?,?,?,?,?,sezon-oncesi-toplu-mulakat
+[holding telekom kurumu],telekom,friendly,?,?,?,teknik+cagri-merkezi,?,?,?,?,?,?,?,?,?,olgun-DPO-procurement-provasi
+# --- DIŞ (non-friendly, M6 için sonra) ---
+[dis kurum 1],?,non-friendly,?,?,?,?,?,?,?,?,?,?,?,?,?,referansli-cikis
