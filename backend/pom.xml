@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    Faz 25 ATS — ats-core (modular monolith) parent POM.
+    GATE-SAFE skeleton (ATS-0008): yalnız sözleşme/kernel/guard iskeleti.
+    P1 fonksiyonel (JPA entity / Flyway domain migration / ürün controller /
+    gerçek KC-OpenFGA-PG-S3-STT-LLM bağlantısı) G0=GO'ya KİLİTLİ — bu ağaçta YOK.
+    Toolchain: ATS-0008 "Gradle" → repo-gerçeği (Maven kurulu, Gradle yok) + local-verify
+    edilebilirlik nedeniyle Maven (bkz. backend/README.md).
+  -->
+  <groupId>com.ats</groupId>
+  <artifactId>ats-core-parent</artifactId>
+  <version>0.0.0</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <junit.version>5.10.2</junit.version>
+    <archunit.version>1.3.0</archunit.version>
+  </properties>
+
+  <modules>
+    <module>shared-kernel</module>
+    <module>contracts-java</module>
+    <!--
+      Domain modülleri (ATS-0008 8 modül) G0 sonrası iş mantığıyla wire edilecek:
+      identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,
+      ai-orchestration, export-connector, retention-dsr. Pre-G0 placeholder: backend/domains/.
+    -->
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>${junit.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.2.5</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

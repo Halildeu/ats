@@ -75,7 +75,7 @@ Medya/transcript object store seçimi (MinIO self-host vs cloud S3) **design-par
 | Web | React + TS + Module Federation | — |
 | UI lib | vendor-snapshot `@mfe/*` → `ats/packages/` | D-C |
 | Contracts (impl durumu) | `contracts/` TS scaffold + 4 sözleşme + contract-test | ATS-0001 ([PR #5](https://github.com/Halildeu/ats/pull/5) — merge-ready, CI-billing-bloklu) |
-| Monorepo tooling | pnpm workspaces + turbo (web/contracts) · Gradle (backend) · uv (ai) | öneri |
+| Monorepo tooling | pnpm workspaces + turbo (web/contracts) · **Maven** (backend — repo-gerçeği: Gradle yok, Maven+JDK kurulu + local-verify) · uv (ai) | WS-3 |
 | Deploy | kustomize + ArgoCD + D30 immutable digest (`ats-gitops`) | platform deseni |
 | CI | GitHub Actions (boundary-guard + typecheck + test) | PR #5 (⚠️ Actions billing blocker — owner) |
 
