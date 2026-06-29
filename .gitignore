@@ -1,0 +1,20 @@
+# deps / build
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# java
+target/
+
+# os / editor
+.DS_Store
+*.log
+.idea/
+.vscode/
