@@ -6,7 +6,7 @@
  * event'iyle modellenir; ledger'da deletion API'si gibi görünmez.
  * Her giriş hash-zincirlidir (previousHash → entryHash).
  */
-import type { ActorId, EvidenceId, InterviewId, Outcome, TenantId } from "./types.js";
+import type { ActorId, EvidenceId, InterviewId, JsonObject, Outcome, TenantId } from "./types.js";
 
 /** Append girdisi — tüm alanlar JSON-uyumlu. occurredAt ISO-8601 string (Date değil). */
 export interface EvidenceEvent {
@@ -20,7 +20,8 @@ export interface EvidenceEvent {
   readonly idempotencyKey: string;
   /** İçeriğin kaynak/bütünlük hash'i (ham içerik ledger'da değil). */
   readonly contentHash: string;
-  readonly payload?: Readonly<Record<string, unknown>>;
+  /** Yalnız JSON-uyumlu (Date/Map/class/function tip seviyesinde imkânsız). */
+  readonly payload?: JsonObject;
 }
 
 export interface LedgerEntry extends EvidenceEvent {

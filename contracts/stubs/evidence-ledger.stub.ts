@@ -17,6 +17,19 @@ function hashEntry(previousHash: string | null, event: EvidenceEvent, sequence: 
   return createHash("sha256").update(material).digest("hex");
 }
 
+/**
+ * Append-only WORM'u runtime'da da korur (Codex post-impl blocker #1):
+ * saklanan girdi derin-dondurulur; (entry as any).x = ... mutasyonu sessiz
+ * yutulmaz/etkisizdir, böylece getById/list iç referansı dönse bile değişmez.
+ */
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object") {
+    for (const v of Object.values(value)) deepFreeze(v);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 export class InMemoryEvidenceLedger implements EvidenceLedger {
   // append-only iç depo; dışarıya mutasyon yüzeyi açılmaz.
   readonly #entries: LedgerEntry[] = [];
@@ -36,13 +49,13 @@ export class InMemoryEvidenceLedger implements EvidenceLedger {
     const last = this.#entries.at(-1);
     const previousHash = last ? last.entryHash : null;
     const sequence = this.#counter++;
-    const entry: LedgerEntry = {
+    const entry: LedgerEntry = deepFreeze({
       ...event,
       evidenceId: `ev-${sequence}` as EvidenceId,
       sequence,
       previousHash,
       entryHash: hashEntry(previousHash, event, sequence),
-    };
+    });
     this.#entries.push(entry);
     return ok(entry);
   }

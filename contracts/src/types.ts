@@ -7,6 +7,18 @@
  * üretilebilir kalsın (Codex cross-AI guardrail #3).
  */
 
+/**
+ * JSON-uyumlu değer tipleri (Codex guardrail #3). Contract DTO payload'ları
+ * yalnız bunlardan oluşur → Date/Map/class/function tip seviyesinde imkânsız;
+ * ileride Java/Python binding üretilebilir kalır.
+ */
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+export interface JsonObject {
+  readonly [key: string]: JsonValue;
+}
+export type JsonArray = readonly JsonValue[];
+
 /** Branded string id'ler — runtime'da düz string kalır (JSON-uyumlu). */
 export type Brand<T, B extends string> = T & { readonly __brand: B };
 

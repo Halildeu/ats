@@ -60,6 +60,21 @@ describe("EvidenceLedger contract (WORM append-only)", () => {
     if (t.ok) expect(t.value.eventType).toBe("EVIDENCE_TOMBSTONE");
   });
 
+  it("runtime immutability: dönen girdi mutasyonu ledger state'ini değiştirmez (WORM)", () => {
+    const l = new InMemoryEvidenceLedger();
+    const a = l.append(evt({ idempotencyKey: "k1", eventType: "ORIG" }));
+    expect(a.ok).toBe(true);
+    if (a.ok) {
+      // Derin-dondurulmuş → mutasyon strict mode'da fırlatır (sessiz yutulmaz).
+      expect(() => {
+        (a.value as unknown as Record<string, unknown>).eventType = "TAMPERED";
+      }).toThrow();
+      const again = l.getById(a.value.tenantId, a.value.evidenceId);
+      expect(again.ok).toBe(true);
+      if (again.ok) expect(again.value.eventType).toBe("ORIG");
+    }
+  });
+
   it("FORBIDDEN yüzey yok: update/delete/overwrite/purge/replace/mutate", () => {
     const l = new InMemoryEvidenceLedger() as unknown as Record<string, unknown>;
     for (const m of ["update", "delete", "overwrite", "purge", "replace", "mutate", "remove"]) {
