@@ -3,7 +3,7 @@
  * EU AI Act technical-file index drift guard (ATS-0005 · Codex 019f13d5 REVISE absorb).
  *
  * docs/ai-governance/eu-ai-act-technical-file-index.md:
- *  1. Required 19 madde (Art.9..73) hepsi mevcut + tekil.
+ *  1. Required 21 madde (Art.9..73) hepsi mevcut + tekil.
  *  2. Statü sözlük-geçerli; YASAK overclaim ifadeleri (EN+TR) görünemez (readiness≠uygunluk).
  *  3. Mapped-artefakt: HER markdown-link path mevcut olmalı (ölü-link reddi) + satır en az bir
  *     çözülür anchor (path / [[ATS-XXXX]] / PRIVATE:<path>) taşımalı.
@@ -83,6 +83,11 @@ for (const line of lines) {
 }
 
 for (const r of REQUIRED) if (!seen.has(r)) errors.push(`eksik AB AI Act maddesi: ${r}`);
+
+// doküman-geneli: tüm [[ATS-XXXX]] referansları docs/adr'de mevcut olmalı (private ADR [[]] kullanmaz)
+for (const m of lines.join("\n").matchAll(/\[\[(ATS-\d+)\]\]/g)) {
+  if (!adrExists(m[1])) errors.push(`doküman-geneli kopuk ADR ref [[${m[1]}]] (docs/adr'de yok)`);
+}
 
 if (errors.length > 0) {
   console.error("eu-ai-act-index drift guard FAILED:");

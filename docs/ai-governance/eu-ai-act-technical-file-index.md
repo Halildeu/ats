@@ -58,4 +58,4 @@ Her kurulumda provider-core olmayan; AB-pazar rotası / reseller-zinciri / deplo
 - **Evidence-binding:** `p1-evidence-required` → residual'da `P1`; `owner-evidence-required` → residual'da `owner`/`operatör` (statü kanıt-ihtiyacını residual'a bağlar).
 
 ## 3. Bağlantı
-- [[ATS-0005]] (karar) · [[ATS-0004]] · [[ATS-0003]] · [[ATS-0007]] · [[ATS-0009]] · threat-register · event-taxonomy · data-lifecycle-register · PRIVATE: QMS/incident-runbook/declaration/registration/post-market/deployer-guidance (`ats-strategy/docs/procurement`).
+- [[ATS-0005]] (karar) · [[ATS-0004]] · [[ATS-0003]] · [[ATS-0007]] · PRIVATE ADR ATS-0009 (CI-runner) · threat-register · event-taxonomy · data-lifecycle-register · PRIVATE: QMS/incident-runbook/declaration/registration/post-market/deployer-guidance (`ats-strategy/docs/procurement`).
