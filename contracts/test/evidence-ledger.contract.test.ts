@@ -47,6 +47,18 @@ describe("EvidenceLedger contract (WORM append-only)", () => {
     }
   });
 
+  it("list tenant-kapsamlı; başka tenant boş döner (detectability sızdırmaz — P-D1)", () => {
+    const l = new InMemoryEvidenceLedger();
+    expect(l.append(evt({ tenantId: "t1" as TenantId, idempotencyKey: "k1" })).ok).toBe(true);
+    const own = l.list("t1" as TenantId);
+    const other = l.list("t2" as TenantId);
+    expect(own.ok && other.ok).toBe(true);
+    if (own.ok && other.ok) {
+      expect(own.value.length).toBe(1);
+      expect(other.value.length).toBe(0);
+    }
+  });
+
   it("tombstone append-only event olarak eklenir (silme değil)", () => {
     const l = new InMemoryEvidenceLedger();
     const t = l.appendTombstoneEvent(

@@ -32,4 +32,5 @@
 - **(C) Threat-model release-gate (Gate F) + per-tenant KMS + AI-guard (seçilen).**
 
 ## Bağlantı
-- Pilot-open: [G0/g0-pilot-open-release-checklist.md](../G0/g0-pilot-open-release-checklist.md) Gate F · [[ATS-0002]] · [[ATS-0003]] · [[ATS-0004]] citation-tamper · procurement artifact: security-whitepaper/DPIA (P3).
+- **İzlenebilir register:** [docs/security/threat-register.md](../security/threat-register.md) — bu kararın STRIDE/LINDDUN → kontrol → test matrisi (public, living).
+- Pilot-open: G0 pilot-open release checklist Gate F (private `ats-strategy`) · [[ATS-0002]] · [[ATS-0003]] · [[ATS-0004]] citation-tamper · procurement artifact: security-whitepaper/DPIA (private, P3).
