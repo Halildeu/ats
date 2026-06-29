@@ -82,9 +82,11 @@ jobs:
         run: node scripts/check-threat-register.mjs
 
   event-taxonomy-guard:
-    # docs/observability/event-taxonomy.md drift guard (ATS-0010): zarf zorunlu alanları,
-    # event ID regex/tekillik, geçerli category/severity/status, YASAK pii_class
-    # (raw-pii/content/secret) hiçbir satırda görünemez (fail-closed redaction invariantı).
+    # docs/observability/event-taxonomy.md drift guard (ATS-0010): §0 zarf zorunlu alanları
+    # (section-scoped), §2 event satırları (ID regex/tekillik, category/severity/status,
+    # Required-extra allow-list), sentinel kritik event silme guard'ı ve YASAK pii_class
+    # (raw-pii/content/secret) §2 EVENT satırının pii_class hücresinde görünemez
+    # (registry-level fail-closed; runtime serializer redaksiyonu AYRI ve P1 gate-locked).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

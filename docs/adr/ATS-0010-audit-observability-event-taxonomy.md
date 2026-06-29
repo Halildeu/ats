@@ -2,7 +2,7 @@
 
 - **Durum:** Önerildi (cross-AI review bekliyor)
 - **Tarih:** 2026-06-29
-- **Bağlam kaynağı:** Gate-safe hardening backlog #3 (Codex thread 019f12e2) · [[ATS-0003]] WORM evidence-ledger · [[ATS-0007]] threat model (T-R1/R2 repudiation, P-L1 logging-PII) · [docs/security/threat-register.md](../security/threat-register.md)
+- **Bağlam kaynağı:** Gate-safe hardening backlog #3 (Codex thread 019f12e2, REVISE→AGREE) · [[ATS-0003]] WORM evidence-ledger · [[ATS-0007]] threat model (T-R1/T-R2 repudiation, **T-I6** operasyonel log PII sızıntısı) · [docs/security/threat-register.md](../security/threat-register.md)
 - **Karar tipi:** Gözlemlenebilirlik / denetim mimarisi (gate-safe; emisyon kodu P1)
 
 ## Bağlam
@@ -12,20 +12,20 @@
 1. **İş-kanıtı düzlemi (business evidence):** WORM, hash-zincirli, tenant-veri taşır → `EvidenceLedger` ([[ATS-0003]], `contracts/src/evidence-ledger.ts`). Aday/mülakat kanıtının değişmez kaydı; "ne karar verildi, hangi citation'a dayandı" sorusunun cevabı.
 2. **Operasyonel telemetri düzlemi (operational observability):** log + metric + trace; sistem sağlığı + güvenlik-denetimi + sorun-teşhisi. **Ham PII/içerik taşımaz** — yalnız opak ID/hash + kategorize event.
 
-Bu ADR **2. düzlemi** karara bağlar. Olmazsa: prompt-injection/tenant-leak/break-glass gibi tehditlerin (ATS-0007) tespiti ve adli-iz (forensics) kanıtı eksik kalır; aynı anda denetimsiz log PII-sızıntı kanalına döner (P-L1).
+Bu ADR **2. düzlemi** karara bağlar. Olmazsa: prompt-injection/tenant-leak/break-glass gibi tehditlerin (ATS-0007) tespiti ve adli-iz (forensics) kanıtı eksik kalır; aynı anda denetimsiz log PII-sızıntı/exfiltration kanalına döner (threat-register **T-I6**).
 
 ## Karar
 
 **Tüm operasyonel event'ler ortak bir zarf (envelope) + kanonik taksonomi ile yapılandırılır; ham PII/içerik/secret log'a YAZILAMAZ (fail-closed redaction).** Kanonik kayıt: [docs/observability/event-taxonomy.md](../observability/event-taxonomy.md) (machine-checked, drift-guard'lı).
 
 ### 1. Zarf (her event ZORUNLU taşır)
-`event` (kanonik ID) · `category` · `severity` · `occurred_at` (ISO-8601 UTC) · `tenant_id` · `correlation_id` · `outcome`. Opsiyonel: `actor_ref` (pseudonim/opak), `trace_id`, `source` (servis), `reason_code`.
+`schema_version` · `event_type` (kanonik tip ID) · `event_id` (olay-örneği benzersiz ID) · `category` · `severity` · `occurred_at` (ISO-8601 UTC) · `tenant_id` (opak) · `correlation_id` · `trace_id` · `source` (servis) · `outcome`. Opsiyonel: `span_id` · `actor_ref` (pseudonim/opak) · `reason_code` · `environment` · `deployment_version` · `ledger_entry_ref` · `target_ref`. **`event_type` (sınıf) ≠ `event_id` (örnek)** ayrımı zorunlu; `schema_version` forward-compat sağlar.
 
 ### 2. PII sınıflandırması (redaction invariant)
 Her event bir `pii_class` beyan eder. **İzinli:** `none` · `id-only` (opak ID/hash) · `pseudonymized`. **YASAK (fail-closed):** `raw-pii` (aday adı/email/telefon/CV içeriği) · `content` (transkript/medya gövdesi) · `secret` (token/anahtar/parola). Yasak sınıf taksonomide görünemez (drift-guard reddeder); kod-seviyede serializer allow-list + redaksiyon zorunlu (P1 emisyon).
 
 ### 3. Korelasyon & izlenebilirlik
-`correlation_id` istek girişinde üretilir, servis sınırları arasında **propagate** edilir (W3C `traceparent` uyumlu); aynı iş-akışının tüm event'leri tek correlation_id ile bağlanır. Güvenlik-event'leri (auth/authz/admin/security/consent) **silinmez, örneklenmez (no-sampling)**.
+Dağıtık iz **W3C Trace Context** (`traceparent`) ile taşınır: `trace_id`/`span_id` standardın `trace-id`/`parent-id` alanlarıdır. `correlation_id` ise **uygulama-seviyesi** iş-akışı korelasyonudur (standardın birebir karşılığı değil) ve **opak** olmalıdır — tenant/aday/email/domain encode **edemez**. Aynı iş-akışının tüm event'leri tek correlation_id ile bağlanır. Güvenlik/denetim event'leri (auth/authz/admin/security/consent/privacy) **silinmez, örneklenmez (no-sampling)**.
 
 ### 4. Tenant-güvenli log invariantı
 `tenant_id` her event'te bulunur (filtre/izolasyon için) ama **log deposu erişimi RBAC-kapsamlı** (audit-reader ≠ tenant-data-reader, ATS-0007 §3). Cross-tenant log korelasyonu yalnız platform-operator rolüne; tenant'a yalnız kendi `tenant_id` görünür.
@@ -35,7 +35,7 @@ Güvenlik/denetim event'leri ≥ yasal saklama süresi (KVKK + iş gereksinimi; 
 
 ## Sonuçlar
 
-**Olumlu:** procurement-ready denetlenebilirlik (DPIA/security-whitepaper girdisi); T-R1/R2 repudiation + tenant-leak tespiti adli-iz kazanır; P-L1 PII-log-sızıntısı taksonomi+guard ile baştan kapanır; on-prem "egress yok" iddiası somutlanır.
+**Olumlu:** procurement-ready denetlenebilirlik (DPIA/security-whitepaper girdisi); T-R1/T-R2 repudiation + tenant-leak tespiti adli-iz kazanır; T-I6 PII-log-sızıntısı **registry düzeyinde fail-closed tasarlanır** (yasak `pii_class` taksonomide imkânsız, drift-guard CI-enforced) — **runtime redaksiyon enforcement P1 gate-locked** (serializer allow-list); on-prem "egress yok" iddiası somutlanır.
 **Olumsuz:** envelope + redaction P1 emisyon-kodunda disiplin ister (serializer allow-list); correlation_id propagation servis-sınırı tutarlılığı gerektirir; no-sampling güvenlik-event'i log hacmini artırır.
 
 ## Gate disiplini
