@@ -56,6 +56,7 @@ class SurfaceParityTest {
 
         List<String> cdLines = new ArrayList<>();
         Set<Class<?>> enums = new HashSet<>();
+        Set<Class<?>> referencedEnums = new HashSet<>(); // type olarak gerçekten kullanılan enum'lar
         enums.add(OutcomeCode.class); // kernel-level named enum
 
         for (Class<?> iface : contracts) {
@@ -68,6 +69,8 @@ class SurfaceParityTest {
                 if (!seen.add(m.getName())) {
                     fail("overload not supported: " + iface.getSimpleName() + "." + m.getName());
                 }
+                for (Type pt : m.getGenericParameterTypes()) collectEnums(pt, referencedEnums);
+                collectEnums(m.getGenericReturnType(), referencedEnums);
                 String params = Arrays.stream(m.getGenericParameterTypes())
                         .map(SurfaceParityTest::token)
                         .collect(Collectors.joining(","));
@@ -77,6 +80,7 @@ class SurfaceParityTest {
             for (Class<?> nested : iface.getDeclaredClasses()) {
                 if (nested.isRecord()) {
                     for (RecordComponent rc : nested.getRecordComponents()) {
+                        collectEnums(rc.getGenericType(), referencedEnums);
                         cdLines.add("D " + nested.getSimpleName() + "." + rc.getName()
                                 + ":" + token(rc.getGenericType()));
                     }
@@ -101,12 +105,10 @@ class SurfaceParityTest {
             if (expectedEnumNames.contains(name)) {
                 lines.add("E " + name + "=" + enumMembers(e));
                 emittedEnumNames.add(name);
-            } else {
-                // named değil → en az bir C/D token'ında referans edilmeli (yoksa orphan).
-                boolean referenced = cdLines.stream().anyMatch(l -> l.contains(enumTok));
-                if (!referenced) {
-                    fail("orphan enum (tanımlı ama referanssız + named değil): " + name);
-                }
+            } else if (!referencedEnums.contains(e)) {
+                // named değil → type olarak gerçekten referans edilmeli (class-identity; aynı
+                // member-set'e sahip ikinci unused enum'un "referanslı" sanılmasını engeller).
+                fail("orphan enum (tanımlı ama referanssız + named değil): " + name + " [" + enumTok + "]");
             }
         }
         // canonical bir enum'u named ediyor ama Java'da yoksa → fail.
@@ -129,18 +131,30 @@ class SurfaceParityTest {
 
     private static List<Class<?>> discoverContracts() {
         Path dir = locate("backend/contracts-java/src/main/java/com/ats/contracts");
+        List<Class<?>> topLevel;
         try (Stream<Path> files = Files.list(dir)) {
-            return files
+            topLevel = files
                     .map(p -> p.getFileName().toString())
                     .filter(n -> n.endsWith(".java") && !n.equals("package-info.java"))
                     .map(n -> n.substring(0, n.length() - ".java".length()))
                     .map(SurfaceParityTest::forName)
-                    .filter(c -> c.isInterface() && c.getEnclosingClass() == null)
+                    .filter(c -> c.getEnclosingClass() == null)
                     .sorted((a, b) -> a.getSimpleName().compareTo(b.getSimpleName()))
                     .collect(Collectors.toList());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        // Sertlik: contracts paketinde top-level yalnız interface olmalı (top-level enum/class/
+        // record eklenirse orphan guard'ı bypass edebilir → fail-fast). DTO/enum nested olmalı.
+        List<String> nonInterface = topLevel.stream()
+                .filter(c -> !c.isInterface())
+                .map(Class::getSimpleName)
+                .collect(Collectors.toList());
+        if (!nonInterface.isEmpty()) {
+            fail("contracts paketinde top-level non-interface tip(ler) (DTO/enum nested olmalı): "
+                    + nonInterface);
+        }
+        return topLevel; // hepsi interface
     }
 
     private static Class<?> forName(String simpleName) {
@@ -182,6 +196,15 @@ class SurfaceParityTest {
                 .map(c -> ((Enum<?>) c).name())
                 .sorted()
                 .collect(Collectors.joining("|"));
+    }
+
+    /** Bir type ağacında gerçekten kullanılan enum class'larını toplar (List/Outcome içine iner). */
+    private static void collectEnums(Type t, Set<Class<?>> out) {
+        if (t instanceof ParameterizedType pt) {
+            for (Type a : pt.getActualTypeArguments()) collectEnums(a, out);
+        } else if (t instanceof Class<?> c && c.isEnum()) {
+            out.add(c);
+        }
     }
 
     private static String token(Type t) {

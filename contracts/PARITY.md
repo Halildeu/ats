@@ -5,7 +5,7 @@
 > **Test kapsamı (machine-enforced — full shape parity):** artık yalnız metot-adı değil; **metot param/return tipleri + DTO alan tipleri + enum üyeleri** de iki tarafta makine-uygulanır. Mekanizma:
 > 1. `contracts/tools/extract-surface.ts` TS kaynağından tüm yüzeyi **AST node**'larından çıkarır → dilden-bağımsız **token vocabulary**'sine normalize eder → `contract-surface.json` (TS-strict, opsiyonellik dahil) + `contract-surface.tokens.txt` (cross-language projeksiyon).
 > 2. `test/surface-parity.contract.test.ts` (vitest): re-extract → committed json + tokens ile **deep-equal**. TS'te herhangi bir tip/DTO/enum değişimi → kırmızı (bilinçli `npm run surface:gen` zorunlu).
-> 3. `SurfaceParityTest.java` (JUnit): 4 interface'i **reflection** ile okur → aynı token vocabulary'sine map'ler → `contract-surface.tokens.txt` (JSON dep'siz, `Files.readAllLines`) ile karşılaştırır. Java tarafında tip/DTO/enum drift'i → kırmızı.
+> 3. `SurfaceParityTest.java` (JUnit): `com.ats.contracts` paket **kaynak dizininden** interface'leri keşfeder (elle liste yok) + **reflection** ile okur → aynı token vocabulary'sine map'ler → `contract-surface.tokens.txt` (JSON dep'siz, `Files.readAllLines`) ile karşılaştırır. Java tarafında tip/DTO/enum drift'i → kırmızı.
 >
 > **Sessiz-miss kapalı (Codex 019f131f REVISE absorbe):**
 > - **Discovery, elle-liste YOK:** TS kaynak dosyaları `src/*.ts` glob ile; Java contract'ları `com.ats.contracts` paket **kaynak dizininden** keşfedilir. Yeni dosya/interface eklenince otomatik kapsama girer (eklenmeyi unutmak drift'i gizleyemez).
@@ -43,7 +43,7 @@ EvidenceLedger'da `update`/`delete`/`overwrite`/`purge`/`replace`/`remove` (WORM
 |---|---|
 | `EvidenceEvent` | tenantId, actorId, interviewId, eventType, occurredAt, idempotencyKey, contentHash, payload(JsonObject) |
 | `LedgerEntry` | **flat** = EvidenceEvent alanları **+** evidenceId, sequence, previousHash, entryHash (TS `extends EvidenceEvent` ↔ Java düz record — nesting YOK) |
-| `LedgerListFilter` | interviewId?, eventType? (ikisi de nullable) |
+| `LedgerListFilter` | interviewId?, eventType? (ikisi de **optional** — snapshot'ta `optional:true`, `nullable:false`) |
 | `list()` imzası | `(tenantId, filter?)` — TS opsiyonel filter ↔ Java nullable `LedgerListFilter` (interviewId + eventType) |
 
 > Codex WS-3 tespitiyle hizalandı: Java `list` eskiden yalnız `eventType` alıyordu (interviewId yoktu) + `LedgerEntry` nested'di → ikisi de TS-flat canonical'a çekildi.
