@@ -96,7 +96,7 @@
 | **I18N-1** | Varsayılan locale tr-TR | n/a | config assertion (P1) | design |
 | **I18N-2** | Dışsallaştırılmış string (hardcoded UI metni YASAK) | n/a | i18n-extract + eslint no-literal-string | gate-locked |
 | **I18N-3** | ICU message-format + çoğulluk | n/a | format doğrulama (P1) | gate-locked |
-| **I18N-4** | Locale-duyarlı para `Intl.NumberFormat('tr-TR',{currency:'TRY'})` (literal ₺ YASAK) | n/a | Intl format test (P1) | gate-locked |
+| **I18N-4** | Locale-duyarlı sayı/decimal/percent + para `Intl.NumberFormat('tr-TR',{currency:'TRY'})` (literal ₺ + manuel format YASAK) | n/a | Intl format test (P1) | gate-locked |
 | **I18N-5** | Cümle için string-concatenation YASAK | n/a | lint + review | gate-locked |
 | **I18N-6** | Çeviri-anahtarı bütünlüğü (eksik/orphan key YOK) | n/a | i18n key-extract diff (CI, P1) | gate-locked |
 | **I18N-7** | Yön-bağımsız layout (logical CSS; RTL-ready) | n/a | lint logical-props + review | gate-locked |

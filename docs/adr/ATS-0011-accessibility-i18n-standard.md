@@ -1,6 +1,6 @@
 # ATS-0011 — Accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) Standard
 
-- **Durum:** Önerildi (cross-AI review bekliyor)
+- **Durum:** Kabul edildi (cross-AI AGREE — Codex thread 019f1374, REVISE→AGREE iter-2)
 - **Tarih:** 2026-06-29
 - **Bağlam kaynağı:** Gate-safe hardening backlog #5 · ürün direği: Türkçe-first + regüle kurum erişilebilirlik beklentisi · [[ATS-0001]] boundary (UI primitives) · [[ATS-0008]] system architecture frame (web/mobile/desktop)
 - **Karar tipi:** Frontend kalite standardı (gate-safe; enforcement P1)

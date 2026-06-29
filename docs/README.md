@@ -13,7 +13,7 @@
 | [ATS-0005](./adr/ATS-0005-ai-governance-assist-vs-conduct-bias-audit.md) | AI-governance (assist-vs-conduct + EU AI Act) | Accepted |
 | [ATS-0007](./adr/ATS-0007-security-key-management-threat-model.md) | security & key-management threat model | Accepted |
 | [ATS-0010](./adr/ATS-0010-audit-observability-event-taxonomy.md) | audit & observability event taxonomy | Accepted |
-| [ATS-0011](./adr/ATS-0011-accessibility-i18n-standard.md) | accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) | Önerildi |
+| [ATS-0011](./adr/ATS-0011-accessibility-i18n-standard.md) | accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) | Accepted |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
