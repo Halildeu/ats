@@ -1,0 +1,37 @@
+name: ci
+
+# Public repo → GitHub-hosted runner (ücretsiz + güvenli). ATS-0009: ats public
+# yapıldığı için self-hosted KALDIRILDI (public + self-hosted = fork-PR RCE riski).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  boundary-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ATS-0001 boundary guard
+        run: bash scripts/check-boundary.sh
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install
+        run: npm install --no-audit --no-fund
+      - name: typecheck
+        run: npm run typecheck
+      - name: contract tests
+        run: npm test

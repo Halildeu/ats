@@ -1,0 +1,19 @@
+{
+  "name": "@ats/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ATS-0001 stable-interface contracts (gate-safe; no P1 functional)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
