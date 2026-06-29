@@ -9,9 +9,9 @@
 | # | Kriter | Kanıt (kabul edilen) | Durum | Kanıt linki |
 |---|---|---|---|---|
 | 1 | ICP tek cümle kilitli | `g0-icp-questionnaire.md` doldurulmuş + tek-cümle ICP yazılı | ☐ | |
-| 2 | ≥3 yazılı LOI/paid-pilot | LOI/sözleşme (kapsam+ATS+bedel+süre+metrik+teknik-taahhüt) | ☐ | |
-| 3 | İlk ATS entegrasyon yolu doğrulanmış | partner-ATS adı + API/erişim teyidi (e-posta/doküman) | ☐ | |
-| 4 | Kayıt izni + hukuki ≥2 kurum DPO/Legal onayı | DPO yazılı sign-off (script aşağıda) | ☐ | |
+| 2 | ≥3 yazılı LOI/paid-pilot | LOI/sözleşme: **economic-buyer imzası** + kapsam + partner-ATS + **min pilot bedeli** + süre + metrik + teknik-taahhüt + **procurement/ödeme adımı** + **karar tarihi** + **pilot→paid conversion maddesi**. ≥2'si **non-friendly** + ≥2'si **ücretli/procurement-tarihli**. (Gate canonical'ı zayıflatılmaz.) | ☐ | |
+| 3 | İlk ATS entegrasyon yolu doğrulanmış | partner-ATS adı + **kabul edilen yol**: export/secure-link/email/webhook **IT kabulü** (M2 taban) **veya** narrow write-back API/erişim (3-koşul). E-posta/doküman. | ☐ | |
+| 4 | Kayıt izni + hukuki ≥2 kurum DPO/Legal onayı | DPO **yazılı** sign-off (script aşağıda) — sözlü yetmez | ☐ | |
 | 5 | P1 scope dondurulmuş + yasak liste | `g0-p1-scope-freeze.md` + ilk LOI kapsamıyla teyit | ☐ | |
 | 6 | Teknik kalite baseline sayısal | golden Türkçe fixture + eval-harness eşik kilidi | ☐ | |
 | 7 | Execution sistemi yazılı | `g0-execution-system.md` | ☐ | |
@@ -36,7 +36,7 @@
 3. Saklama süresi + **DSR/erasure** + WORM-vs-deletion ayrımı (ATS-0003) kabul mü?
 4. **AI-use disclosure** (EU-AI-Act Art.50) + **no-scoring/no-affect/no-auto-reject** (ATS-0005) kabul mü?
 5. İşlenecek veri sınıfı + **özel-nitelikli minimizasyon** + TC-Kimlik redaction kabul mü?
-6. **DPA/DPIA** taslakları (`docs/procurement/`) inceleme için yeterli mi?
+6. **DPA/DPIA** taslakları inceleme için yeterli mi? (`docs/procurement/` template pack — **A-lite PR'da gelecek**; hazır olunca DPO'ya sunulur.)
 
 > Çıktı: DPO'dan **yazılı** "pilot için uygundur / şu koşullarla uygundur" + tarih + isim. Sözlü yetmez (M6 kriter 4).
 
@@ -54,4 +54,4 @@
 - GO anında: `g0-p1-scope-freeze.md` + ilk LOI kapsamı freeze-commit ile mühürlenir.
 
 ## Bağlantı
-[g0-design-partner-gate.md](./g0-design-partner-gate.md) · [g0-icp-questionnaire.md](./g0-icp-questionnaire.md) · [g0-loi-template.md](./g0-loi-template.md) · [g0-p1-scope-freeze.md](./g0-p1-scope-freeze.md) · [g0-execution-system.md](./g0-execution-system.md) · [g0-pilot-open-release-checklist.md](./g0-pilot-open-release-checklist.md) · [../eval/golden-fixture-collection-pack.md](../eval/golden-fixture-collection-pack.md) · [../procurement/](../procurement/)
+[g0-design-partner-gate.md](./g0-design-partner-gate.md) · [g0-icp-questionnaire.md](./g0-icp-questionnaire.md) · [g0-loi-template.md](./g0-loi-template.md) · [g0-p1-scope-freeze.md](./g0-p1-scope-freeze.md) · [g0-execution-system.md](./g0-execution-system.md) · [g0-pilot-open-release-checklist.md](./g0-pilot-open-release-checklist.md) · [../eval/golden-fixture-collection-pack.md](../eval/golden-fixture-collection-pack.md) · `../procurement/` (template pack — A-lite PR'da gelecek)

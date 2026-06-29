@@ -6,7 +6,7 @@
 
 ## 1. Consent / release template (fixture-kullanım rızası)
 Her kayıt için **yazılı** alınır (aday + interviewer):
-- "Bu mülakat kaydı/transkripti, [şirket]'in işe-alım kanıt sistemi **kalite ölçümü** için **anonimleştirilmiş** olarak kullanılabilir."
+- "Bu mülakat kaydı/transkripti, [şirket]'in işe-alım kanıt sistemi **kalite ölçümü** için **redakte/pseudonymize edilmiş** olarak kullanılabilir." (Not: redaksiyon sonrası dahi bağlama göre **kişisel veri sayılmaya devam edebilir**; açık rıza + KVKK kontrolleri altında işlenir — "tam anonim" iddia edilmez.)
 - Kapsam: STT/diarization/citation doğruluk ölçümü. Otomatik karar/puanlama YOK (ATS-0005).
 - Geri çekme (withdrawal) + saklama süresi + silme (DSR) yolu.
 - Özel-nitelikli veri toplanmaz; geçerse redaksiyon.
@@ -22,7 +22,7 @@ Her kayıt için **yazılı** alınır (aday + interviewer):
 - [ ] TC-Kimlik / telefon / e-posta / adres -> [REDACTED]
 - [ ] Şirket özel adları -> [ORG]
 - [ ] Özel-nitelikli içerik (sağlık/din/etnik/biyometrik) -> çıkarılır
-- [ ] Ham medya fixture repo'ya KONULMAZ (yalnız transkript + segment metadata)
+- [ ] Ham medya fixture repo'ya KONULMAZ (yalnız **redakte** transkript + segment metadata)
 - [ ] Redaction sonrası 4-göz doğrulama
 
 ## 4. Fixture manifest schema (eval-harness ile hizalı)
@@ -30,7 +30,7 @@ Her kayıt için **yazılı** alınır (aday + interviewer):
 - `id`, `_synthetic: false` (gerçek).
 - `reference`: insan-doğrulanmış ground-truth `transcript` + `speakers`.
 - `hypothesis`: sistem STT `transcript` + `speakers`.
-- `claims[]`: iddia + `shown` + supported span(lar) -> precision/recall/unsupported/fail-closed.
+- `claims[]` (schema birebir, `additionalProperties:false`): `claim_text`, `predicted_citation`, `shown_as_supported` (bool), `ground_truth_valid_spans` -> precision/recall/unsupported/fail-closed.
 - Ek: protokol, redaction-onay, rıza-ref (id, kişisel veri değil), dil `tr`, konuşmacı sayısı.
 
 > `python3 run_eval.py <golden>.json` -> şema + eşik raporu. Eşikler ilk gerçek ölçümden sonra owner+cross-AI ile `thresholds.json`'da kilitlenir (uncalibrated -> exit 1 fail-closed).
