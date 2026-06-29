@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/evidence-packet.schema.json",
+  "title": "ATS Interview Evidence Packet (audit export)",
+  "description": "Citation-backed, human-approved, auditable interview evidence packet. Raw media/transcript/PII and any score/ranking/affect are FORBIDDEN by construction (ATS-0003/0004/0005).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "packet_id", "tenant_ref", "interview_refs", "consent_refs",
+    "rubric", "claims", "unsupported_claim_policy", "human_decision",
+    "model_version_ref", "worm_chain_refs", "redaction", "excluded_raw_content", "retention_notice"
+  ],
+  "properties": {
+    "schema_version": { "const": "evidence-packet/v1" },
+    "packet_id": { "type": "string", "minLength": 1 },
+    "tenant_ref": { "type": "string", "minLength": 1, "description": "opak tenant referansı (PII değil)" },
+    "interview_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+    "consent_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric_version_ref", "criteria"],
+      "properties": {
+        "rubric_version_ref": { "type": "string", "minLength": 1 },
+        "criteria": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["criterion_id", "job_relatedness_rationale"],
+            "properties": {
+              "criterion_id": { "type": "string", "minLength": 1 },
+              "job_relatedness_rationale": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "statement_ref", "criterion_id", "source_segment_refs", "entailment"],
+        "properties": {
+          "claim_id": { "type": "string", "minLength": 1 },
+          "statement_ref": { "type": "string", "minLength": 1, "description": "iddia metni referansı (gövde değil)" },
+          "criterion_id": { "type": "string", "minLength": 1 },
+          "source_segment_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+          "entailment": { "enum": ["supported", "partially_supported", "unsupported"] }
+        }
+      }
+    },
+    "unsupported_claim_policy": {
+      "const": "flag-and-exclude-from-decision",
+      "description": "unsupported iddialar karar-kanıtı olarak SUNULMAZ (fail-closed citation, ATS-0004)"
+    },
+    "human_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human_actor_ref", "oversight_role_ref", "rationale_ref", "decision_outcome_ref", "ai_output_version_ref"],
+      "properties": {
+        "human_actor_ref": { "type": "string", "minLength": 1 },
+        "oversight_role_ref": { "type": "string", "minLength": 1 },
+        "rationale_ref": { "type": "string", "minLength": 1 },
+        "decision_outcome_ref": { "type": "string", "minLength": 1 },
+        "ai_output_version_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "model_version_ref": { "type": "string", "minLength": 1 },
+    "worm_chain_refs": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applied", "boundary_note"],
+      "properties": {
+        "applied": { "const": true },
+        "boundary_note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "excluded_raw_content": {
+      "const": true,
+      "description": "ham medya/transkript/PII bu pakette YOK — yalnız referans/hash"
+    },
+    "retention_notice": { "type": "string", "minLength": 1 }
+  }
+}

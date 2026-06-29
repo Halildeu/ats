@@ -1,0 +1,42 @@
+{
+  "schema_version": "evidence-packet/v1",
+  "packet_id": "pkt-0001",
+  "tenant_ref": "t-opaque-01",
+  "interview_refs": ["iv-01"],
+  "consent_refs": ["consent-cand-01", "consent-interviewer-01"],
+  "rubric": {
+    "rubric_version_ref": "rubric-v1",
+    "criteria": [
+      { "criterion_id": "c-communication", "job_relatedness_rationale": "Rol panel sunumu gerektirir; iletişim iş-ilişkili." }
+    ]
+  },
+  "claims": [
+    {
+      "claim_id": "cl-01",
+      "statement_ref": "stmt-01",
+      "criterion_id": "c-communication",
+      "source_segment_refs": ["seg-12", "seg-13"],
+      "entailment": "supported"
+    },
+    {
+      "claim_id": "cl-02",
+      "statement_ref": "stmt-02",
+      "criterion_id": "c-communication",
+      "source_segment_refs": ["seg-40"],
+      "entailment": "unsupported"
+    }
+  ],
+  "unsupported_claim_policy": "flag-and-exclude-from-decision",
+  "human_decision": {
+    "human_actor_ref": "actor-hr-7",
+    "oversight_role_ref": "role-hiring-manager",
+    "rationale_ref": "rat-01",
+    "decision_outcome_ref": "outcome-advance",
+    "ai_output_version_ref": "aiout-v1"
+  },
+  "model_version_ref": "model-stt-v1+llm-v1",
+  "worm_chain_refs": ["ledger-entry-501"],
+  "redaction": { "applied": true, "boundary_note": "TC-Kimlik + e-posta + telefon redacted; özel-nitelikli içerik minimize." },
+  "excluded_raw_content": true,
+  "retention_notice": "Saklama tenant-policy ≥ yasal-min; silme = crypto-erase (unlinkable)."
+}
