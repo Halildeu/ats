@@ -73,19 +73,21 @@ class ContractTest {
                 return Outcome.fail(OutcomeCode.INVALID, "tenantId/idempotencyKey/contentHash zorunlu");
             }
             for (LedgerEntry e : entries) {
-                if (e.event().tenantId().equals(event.tenantId())
-                        && e.event().idempotencyKey().equals(event.idempotencyKey())) {
+                if (e.tenantId().equals(event.tenantId())
+                        && e.idempotencyKey().equals(event.idempotencyKey())) {
                     return Outcome.ok(e); // idempotent replay
                 }
             }
             String prev = entries.isEmpty() ? null : entries.get(entries.size() - 1).entryHash();
             long seq = entries.size();
-            // immutable payload (WORM): JSON-uyumlu kopya
-            EvidenceEvent frozen = new EvidenceEvent(event.tenantId(), event.actorId(), event.interviewId(),
-                    event.eventType(), event.occurredAt(), event.idempotencyKey(), event.contentHash(),
-                    event.payload() == null ? JsonValue.object(Map.of()) : event.payload());
-            String hash = sha256(prev + "|" + seq + "|" + frozen);
-            LedgerEntry entry = new LedgerEntry(new EvidenceId("ev-" + seq), seq, prev, hash, frozen);
+            // immutable payload (WORM): JsonObject zaten derin-immutable
+            JsonValue.JsonObject payload =
+                    event.payload() == null ? JsonValue.object(Map.of()) : event.payload();
+            String hash = sha256(prev + "|" + seq + "|" + event);
+            LedgerEntry entry = new LedgerEntry(
+                    event.tenantId(), event.actorId(), event.interviewId(), event.eventType(),
+                    event.occurredAt(), event.idempotencyKey(), event.contentHash(), payload,
+                    new EvidenceId("ev-" + seq), seq, prev, hash);
             entries.add(entry);
             return Outcome.ok(entry);
         }
@@ -102,7 +104,7 @@ class ContractTest {
         public Outcome<LedgerEntry> getById(TenantId tenantId, EvidenceId id) {
             for (LedgerEntry e : entries) {
                 if (e.evidenceId().equals(id)) {
-                    return e.event().tenantId().equals(tenantId)
+                    return e.tenantId().equals(tenantId)
                             ? Outcome.ok(e)
                             : Outcome.fail(OutcomeCode.NOT_FOUND, "tenant kapsamı dışı");
                 }
@@ -110,13 +112,15 @@ class ContractTest {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "girdi yok");
         }
 
-        public Outcome<List<LedgerEntry>> list(TenantId tenantId, String eventTypeOrNull) {
+        public Outcome<List<LedgerEntry>> list(TenantId tenantId, LedgerListFilter filter) {
             List<LedgerEntry> out = new ArrayList<>();
             for (LedgerEntry e : entries) {
-                if (e.event().tenantId().equals(tenantId)
-                        && (eventTypeOrNull == null || e.event().eventType().equals(eventTypeOrNull))) {
-                    out.add(e);
-                }
+                if (!e.tenantId().equals(tenantId)) continue;
+                if (filter != null && filter.interviewId() != null
+                        && !e.interviewId().equals(filter.interviewId())) continue;
+                if (filter != null && filter.eventType() != null
+                        && !e.eventType().equals(filter.eventType())) continue;
+                out.add(e);
             }
             return Outcome.ok(List.copyOf(out));
         }
@@ -176,10 +180,29 @@ class ContractTest {
     }
 
     @Test
+    void ledger_list_filters_by_tenant_interview_and_eventType() {
+        var l = new InMemoryEvidenceLedger();
+        l.append(evt("k1", "A"));
+        l.append(evt("k2", "B"));
+        // tenant + eventType filtresi
+        var byType = ((Outcome.Ok<List<EvidenceLedger.LedgerEntry>>) l.list(
+                new TenantId("t1"), new EvidenceLedger.LedgerListFilter(null, "A"))).value();
+        assertEquals(1, byType.size());
+        // tenant + interviewId filtresi (TS parity — önceki Java sürümünde yoktu)
+        var byIv = ((Outcome.Ok<List<EvidenceLedger.LedgerEntry>>) l.list(
+                new TenantId("t1"), new EvidenceLedger.LedgerListFilter(new InterviewId("iv1"), null))).value();
+        assertEquals(2, byIv.size());
+        // başka tenant → boş
+        var other = ((Outcome.Ok<List<EvidenceLedger.LedgerEntry>>) l.list(
+                new TenantId("t2"), null)).value();
+        assertEquals(0, other.size());
+    }
+
+    @Test
     void ledger_payload_is_immutable_WORM() {
         var l = new InMemoryEvidenceLedger();
         var ok = (Outcome.Ok<EvidenceLedger.LedgerEntry>) l.append(evt("k1", "A"));
-        var payload = ok.value().event().payload();
+        var payload = ok.value().payload();
         // derin-immutable: hem top-level map hem nested array mutasyonu fırlatır
         boolean topThrew = false, nestedThrew = false;
         try {

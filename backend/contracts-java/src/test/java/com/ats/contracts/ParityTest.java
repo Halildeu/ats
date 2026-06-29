@@ -10,9 +10,10 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
 /**
- * ATS-0001 parity (Java mirror tarafı) — PARITY.md kanonik yüzeyini kilitler.
- * TS kanonik (contracts/test/parity.contract.test.ts) AYNI yüzeyi doğrular →
- * iki taraf imza-drift'i tek tarafta bile olsa test kırmızı (Codex WS-3 SoT-guard).
+ * ATS-0001 parity (Java mirror tarafı) — PARITY.md kanonik **metot-adı yüzeyini**
+ * kilitler (TS parity.contract.test.ts AYNI seti doğrular). Kapsam: yalnız metot-adı;
+ * tip/shape parity PARITY.md tablosu + kod hizası ile (codegen deferred). Tek-taraflı
+ * metot-adı drift'i → test kırmızı (Codex WS-3 SoT-guard).
  */
 class ParityTest {
 
