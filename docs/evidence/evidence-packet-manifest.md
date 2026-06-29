@@ -1,6 +1,7 @@
 # Evidence Packet / Audit Export Manifest (canonical)
 
 > **Public · living document.** Ürünün **çekirdeği**: citation-backed + insan-onaylı + denetlenebilir **mülakat kanıt paketi**'nin kanonik içeriği. "Paketin içinde ne var, ham medya var mı, citation nasıl gösterilir, model versiyonu nerede, WORM hash'i nasıl doğrulanır?" sorusunun tek cevabı. ([[ATS-0004]] citation/human-approval · [[ATS-0005]] assist-not-conduct · [[ATS-0003]] WORM/redaction).
+> **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI `evidence-packet-guard` yeşili = şema/sample drift kontrolü. **Runtime packet generation, redaction/serializer enforcement, gerçek export = P1/G0 sonrası gate-locked** — bu doküman onların yapıldığını iddia ETMEZ. Tüm alanlar **opak ref** (serbest metin yok → değer-düzeyinde PII smuggling pattern ile engellenir).
 > **Şema:** [contracts/schemas/evidence-packet.schema.json](../../contracts/schemas/evidence-packet.schema.json) (Draft 2020-12, `additionalProperties:false`).
 > **Örnek:** [contracts/samples/evidence-packet.sample.json](../../contracts/samples/evidence-packet.sample.json).
 > **Drift guard:** `scripts/check-evidence-packet.mjs` (CI job `evidence-packet-guard`) — sample şemaya uyar + yasak alan yok + claim invariantı.
@@ -10,7 +11,8 @@
 - **Ham içerik YOK:** paket ham medya/transkript/PII **taşımaz**; yalnız referans + hash (`excluded_raw_content: true`, [[ATS-0003]]).
 - **Skor/sıralama/affect YOK:** `score`/`ranking`/`affect`/`sentiment`/`emotion` alanları **şema + örnek + guard** seviyesinde yasak ([[ATS-0005]] assist-not-conduct).
 - **Her iddia citation'lı:** `claims[].source_segment_refs ≥ 1` + `entailment` (supported/partially/unsupported). **unsupported iddialar karar-kanıtı olarak SUNULMAZ** (`flag-and-exclude-from-decision`).
-- **İnsan hesap-verebilirliği:** `human_decision` = 6 pointer (actor/role/rationale/outcome/ai-version) — [docs/governance/human-oversight-standard.md](../governance/human-oversight-standard.md) FINALIZED ile hizalı.
+- **İnsan hesap-verebilirliği:** `human_decision` = **6 pointer** (`human_actor_ref`/`oversight_role_ref`/`human_authored_rationale_ref`/`source_evidence_refs`/`ai_output_version_ref`/`decision_outcome_ref`) — [docs/governance/human-oversight-standard.md](../governance/human-oversight-standard.md) FINALIZED ile **birebir** hizalı. `source_evidence_refs` yalnız `supported`+`human_reviewed` claim'lere işaret edebilir (guard).
+- **Bütünlük/provenance:** `generated_at` · `generator_version_ref` · `locale`/`timezone` · `integrity` (sha256 schema/packet digest + signature_ref) · `worm_chain_refs` · `ai_assistance_disclosure_ref` · `export_event_ref`.
 
 ## 1. Bölümler (şema required)
 
