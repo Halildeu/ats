@@ -42,7 +42,7 @@
 |---|---|---|---|---|---|---|
 | **T-S1** | Spoofing | K2 | Geçersiz/eksik token ile sahte tenant bağlamı | Fail-closed `resolveTenant` (default tenant ÜRETİLMEZ) — [[ATS-0002]] | `contracts/test/identity-tenant.contract.test.ts` (sözleşme/stub seviyesi; runtime IdP gate-locked) | enforced (CI) |
 | **T-S2** | Spoofing | K1 | ATS-connector kimlik taklidi / aşırı yetki | Per-tenant least-privilege credential; default `NOT_CONFIGURED` | runtime cred-scope testi | gate-locked |
-| **T-S3** | Spoofing | K3 | Aday kimlik taklidi / deepfake / medya özgünlüğü | Medya-authenticity sinyalleri + insan-onayı (assist; otomatik karar YOK) — [[ATS-0005]] | ileri (P6) authenticity kontrolü | design |
+| **T-S3** | Spoofing | K3 | Aday kimlik taklidi / deepfake / medya özgünlüğü | Medya-authenticity sinyalleri + insan-onayı (assist; otomatik karar YOK) — [[ATS-0005]] | ileri faz authenticity kontrolü | design |
 | **T-T1** | Tampering | K5 | Audit kaydının değiştirilmesi/silinmesi | WORM append-only; `update/delete/overwrite/purge` yüzeyde YOK — [[ATS-0003]] | `contracts/test/evidence-ledger.contract.test.ts` (deep-immutable + hash-chain; sözleşme/stub) — kalıcı WORM storage gate-locked | enforced (CI) / gate-locked (storage) |
 | **T-T2** | Tampering | K4 | Transcript-poisoning (kaynak transkript manipülasyonu) | Kaynak doğrulama + entailment-citation fail-closed — [[ATS-0004]] | pipeline kaynak-verify (gate-locked); fail-closed metrik invariant: `ai/eval-harness/tests/test_metrics.py` | gate-locked |
 | **T-T3a** | Tampering | K7 | Secret sızıntısı / zafiyetli yeni bağımlılık / mutable action | Secret scan + yeni-dep vuln review + SHA-pinned actions — [[ATS-0007]] §6 | `.github/workflows/security.yml` (gitleaks + dependency-review) | enforced (CI) |
