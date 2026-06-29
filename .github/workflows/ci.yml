@@ -95,3 +95,16 @@ jobs:
           node-version: "20"
       - name: event-taxonomy drift guard
         run: node scripts/check-event-taxonomy.mjs
+
+  a11y-standard-guard:
+    # docs/frontend/a11y-i18n-standard.md drift guard (ATS-0011): kriter ID regex/tekillik,
+    # geçerli seviye (A/AA/n/a) + status, WCAG 2.2 sentinel kriterlerinin silinmemesi,
+    # enforced (CI) iddiasının mevcut repo path'e bağlı olması (over-claim guard).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: a11y/i18n standard drift guard
+        run: node scripts/check-a11y-standard.mjs
