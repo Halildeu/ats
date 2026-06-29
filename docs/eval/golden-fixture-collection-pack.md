@@ -38,7 +38,7 @@ Her kayıt için **yazılı** alınır (aday + interviewer):
 ## 5. Annotation guide
 - Transkript: birebir (dolgu dahil); belirsiz -> [?].
 - Diarization: konuşmacı-değişim zaman-damgası; overlap -> iki segment.
-- Claim/citation: rubric alanı başına iddia + destekleyen span; desteksiz -> shown=false (fail-closed beklenir).
+- Claim/citation: rubric alanı başına iddia + destekleyen span; desteksiz -> shown_as_supported=false (fail-closed beklenir).
 - İki annotator + uzlaşma.
 
 ## 6. Expected-output rubric
