@@ -89,3 +89,27 @@ def test_citation_recall_miss():
     ]
     m = citation_metrics(claims)
     assert m["citation_recall"] == 0.5
+
+
+# ---- pilot-open exit-code sözleşmesi (fail-closed) ----
+from run_eval import pilot_open_ready  # noqa: E402
+
+_CALIBRATED = {"_status": "calibrated"}
+_UNCALIBRATED = {"_status": "uncalibrated"}
+
+
+def test_pilot_ready_calibrated_real_allpass():
+    assert pilot_open_ready(True, _CALIBRATED, {"id": "real"}) is True
+
+
+def test_pilot_ready_synthetic_blocks_even_when_calibrated():
+    # Codex blocker: kalibre + sentetik + tüm gate yeşil olsa bile pilot-open YOK.
+    assert pilot_open_ready(True, _CALIBRATED, {"_synthetic": True}) is False
+
+
+def test_pilot_ready_uncalibrated_blocks():
+    assert pilot_open_ready(True, _UNCALIBRATED, {"id": "real"}) is False
+
+
+def test_pilot_ready_failing_gate_blocks():
+    assert pilot_open_ready(False, _CALIBRATED, {"id": "real"}) is False

@@ -47,6 +47,17 @@ def gate(results: dict, th: dict) -> list[tuple[str, bool, str]]:
     return checks
 
 
+def pilot_open_ready(all_pass: bool, thresholds: dict, fixture: dict) -> bool:
+    """Gate C exit-0 sözleşmesi (fail-closed): tüm gate yeşil + eşikler kalibre
+    + gerçek (sentetik olmayan) fixture. Sentetik fixture kalibrasyon sonrası
+    da pilot-open=True VERMEZ."""
+    return (
+        all_pass
+        and thresholds.get("_status") != "uncalibrated"
+        and not fixture.get("_synthetic")
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("fixture", nargs="?", default=os.path.join(HERE, "fixtures", "example-fixture.json"))
@@ -68,18 +79,16 @@ def main() -> int:
         print(f"  [{'YEŞİL' if ok else 'KIRMIZI'}] {name}: {detail}")
         all_pass = all_pass and ok
 
-    uncalibrated = th.get("_status") == "uncalibrated"
-    if uncalibrated:
+    if th.get("_status") == "uncalibrated":
         print("  ⚠️  EŞİKLER KALİBRE DEĞİL (placeholder) — golden fixture'da kilitlenecek; "
               "bu koşu yalnız harness'i doğrular, pilot-open kararı VERMEZ.")
     if fixture.get("_synthetic"):
         print("  ⚠️  Fixture SENTETİK — gerçek kalite kanıtı değil.")
 
-    # Pilot-open için: hem tüm gate yeşil hem eşikler kalibre olmalı.
-    pilot_ready = all_pass and not uncalibrated and not fixture.get("_synthetic")
+    pilot_ready = pilot_open_ready(all_pass, th, fixture)
     print(f"\n  SONUÇ: gate'ler {'tümü YEŞİL' if all_pass else 'KIRMIZI var'}; "
           f"pilot-open hazır = {pilot_ready}")
-    return 0 if (all_pass and not uncalibrated) else 1
+    return 0 if pilot_ready else 1
 
 
 if __name__ == "__main__":
