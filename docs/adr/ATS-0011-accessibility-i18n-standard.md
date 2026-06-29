@@ -13,11 +13,11 @@
 
 **Tüm P1 UI yüzeyleri (web + mobile + desktop) WCAG 2.2 Level AA + Türkçe-first i18n standardına uyar.** Kanonik kriter kaydı: [docs/frontend/a11y-i18n-standard.md](../frontend/a11y-i18n-standard.md) (machine-checked: `scripts/check-a11y-standard.mjs`, CI job `a11y-standard-guard`).
 
-### 1. Erişilebilirlik (WCAG 2.2 AA — bağlayıcı bar)
-A + AA başarı kriterleri; 2.2'nin yeni kriterleri dahil: **2.4.11 Focus Not Obscured**, **2.5.8 Target Size (≥24px)**, **3.2.6 Consistent Help**, **3.3.7 Redundant Entry**, **3.3.8 Accessible Authentication**. Klavye-tam-erişim, görünür focus, 4.5:1 metin / 3:1 UI kontrast, semantic rol/ad/değer, status message duyurusu, renk-tek-başına-anlam YASAK.
+### 1. Erişilebilirlik (WCAG 2.2 A+AA — bağlayıcı bar)
+WCAG 2.2 **A + AA başarı kriterlerinin TAMAMI** (55 kriter, registry'de tam liste; AAA hariç bilinçli sınır; `4.1.1 Parsing` 2.2'de obsolete → hariç). 2.2'nin yeni kriterleri dahil: **2.4.11 Focus Not Obscured (AA)**, **2.5.7 Dragging Movements (AA)**, **2.5.8 Target Size ≥24px (AA)**, **3.2.6 Consistent Help (A)**, **3.3.7 Redundant Entry (A)**, **3.3.8 Accessible Authentication (AA)**. Klavye-tam-erişim, görünür focus, 4.5:1 metin / 3:1 UI kontrast, semantic rol/ad/değer, status message duyurusu, renk-tek-başına-anlam YASAK. Drift-guard tam-set + seviye eşleşmesini makine-doğrular (eksik/fazla/yanlış-seviye reddedilir).
 
 ### 2. i18n (Türkçe-first)
-Varsayılan locale **tr-TR**; tüm UI metni **dışsallaştırılmış** (hardcoded string YASAK); ICU message-format + **çoğulluk**; **locale-duyarlı** tarih/sayı/para (₺ TL); cümle için **string-concatenation YASAK**; çeviri-anahtarı bütünlüğü (eksik/orphan key YOK); **yön-bağımsız** layout (logical CSS; RTL-ready, zorunlu değil); `lang`/content-language doğru.
+Varsayılan locale **tr-TR**; tüm UI metni **dışsallaştırılmış** (hardcoded string YASAK); ICU message-format + **çoğulluk**; **locale-duyarlı** tarih/sayı/para (`Intl.NumberFormat('tr-TR',{currency:'TRY'})`, literal ₺ YASAK); cümle için **string-concatenation YASAK**; çeviri-anahtarı bütünlüğü (eksik/orphan key YOK); **yön-bağımsız** layout (logical CSS; RTL-ready, zorunlu değil); `lang`/content-language doğru; **Türkçe case/collation** (`toLocale*('tr-TR')` + `Intl.Collator('tr-TR')` — I/İ/ı/i arama-filtre bug guard); **timezone politikası** (UI display `Europe/Istanbul` vs tenant policy ayrımı).
 
 ### 3. Enforcement planı (gate-locked → P1 UI ile aktif)
 - `eslint-plugin-jsx-a11y` (statik) + **axe-core** (jest-axe / @axe-core/playwright, runtime) CI job.
@@ -27,7 +27,7 @@ Varsayılan locale **tr-TR**; tüm UI metni **dışsallaştırılmış** (hardco
 
 ## Sonuçlar
 
-**Olumlu:** procurement-ready erişilebilirlik duruşu; Türkçe-first gün-1 doğru; retrofit maliyeti yok; UI primitives [[ATS-0001]] boundary'siyle tutarlı kurulur.
+**Olumlu:** procurement-aligned erişilebilirlik/i18n standardı (uyumun **kanıtı** P1 axe/eslint testleriyle gelir); Türkçe-first gün-1 doğru; retrofit maliyeti yok; UI primitives [[ATS-0001]] boundary'siyle tutarlı kurulur.
 **Olumsuz:** P1 UI hızını bir miktar yavaşlatır (a11y/i18n disiplini); axe/eslint CI bütçesi; design-system kontrast/target token işi gerektirir.
 
 ## Gate disiplini
