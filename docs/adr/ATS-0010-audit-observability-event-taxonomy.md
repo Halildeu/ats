@@ -1,6 +1,6 @@
 # ATS-0010 — Audit & Observability Event Taxonomy
 
-- **Durum:** Önerildi (cross-AI review bekliyor)
+- **Durum:** Kabul edildi (cross-AI AGREE — Codex thread 019f1354, REVISE→PARTIAL→AGREE iter-3)
 - **Tarih:** 2026-06-29
 - **Bağlam kaynağı:** Gate-safe hardening backlog #3 (Codex thread 019f12e2) · cross-AI PR review thread 019f1354 (REVISE absorb iter-2) · [[ATS-0003]] WORM evidence-ledger · [[ATS-0007]] threat model (T-R1/T-R2 repudiation, **T-I6** operasyonel log PII sızıntısı) · [docs/security/threat-register.md](../security/threat-register.md)
 - **Karar tipi:** Gözlemlenebilirlik / denetim mimarisi (gate-safe; emisyon kodu P1)
