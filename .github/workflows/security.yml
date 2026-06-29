@@ -1,0 +1,31 @@
+name: security
+
+# ATS-0007 supply-chain: secret-scan (gitleaks) + dependency-review (vuln/lisans).
+# Native GitHub secret-scanning + push-protection da AÇIK (repo ayarı). Action SHA-pin.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+
+  dependency-review:
+    # PR'larda yeni bağımlılıkların güvenlik/lisans incelemesi (public'te ücretsiz).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
+        with:
+          fail-on-severity: high

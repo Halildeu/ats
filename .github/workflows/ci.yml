@@ -2,6 +2,7 @@ name: ci
 
 # Public repo → GitHub-hosted runner (ücretsiz + güvenli). ATS-0009: ats public
 # yapıldığı için self-hosted KALDIRILDI (public + self-hosted = fork-PR RCE riski).
+# ATS-0007: action'lar SHA-pin (supply-chain provenance).
 
 on:
   push:
@@ -15,7 +16,7 @@ jobs:
   boundary-guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: ATS-0001 boundary guard
         run: bash scripts/check-boundary.sh
 
@@ -25,8 +26,8 @@ jobs:
       run:
         working-directory: contracts
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "20"
       - name: install
@@ -42,8 +43,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
         with:
           distribution: temurin
           java-version: "21"
