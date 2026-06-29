@@ -4,6 +4,7 @@
 - **Tarih:** 2026-06-23
 - **Bağlam kaynağı:** Private `ats-strategy` canon · regülasyon: EU AI Act, KVKK, NYC LL144, Mobley v. Workday
 - **Karar tipi:** AI-governance / legal-posture (gate-safe; ürünün hukuki kalkanı)
+- **İzlenebilir index:** [docs/ai-governance/eu-ai-act-technical-file-index.md](../ai-governance/eu-ai-act-technical-file-index.md) — EU AI Act madde→artefakt→residual readiness matrisi (public, machine-checked: `eu-ai-act-guard`; overclaim-yasağı).
 
 ## Bağlam
 

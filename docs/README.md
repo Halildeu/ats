@@ -23,6 +23,9 @@
 ## Gözlemlenebilirlik (public, living)
 - [observability/event-taxonomy.md](./observability/event-taxonomy.md) — ATS-0010 kanonik operasyonel event registry'si (zarf + PII-redaction invariantı; drift-guard `event-taxonomy-guard`). İş-kanıtı WORM ledger'dan ayrı düzlem.
 
+## AI yönetişimi (public, living)
+- [ai-governance/eu-ai-act-technical-file-index.md](./ai-governance/eu-ai-act-technical-file-index.md) — ATS-0005 EU AI Act madde→artefakt **readiness** indeksi (drift-guard `eu-ai-act-guard`; overclaim-yasağı). Uygunluk beyanı DEĞİL.
+
 ## Mahremiyet / veri-yaşam-döngüsü (public, living)
 - [privacy/data-lifecycle-register.md](./privacy/data-lifecycle-register.md) — ATS-0003 operationalized: veri-sınıfı × retention/erasure/transfer kanonik matrisi (drift-guard `data-lifecycle-guard`). WORM-içerik-yasağı + crypto-erase/unlinkable invariantları makine-zorlanır (DPO/procurement yüzeyi).
 

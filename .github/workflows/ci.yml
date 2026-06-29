@@ -123,3 +123,16 @@ jobs:
           node-version: "20"
       - name: data-lifecycle drift guard
         run: node scripts/check-data-lifecycle.mjs
+
+  eu-ai-act-guard:
+    # docs/ai-governance/eu-ai-act-technical-file-index.md drift guard (ATS-0005):
+    # required AB AI Act maddeleri + statü vocab + overclaim-yasağı (compliant/certified/
+    # conformity/uygundur) + mapped-artefakt çözünürlüğü (mevcut path/[[ATS-XXXX]]/PRIVATE).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: eu-ai-act-index drift guard
+        run: node scripts/check-eu-ai-act-index.mjs
