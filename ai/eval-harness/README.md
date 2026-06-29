@@ -1,6 +1,6 @@
 # ATS-0004 Eval-Harness (pilot-open Gate C ölçüm rig'i)
 
-> Mülakat-AI kalite metriklerini **golden Türkçe fixture** üzerinde ölçer ve `thresholds.json` ile kıyaslar. ATS-0004 + [pilot-open release checklist](../../docs/G0/g0-pilot-open-release-checklist.md) Gate C'nin makine-uygulanabilir karşılığı. **Build değil, ölçüm altyapısı** (gate-safe).
+> Mülakat-AI kalite metriklerini **golden Türkçe fixture** üzerinde ölçer ve `thresholds.json` ile kıyaslar. ATS-0004 + pilot-open release checklist (private `ats-strategy` repo) Gate C'nin makine-uygulanabilir karşılığı. **Build değil, ölçüm altyapısı** (gate-safe).
 
 ## Neden var
 ATS-0004 "eval-gate-first" diyor: bir provider (self-host / cloud) ancak golden Türkçe fixture eşiklerini **kanıtlarsa** pilot-open Gate C yeşil olur. Bu rig o ölçümü standardize eder → fixture gelince eşikler tek komutla kontrol edilir, provider değişiminde regresyon yakalanır.

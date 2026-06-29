@@ -4,7 +4,7 @@
 
 Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalışan, Türkçe/on-prem opsiyonlu, kaynak-alıntılı, insan-onaylı, denetlenebilir mülakat **kanıt dosyası** add-on'u. Full ATS DEĞİL (land-and-expand, gated). Bağımsız multi-tenant SaaS.
 
-> Kanonik plan: `ats-planlama/00-ATS-MASTER-PLAN.md` (v3.x, 3-AI mutabakat). ADR seti: `ats-planlama/adr/ATS-0001..0007`.
+> Mimari/güven ADR'leri: [docs/adr/](./docs/adr/) (ATS-0001..0009, public). **Strateji/GTM/G0/rekabet/procurement kanonu: private `Halildeu/ats-strategy` repo** (CONFIDENTIAL).
 
 ## ⛔ Gate disiplini (kritik)
 
