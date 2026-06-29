@@ -27,8 +27,8 @@ public sealed interface Outcome<T> permits Outcome.Ok, Outcome.Fail {
         return this instanceof Ok<T>;
     }
 
-    /** Ok ise değeri, değilse empty. (Record accessor value() ile çakışmaması için ayrı ad.) */
+    /** Ok ise değeri, değilse empty. ofNullable: Outcome&lt;Void&gt; ok(null) NPE üretmez. */
     default Optional<T> asOptional() {
-        return this instanceof Ok<T> ok ? Optional.of(ok.value()) : Optional.empty();
+        return this instanceof Ok<T> ok ? Optional.ofNullable(ok.value()) : Optional.empty();
     }
 }

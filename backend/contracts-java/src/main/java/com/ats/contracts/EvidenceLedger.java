@@ -4,9 +4,9 @@ import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
+import com.ats.kernel.JsonValue;
 import com.ats.kernel.Outcome;
 import java.util.List;
-import java.util.Map;
 
 /**
  * ATS-0001 #2 EvidenceLedger (TS mirror) — WORM append-only (ADR-0003).
@@ -14,7 +14,7 @@ import java.util.Map;
  */
 public interface EvidenceLedger {
 
-    /** occurredAt ISO-8601 string (Date değil); payload JSON-uyumlu (Map<String,Object>). */
+    /** occurredAt ISO-8601 string (Date değil); payload derin-immutable JSON (JsonValue). */
     record EvidenceEvent(
             TenantId tenantId,
             ActorId actorId,
@@ -23,7 +23,7 @@ public interface EvidenceLedger {
             String occurredAt,
             String idempotencyKey,
             String contentHash,
-            Map<String, Object> payload) {}
+            JsonValue.JsonObject payload) {}
 
     record LedgerEntry(
             EvidenceId evidenceId,

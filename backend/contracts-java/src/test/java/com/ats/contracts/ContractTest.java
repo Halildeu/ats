@@ -17,6 +17,7 @@ import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.PacketId;
 import com.ats.kernel.Ids.TenantId;
+import com.ats.kernel.JsonValue;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.Outcome.Fail;
 import com.ats.kernel.OutcomeCode;
@@ -82,7 +83,7 @@ class ContractTest {
             // immutable payload (WORM): JSON-uyumlu kopya
             EvidenceEvent frozen = new EvidenceEvent(event.tenantId(), event.actorId(), event.interviewId(),
                     event.eventType(), event.occurredAt(), event.idempotencyKey(), event.contentHash(),
-                    event.payload() == null ? Map.of() : Map.copyOf(event.payload()));
+                    event.payload() == null ? JsonValue.object(Map.of()) : event.payload());
             String hash = sha256(prev + "|" + seq + "|" + frozen);
             LedgerEntry entry = new LedgerEntry(new EvidenceId("ev-" + seq), seq, prev, hash, frozen);
             entries.add(entry);
@@ -93,7 +94,9 @@ class ContractTest {
                 EvidenceId target, String reason) {
             return append(new EvidenceEvent(t, a, i, "EVIDENCE_TOMBSTONE",
                     "1970-01-01T00:00:00.000Z", "tombstone:" + target.value(),
-                    sha256(target.value() + ":" + reason), Map.of("target", target.value(), "reason", reason)));
+                    sha256(target.value() + ":" + reason),
+                    JsonValue.object(Map.of("target", JsonValue.of(target.value()),
+                            "reason", JsonValue.of(reason)))));
         }
 
         public Outcome<LedgerEntry> getById(TenantId tenantId, EvidenceId id) {
@@ -176,20 +179,29 @@ class ContractTest {
     void ledger_payload_is_immutable_WORM() {
         var l = new InMemoryEvidenceLedger();
         var ok = (Outcome.Ok<EvidenceLedger.LedgerEntry>) l.append(evt("k1", "A"));
-        // Map.copyOf → unmodifiable; mutasyon UnsupportedOperationException fırlatır
-        boolean threw = false;
+        var payload = ok.value().event().payload();
+        // derin-immutable: hem top-level map hem nested array mutasyonu fırlatır
+        boolean topThrew = false, nestedThrew = false;
         try {
-            ok.value().event().payload().put("x", "y");
+            payload.values().put("x", JsonValue.of("y"));
         } catch (UnsupportedOperationException ex) {
-            threw = true;
+            topThrew = true;
         }
-        assertTrue(threw, "WORM payload immutable olmalı");
+        var nested = (JsonValue.JsonArray) payload.values().get("nested");
+        try {
+            nested.items().add(JsonValue.of(2.0));
+        } catch (UnsupportedOperationException ex) {
+            nestedThrew = true;
+        }
+        assertTrue(topThrew && nestedThrew, "WORM payload derin-immutable olmalı");
     }
 
     private static EvidenceLedger.EvidenceEvent evt(String key, String type) {
         return new EvidenceLedger.EvidenceEvent(new TenantId("t1"), new ActorId("a1"),
                 new InterviewId("iv1"), type, "2026-06-29T00:00:00.000Z", key, "h-" + key,
-                Map.of("note", "n"));
+                JsonValue.object(Map.of(
+                        "note", JsonValue.of("n"),
+                        "nested", new JsonValue.JsonArray(List.of(JsonValue.of(1.0))))));
     }
 
     // ---- AIProvider / ATSConnector fail-closed ----

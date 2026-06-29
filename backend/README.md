@@ -24,5 +24,8 @@ cd backend
 mvn -q test    # shared-kernel + contracts-java: contract + fail-closed + forbidden-surface + ArchUnit
 ```
 
+## TS canonical parity (merge bağımlılığı — Codex WS-3)
+`contracts-java`, TS `contracts/` (ATS-0001 kanonik, **PR #5** — henüz main'de değil) **mirror'ıdır**. Parity bu branch'te **doğrulanmadı** (TS kaynağı main'de yok). Merge sırası: **TS contracts (PR #5) önce main'e** → sonra WS-3; ya da parity golden-check aynı anda. `JsonValue` (shared-kernel) TS `JsonValue` ile birebir mirror — drift azaltır.
+
 ## CI notu
 ats main'de workflow yok (Actions **billing** owner-blocked). Bu skeleton **local-verify**lidir; canonical gate "contract-test + CI guard" gereği **CI yeşillenmeden main'e "tamam" diye merge edilmez** (Codex WS-3 (d)) — billing düzelince workflow + merge.
