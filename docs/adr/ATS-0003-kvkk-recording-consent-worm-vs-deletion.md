@@ -42,5 +42,6 @@
 - **(D) Consent-domain MVP + WORM/deletion ayrımı (seçilen).**
 
 ## Bağlantı
+- **İzlenebilir register:** [docs/privacy/data-lifecycle-register.md](../privacy/data-lifecycle-register.md) — bu kararın veri-sınıfı × retention/erasure/transfer matrisi (public, living, machine-checked: `data-lifecycle-guard`). WORM-içerik-yasağı + crypto-erase/unlinkable invariantları makine-zorlanır.
 - [[ATS-0004]] human-approval/audit · [[ATS-0005]] AI-governance/EU-AI-Act · [[ATS-0001]] candidate-PII/transcript store boundary.
-- KVKK gate her PR (CLAUDE.md). Procurement artifact: DPA/DPIA/retention-matrix (P3).
+- KVKK gate her PR (CLAUDE.md). Procurement artifact: DPA/DPIA/retention-matrix (P3 — retention-matrix kanonik karşılığı data-lifecycle-register.md).
