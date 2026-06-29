@@ -6,7 +6,8 @@ ile kıyaslar → kırmızı/yeşil Gate C raporu basar. fail-closed (=1.0) SERT
 
 Kullanım:
     python run_eval.py [fixture.json] [--thresholds thresholds.json]
-Çıkış kodu: tüm gate'ler yeşil VE eşikler kalibre ise 0; aksi halde 1 (fail-closed).
+Çıkış kodu: tüm gate'ler yeşil VE eşikler kalibre VE fixture gerçek (sentetik değil)
+ise 0; aksi halde 1 (fail-closed). Bkz. pilot_open_ready().
 """
 from __future__ import annotations
 import argparse
