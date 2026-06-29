@@ -2,7 +2,16 @@
 
 > Codex WS-3 drift-guard: `backend/contracts-java` (Java) **mirror**'dır; `contracts/` (TS) **kanonik**tir.
 >
-> **Test kapsamı (dürüst sınır):** otomatik parity testleri (`parity.contract.test.ts` + `ParityTest.java`) yalnız **metot-adı yüzeyini** kilitler — parametre/dönüş **tipi**, DTO **shape**'i veya enum değerlerini karşılaştırmaz. **Tip/shape parity** bu dokümandaki tablolarla elle güvence altına alınır + kodda hizalı tutulur; tam yapısal parity ileride **contract codegen** ile otomatikleşecek (ATS-0007 hardening, deferred). Yani: metot-adı drift'i → test kırmızı; tip/shape drift'i → bu doküman + review yakalar.
+> **Test kapsamı (machine-enforced — full shape parity):** artık yalnız metot-adı değil; **metot param/return tipleri + DTO alan tipleri + enum üyeleri** de iki tarafta makine-uygulanır. Mekanizma:
+> 1. `contracts/tools/extract-surface.ts` TS kaynağından tüm yüzeyi **AST node**'larından çıkarır → dilden-bağımsız **token vocabulary**'sine normalize eder → `contract-surface.json` (TS-strict, opsiyonellik dahil) + `contract-surface.tokens.txt` (cross-language projeksiyon).
+> 2. `test/surface-parity.contract.test.ts` (vitest): re-extract → committed json + tokens ile **deep-equal**. TS'te herhangi bir tip/DTO/enum değişimi → kırmızı (bilinçli `npm run surface:gen` zorunlu).
+> 3. `SurfaceParityTest.java` (JUnit): 4 interface'i **reflection** ile okur → aynı token vocabulary'sine map'ler → `contract-surface.tokens.txt` (JSON dep'siz, `Files.readAllLines`) ile karşılaştırır. Java tarafında tip/DTO/enum drift'i → kırmızı.
+>
+> Kanıt (negatif test): tokens.txt'e sahte satır → Java testi BUILD FAILURE; geri al → yeşil. Yani metot-adı **ve** tip/shape/enum drift'i artık review değil **test** yakalar.
+>
+> **Dürüst sınır (kalan):** (a) optional/nullable cross-language karşılaştırılmaz — Java record opsiyonelliği ifade edemez; opsiyonellik TS json deep-equal ile (TS-only) kilitli. (b) `Entailment` enum'u top-level değil, `CitationResult.entailment` alan token'ıyla zorlanır (TS'te isimsiz inline union). (c) `CitationId` (TS branded) hiçbir yüzeyde kullanılmadığı için Java'da yok — token yüzeyinde görünmez.
+>
+> **Token vocabulary:** `string|number|boolean|void|Json` · `id:<Brand>` · `array:<elem>` · `outcome:<inner>` · `dto:<SimpleName>` · `enum:<sorted-members>`.
 
 ## Kanonik yüzey (4 sözleşme)
 
@@ -18,7 +27,7 @@
 `createCandidate`/`updateCandidate`/`advanceCandidate`/`writeScore`/`moveStage` ·
 EvidenceLedger'da `update`/`delete`/`overwrite`/`purge`/`replace`/`remove` (WORM).
 
-## Tip / shape parity (elle güvence — kod hizalı)
+## Tip / shape parity (machine-enforced — extractor + reflection)
 - `Outcome<T>` fail-closed (TS `{ok,code,reason}` ↔ Java sealed `Ok|Fail`).
 - `JsonValue` derin-immutable (TS sealed union ↔ Java sealed interface).
 - Branded id'ler (TS `Brand<string>` ↔ Java `Ids.*` record) — runtime düz string.
@@ -33,4 +42,4 @@ EvidenceLedger'da `update`/`delete`/`overwrite`/`purge`/`replace`/`remove` (WORM
 
 > Codex WS-3 tespitiyle hizalandı: Java `list` eskiden yalnız `eventType` alıyordu (interviewId yoktu) + `LedgerEntry` nested'di → ikisi de TS-flat canonical'a çekildi.
 
-> Değişiklik kuralı: bir sözleşmenin yüzeyi değişince **önce bu tablo** + iki taraftaki parity testi güncellenir; sonra impl. Aksi halde parity testi kırmızı.
+> Değişiklik kuralı: bir sözleşmenin TS yüzeyi değişince → `npm run surface:gen` ile `contract-surface.json` + `.tokens.txt` yeniden üret + bu tabloyu güncelle + Java mirror'ı hizala. Aksi halde: TS değişip regen edilmezse `surface-parity` (vitest) kırmızı; Java mirror hizalanmazsa `SurfaceParityTest` (JUnit) kırmızı.
