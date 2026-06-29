@@ -34,7 +34,7 @@ Holding kurumları **friendly** sayılır. Tam **G0=GO** için (turnkey pack kri
 
 ### 📡 Telekom
 - **İşe-alım profili:** teknik (şebeke/yazılım/saha) + çağrı-merkezi yüksek-hacim + düzenli kadro.
-- **Neden interview-evidence:** **regülasyon + denetim** ağırlıklı sektör → audit-ready kanıt + bias-azaltma (kurumsal yönetişim) güçlü satış.
+- **Neden interview-evidence:** **regülasyon + denetim** ağırlıklı sektör → audit-ready kanıt + bias-risk yönetimi / tutarlılık kanıtı (kurumsal yönetişim) güçlü satış.
 - **KVKK/DPO açısı:** olgun DPO/InfoSec (sektör regülasyonu) → **en iyi procurement-pack provası**; güçlü güvenlik soruları (security-posture-whitepaper burada işe yarar).
 - **ATS:** olgun kurumsal ATS (write-back-3-koşul gündeme gelebilir).
 - **Golden fixture:** teknik + çağrı-merkezi pozisyon paneli (terminoloji + telefon-sesi varyasyonu).
