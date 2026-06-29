@@ -7,9 +7,15 @@
 > 2. `test/surface-parity.contract.test.ts` (vitest): re-extract → committed json + tokens ile **deep-equal**. TS'te herhangi bir tip/DTO/enum değişimi → kırmızı (bilinçli `npm run surface:gen` zorunlu).
 > 3. `SurfaceParityTest.java` (JUnit): 4 interface'i **reflection** ile okur → aynı token vocabulary'sine map'ler → `contract-surface.tokens.txt` (JSON dep'siz, `Files.readAllLines`) ile karşılaştırır. Java tarafında tip/DTO/enum drift'i → kırmızı.
 >
-> Kanıt (negatif test): tokens.txt'e sahte satır → Java testi BUILD FAILURE; geri al → yeşil. Yani metot-adı **ve** tip/shape/enum drift'i artık review değil **test** yakalar.
+> **Sessiz-miss kapalı (Codex 019f131f REVISE absorbe):**
+> - **Discovery, elle-liste YOK:** TS kaynak dosyaları `src/*.ts` glob ile; Java contract'ları `com.ats.contracts` paket **kaynak dizininden** keşfedilir. Yeni dosya/interface eklenince otomatik kapsama girer (eklenmeyi unutmak drift'i gizleyemez).
+> - **Orphan/named enum:** committed `E` satırları canonical named-enum kümesini belirler; canonical bir enum'u named edip Java'da yoksa → fail; tanımlı ama referanssız + named-olmayan enum → fail.
+> - **Fail-fast:** mixed interface (method+property) · contract inheritance · method overload · desteklenmeyen üye → iki tarafta da test kırmızı (TS extractor throw / Java `fail`).
+> - **JSON `optional`+`nullable` korunur:** method param `optional`/`nullable` + DTO field `nullable` artık `contract-surface.json`'da tutulur (canon'da erimez) → TS-only deep-equal yakalar.
 >
-> **Dürüst sınır (kalan):** (a) optional/nullable cross-language karşılaştırılmaz — Java record opsiyonelliği ifade edemez; opsiyonellik TS json deep-equal ile (TS-only) kilitli. (b) `Entailment` enum'u top-level değil, `CitationResult.entailment` alan token'ıyla zorlanır (TS'te isimsiz inline union). (c) `CitationId` (TS branded) hiçbir yüzeyde kullanılmadığı için Java'da yok — token yüzeyinde görünmez.
+> Kanıt (negatif testler): (1) tokens.txt'e sahte satır → Java BUILD FAILURE; (2) canonical'a sahte named enum → "Java'da bulunamadı" FAILURE; geri al → yeşil. Yani metot-adı **ve** param/return tipi, DTO shape, enum üyesi, yeni-yüzef drift'i artık review değil **test** yakalar.
+>
+> **Dürüst kalan sınır:** (a) optional/nullable **cross-language** karşılaştırılmaz — Java record opsiyonelliği ifade edemez; TS json deep-equal ile (TS-only) kilitli. (b) numeric = **JSON-level parity** (Java `long`/`int`/`double` hepsi `number`; range/precision drift'i kapsam dışı). (c) `Entailment` enum'u top-level değil, `CitationResult.entailment` alan token'ıyla zorlanır (TS'te isimsiz inline union). (d) `CitationId` (TS branded) hiçbir yüzeyde kullanılmadığı için Java'da yok — token yüzeyinde görünmez.
 >
 > **Token vocabulary:** `string|number|boolean|void|Json` · `id:<Brand>` · `array:<elem>` · `outcome:<inner>` · `dto:<SimpleName>` · `enum:<sorted-members>`.
 
