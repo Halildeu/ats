@@ -50,10 +50,11 @@
 | **T-R1** | Repudiation | K5 | "Bu kararı ben vermedim" inkârı | Olay actor+occurredAt+idempotencyKey+contentHash hash-zincirli LedgerEntry | `contracts/test/evidence-ledger.contract.test.ts` (hash chain + sequence; sözleşme/stub) | enforced (CI) |
 | **T-R2** | Repudiation | K5 | Olay anında kanıt üretememe (operational) | Incident-response runbook + audit-evidence export — [[ATS-0007]] §6 | runbook + export pipeline | gate-locked |
 | **T-I1** | Info-disclosure | K6 | Cross-tenant veri sızıntısı (depo/sorgu/job/log/backup) | Tenant-scoped her yüzey + per-tenant KMS; kod-seviye fail-closed — [[ATS-0002]] | `backend/contracts-java/src/test/java/com/ats/contracts/ContractTest.java` (`assertTenantScope` TENANT_SCOPE_VIOLATION; sözleşme) — storage scoping gate-locked | enforced (CI) / gate-locked (storage) |
-| **T-I2** | Info-disclosure | K4 | Model çıktısında PII sızıntısı (model-output-leak) | LLM çıktı PII-guard + citation = yalnız kaynak alıntı — [[ATS-0004]]/[[ATS-0005]] | output-redaction testi (+ audit/observability taxonomy backlog) | gate-locked |
+| **T-I2** | Info-disclosure | K4 | Model çıktısında PII sızıntısı (model-output-leak; operasyonel log düzlemi ayrı → T-I6) | LLM çıktı PII-guard + citation = yalnız kaynak alıntı — [[ATS-0004]]/[[ATS-0005]] | output-redaction testi (runtime, gate-locked) | gate-locked |
 | **T-I3** | Info-disclosure | K1 | Egress/connector üzerinden veri exfil | Egress allowlist (model/provider/ATS yolu) — [[ATS-0007]] §6 | netpol + deployment checklist | gate-locked |
 | **T-I4** | Info-disclosure | K8 | Key compromise / cross-tenant key reuse / rotation-failure / backup-key leak / salt-destruction failure | Per-tenant KMS key · rotation politikası · şifreli backup · erasure=salt-key destruction — [[ATS-0007]] §2, [[ATS-0003]] | KMS/rotation/break-glass testleri | gate-locked |
 | **T-I5** | Info-disclosure | K4 | Provider retention/training/log kanalına aday verisi sızması | No-train/DPA + provider-retention-off + self-host mode + egress allowlist + audit evidence — [[ATS-0004]] | provider sözleşme + config conformance | gate-locked |
+| **T-I6** | Info-disclosure | K6 | Operasyonel telemetri/log kanalına PII sızması veya log-exfiltration (model-output-leak'ten ayrı; teşhis/observability düzlemi) | Kanonik event taksonomi + zarf + **fail-closed PII-redaction invariantı** (yasak `pii_class` §2 event registry satırlarında imkânsız, CI-enforced) + tenant-safe log RBAC + on-prem egress-yok — [[ATS-0010]], [[ATS-0007]] §6 | `scripts/check-event-taxonomy.mjs` (CI `event-taxonomy-guard`; registry fail-closed) — runtime serializer redaksiyonu gate-locked (P1) | enforced (CI) / gate-locked (runtime) |
 | **T-D1** | DoS | K3 | Büyük/kötücül upload ile kaynak tüketimi | Boyut/oran limiti + attachment sandbox/scan | ingest guard | gate-locked |
 | **T-D2** | DoS | K4 | AI/provider maliyet & kota DoS (runaway job, provider outage, queue exhaustion) | Per-tenant quota · job timeout · backpressure · circuit-breaker · retry budget | orchestration guard | gate-locked |
 | **T-E1** | Elevation | K2/K6 | RBAC bypass (audit-reader → editor/admin) | Least-privilege RBAC; admin-impersonation loglu+sınırlı; break-glass time-boxed+dual-control — [[ATS-0007]] §3 | RBAC test matrisi + break-glass dual-control testi | gate-locked |
@@ -82,6 +83,7 @@
 | Citation fail-closed metrik invariant | `ai-eval` | `ai/eval-harness/tests/test_metrics.py` |
 | Tedarik zinciri (secret/dep/SHA-pin) | `gitleaks` + `dependency-review` | `.github/workflows/security.yml` |
 | Register bütünlüğü (bu doküman) | `threat-register-guard` | `scripts/check-threat-register.mjs` |
+| Operasyonel event taksonomi (PII-redaction fail-closed invariantı, T-I6) | `event-taxonomy-guard` | `scripts/check-event-taxonomy.mjs` |
 
 ## 5. Gate ilişkisi
 
