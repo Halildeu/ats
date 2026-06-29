@@ -11,7 +11,7 @@
 - **Ham içerik YOK:** paket ham medya/transkript/PII **taşımaz**; yalnız referans + hash (`excluded_raw_content: true`, [[ATS-0003]]).
 - **Skor/sıralama/affect YOK:** `score`/`ranking`/`affect`/`sentiment`/`emotion` alanları **şema + örnek + guard** seviyesinde yasak ([[ATS-0005]] assist-not-conduct).
 - **Her iddia citation'lı:** `claims[].source_segment_refs ≥ 1` + `entailment` (supported/partially/unsupported). **unsupported iddialar karar-kanıtı olarak SUNULMAZ** (`flag-and-exclude-from-decision`).
-- **İnsan hesap-verebilirliği:** `human_decision` = **6 pointer** (`human_actor_ref`/`oversight_role_ref`/`human_authored_rationale_ref`/`source_evidence_refs`/`ai_output_version_ref`/`decision_outcome_ref`) — [docs/governance/human-oversight-standard.md](../governance/human-oversight-standard.md) FINALIZED ile **birebir** hizalı. `source_evidence_refs` yalnız / +  claim'lere işaret edebilir (guard).
+- **İnsan hesap-verebilirliği:** `human_decision` = **6 pointer** (`human_actor_ref`/`oversight_role_ref`/`human_authored_rationale_ref`/`source_evidence_refs`/`ai_output_version_ref`/`decision_outcome_ref`) — [docs/governance/human-oversight-standard.md](../governance/human-oversight-standard.md) FINALIZED ile **birebir** hizalı. `source_evidence_refs` yalnız `supported`/`partially_supported` + `human_reviewed` claim'lere işaret edebilir (guard reddeder `unsupported`).
 - **Bütünlük/provenance:** `generated_at` · `generator_version_ref` · `locale`/`timezone` · `integrity` (sha256 schema/packet digest + signature_ref) · `worm_chain_refs` · `ai_assistance_disclosure_ref` · `export_event_ref`.
 
 ## 1. Bölümler (şema required)
@@ -37,9 +37,10 @@
 
 ## 2. Doğrulama (drift-guard `scripts/check-evidence-packet.mjs`)
 
-- Minimal JSON-Schema validator (no-dep): sample şemaya uyar (type/const/enum/required/`additionalProperties:false`/items/minItems/uniqueItems/minLength).
-- Forbidden-field deep-scan (şema + sample): ham/PII/skor/affect alan adları hiçbir yerde yok.
-- Claim invariantı: her claim `source_segment_refs≥1` + geçerli entailment; unsupported policy = flag-and-exclude.
+- Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`): sample şemaya uyar; **desteklenmeyen keyword görürse FAIL** (silent under-validation guard).
+- Forbidden-field alias deep-scan (regex, TR+EN; şema + sample): ham/PII/skor/sıralama/affect alan adları yok; tüm değerler opak-ref pattern (PII smuggling yapısal engelli).
+- Cross-invariant: `claim_id`+`criterion_id` tekil; claim.criterion_id ∈ rubric; `source_evidence_refs` ⊆ claims (`unsupported` değil + `human_reviewed`).
+- **Gömülü self-test:** 7 negatif vektör (unsupported-evidence/unknown-criterion/pii-free-text/forbidden-alias/duplicate-claim/unsupported-keyword/raw-content) her CI koşusunda fail-doğrulanır (durable regression).
 
 ## 3. Bağlantı
 - [[ATS-0004]] (citation/eval/human-approval) · [[ATS-0005]] (assist-not-conduct) · [[ATS-0003]] (WORM/redaction) · human-oversight-standard (FINALIZED) · data-lifecycle (`evidence_packet`/`claim_citation_ref`) · eu-ai-act Art.12/13. PRIVATE: redacted sample-evidence-packet (`ats-strategy`).
