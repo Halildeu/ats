@@ -4,7 +4,7 @@
  *
  * docs/privacy/data-lifecycle-register.md (header-eşlemeli sütun parse):
  *  1. 25 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
- *  2. Sözlük: sensitivity/plane/deletion/WORM/identity-binding/transfer/status.
+ *  2. Sözlük: sensitivity/plane/deletion/WORM/WORM-identity-binding/transfer/status.
  *  3. İnvariantlar:
  *     1) content/raw-pii/secret 'worm-ledger'de OLAMAZ.
  *     2) worm-ledger → WORM=EVET + deletion=tombstone-append + identity-binding∈{HMAC-destroyable,no-subject}.
@@ -49,7 +49,7 @@ const cols = headerLine.split("|").slice(1, -1).map((c) => c.trim());
 const idx = (n) => cols.findIndex((c) => c.toLowerCase() === n.toLowerCase());
 const I = {
   cls: idx("Data Class"), sens: idx("sensitivity"), plane: idx("Plane"), legal: idx("Legal basis"),
-  ret: idx("Retention"), del: idx("Deletion"), worm: idx("WORM"), idb: idx("Identity-binding"),
+  ret: idx("Retention"), del: idx("Deletion"), worm: idx("WORM"), idb: idx("WORM-identity-binding"),
   tr: idx("Transfer"), st: idx("Status"),
 };
 for (const [k, v] of Object.entries(I)) if (v < 0) errors.push(`header'da kolon eksik: ${k}`);
@@ -73,14 +73,18 @@ for (const line of lines) {
   if (!TRANSFER.has(tr)) errors.push(`${cls}: geçersiz transfer "${tr}"`);
   if (!STATUS.has(st)) errors.push(`${cls}: geçersiz status "${st}"`);
 
-  const sensitive = sens === "content" || sens === "raw-pii" || sens === "secret";
+  // 'mixed' de sensitive (content gizleme bypass guard'ı — Codex 019f13be iter-2)
+  const sensitive = sens === "content" || sens === "raw-pii" || sens === "secret" || sens === "mixed";
   // inv 1
   if (sensitive && plane === "worm-ledger") errors.push(`${cls}: İNV1 — ${sens} worm-ledger'de TUTULAMAZ (ATS-0003)`);
   // inv 2
   if (plane === "worm-ledger") {
     if (worm !== "EVET") errors.push(`${cls}: İNV2 — worm-ledger→WORM=EVET`);
     if (del !== "tombstone-append") errors.push(`${cls}: İNV2 — worm-ledger→deletion=tombstone-append`);
-    if (idb !== "HMAC-destroyable" && idb !== "no-subject") errors.push(`${cls}: İNV2 — worm-ledger identity-binding HMAC-destroyable/no-subject olmalı (statik hash yasak)`);
+    if (idb !== "HMAC-destroyable" && idb !== "no-subject") errors.push(`${cls}: İNV2 — worm-ledger WORM-identity-binding HMAC-destroyable/no-subject olmalı (statik hash yasak)`);
+  } else if (idb !== "n/a") {
+    // WORM-dışı satır → bu kolon n/a olmalı (semantik netlik — Codex iter-2)
+    errors.push(`${cls}: WORM-dışı satır WORM-identity-binding=n/a olmalı (bulundu: "${idb}")`);
   }
   // inv 3
   if (sensitive && !DELETABLE.has(del)) errors.push(`${cls}: İNV3 — ${sens} silinebilir olmalı (hard-delete/crypto-erase/transient; tombstone/n-a yasak)`);
