@@ -2,7 +2,7 @@
 
 - **Durum:** Kabul edildi (cross-AI AGREE — Codex thread 019ef3d9, REVISE→AGREE)
 - **Tarih:** 2026-06-23
-- **Bağlam kaynağı:** MASTER-PLAN v3.0 §5/§7 + rekabet analizi §3.5 · regülasyon: EU AI Act, KVKK, NYC LL144, Mobley v. Workday
+- **Bağlam kaynağı:** Private `ats-strategy` canon · regülasyon: EU AI Act, KVKK, NYC LL144, Mobley v. Workday
 - **Karar tipi:** AI-governance / legal-posture (gate-safe; ürünün hukuki kalkanı)
 
 ## Bağlam

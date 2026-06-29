@@ -1,6 +1,6 @@
 {
   "_synthetic": true,
-  "_note": "SENTETİK self-test fixture — gerçek mülakat DEĞİL. Yalnız harness'in uçtan uca çalıştığını kanıtlar. Gerçek golden fixture (rıza-alınmış Türkçe panel kaydı) owner/Zeynep tarafından eklenecek (G0 M6 kriter 6).",
+  "_note": "SENTETİK self-test fixture — gerçek mülakat DEĞİL. Yalnız harness'in uçtan uca çalıştığını kanıtlar. Gerçek golden fixture (rıza-alınmış Türkçe panel kaydı) operatör tarafından eklenecek (G0 M6 kriter 6).",
   "id": "synthetic-001",
   "reference": {
     "transcript": "merhaba ben üç yıl python ile çalıştım ve bir ekip yönettim",
