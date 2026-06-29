@@ -140,8 +140,9 @@ jobs:
 
   human-oversight-guard:
     # docs/governance/human-oversight-standard.md drift guard (ATS-0004/0005): karar state-machine;
-    # FINALIZED yalnız HUMAN_RATIONALE_RECORDED'dan + human_actor/rationale/evidence; ai→FINALIZED
-    # doğrudan yasak; YASAK auto-decision token'ları; sentinel state'ler; geçiş uçları tanımlı.
+    # FINALIZED yalnız HUMAN_RATIONALE_RECORDED'dan + 6 accountability alanı (actor/role/rationale/
+    # evidence/ai-version/outcome); ai→FINALIZED doğrudan yasak; re-open/terminal-çıkış yasak;
+    # YASAK auto-decision token'ları; mermaid/flow/gizli-transition reddi; sentinel state'ler.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

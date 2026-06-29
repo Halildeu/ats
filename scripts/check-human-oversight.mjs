@@ -30,12 +30,16 @@ const text = readFileSync(FILE, "utf8");
 const lines = text.split("\n");
 const errors = [];
 
-// inv 8: mermaid/flow + gizli FINALIZED geçişi
+// inv 8: mermaid/flow + gizli FINALIZED geçişi (arrow VE tablo-satırı biçimi)
+let finalTableRows = 0;
 lines.forEach((l, i) => {
   if (/-->/.test(l)) errors.push(`mermaid geçiş (-->) YASAK satır ${i + 1}`);
   if (/[{}]/.test(l)) errors.push(`flow-style ({}) YASAK satır ${i + 1}`);
-  if (/(->|→|-->)\s*FINALIZED/.test(l)) errors.push(`gizli FINALIZED geçişi (tablo dışı) satır ${i + 1}: "${l.trim().slice(0,50)}"`);
+  if (/(->|→|-->)\s*FINALIZED/.test(l)) errors.push(`gizli FINALIZED geçişi (arrow) satır ${i + 1}: "${l.trim().slice(0,50)}"`);
+  // tablo-satırı biçimi: | STATE | FINALIZED | ... | (doküman-geneli; yalnız §2'deki 1 tane meşru)
+  if (/^\|\s*[A-Z_]+\s*\|\s*FINALIZED\s*\|/.test(l.trim())) finalTableRows++;
 });
+if (finalTableRows !== 1) errors.push(`FINALIZED'e giden tablo-satırı tam 1 olmalı (bulundu ${finalTableRows} — §2 dışı gizli transition?)`);
 
 // inv 4: forbidden token (case-insensitive; yalnız §0 tanım satırı skip)
 lines.forEach((l, i) => {
