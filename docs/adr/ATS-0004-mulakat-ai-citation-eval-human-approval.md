@@ -2,7 +2,7 @@
 
 - **Durum:** Kabul edildi (cross-AI AGREE — Codex thread 019ef3d9, REVISE→AGREE); sayısal eval eşikleri golden fixture'da kilitlenecek (pilot-open şartı)
 - **Tarih:** 2026-06-23
-- **Bağlam kaynağı:** MASTER-PLAN v3.0 §7/§8 + rekabet analizi §3.3/§3.5 · Faz 24 [[project_faz24_tc_intelligence_adr0043]] [[reference_denetim_gpu_pc_bridge]]
+- **Bağlam kaynağı:** Private `ats-strategy` canon + [[ATS-0001]]/[[ATS-0003]]/[[ATS-0005]]/[[ATS-0007]]
 - **Karar tipi:** AI-çekirdek mimari (flagship; gate-safe — mevcut Faz 24 varlıklarına dayalı)
 - **Board:** [ats#3](https://github.com/Halildeu/ats/issues/3)
 
@@ -34,8 +34,8 @@ Aşağıdaki eşikler **golden Türkçe panel fixture'da** ölçülüp **kilitle
 
 ## Sonuçlar
 
-**Olumlu:** global 2 boşluğu (citation + egemen/Türkçe) aynı anda vurur; EU AI Act explainability/audit artefaktı doğal çıktı; defensible flagship.
-**Olumsuz:** gerçek Türkçe panel fixture + eval harness gerek (kriter 6, owner/Zeynep sağlar); 8GB VRAM → LLM ≤8B doğru-boyut kısıtı; entailment kalite + latency dengesi.
+**Olumlu:** citation + Türkçe/egemenlik uyumu, denetlenebilirlik ve açıklanabilirlik gereksinimlerini destekler; EU AI Act explainability/audit artefaktı doğal çıktı.
+**Olumsuz:** operator-provided / consented golden Türkçe fixture + eval harness gerek (kriter 6); self-host LLM boyut/VRAM kısıtı; entailment kalite + latency dengesi.
 
 ## Değerlendirilen alternatifler
 
