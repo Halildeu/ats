@@ -15,6 +15,9 @@
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
+## Güvenlik (public, living)
+- [security/threat-register.md](./security/threat-register.md) — STRIDE + LINDDUN → kontrol → test matrisi (ATS-0007 register'ı; bugün enforced guard'lar + gate-locked kontroller).
+
 ## Implementation (public, CI-yeşil)
 - `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)
 - `../backend/` — ats-core skeleton (shared-kernel + contracts-java + ArchUnit)
