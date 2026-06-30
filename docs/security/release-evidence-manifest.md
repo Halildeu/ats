@@ -1,0 +1,34 @@
+# Release Evidence Manifest (supply-chain / air-gap doğrulama)
+
+> **Public · living document.** Air-gapped/on-prem teslimde verilen paketin **doğrulanabilir kanıt** manifesti — "verdiğiniz paketin doğrulanabilir kanıt formatı nedir?" sorusunun cevabı ([[ATS-0007]] §6 supply-chain + on-prem checklist §2).
+> **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI yeşili = şema/sample drift. **Gerçek build evidence** (cosign imza, gerçek SBOM, SLSA attestation, gerçek vuln-scan) = release pipeline P3/gate-locked — bu doküman onların üretildiğini iddia ETMEZ.
+> **Şema:** [contracts/schemas/release-evidence.schema.json](../../contracts/schemas/release-evidence.schema.json) · **Örnek:** [contracts/samples/release-evidence.sample.json](../../contracts/samples/release-evidence.sample.json) · **Drift guard:** `scripts/check-release-evidence.mjs` (CI `release-evidence-guard`).
+
+## 0. İlke (fail-closed)
+
+- **Digest-pin:** image/release **moving-tag** (`:latest`/`:main`/`:stable`/`:edge`/`:dev`) YASAK; her image `sha256:` digest taşır (D30 immutable-artifact disiplini).
+- **Vuln disposition:** shippable release `vuln_scan.critical=0` + `high=0` (çözülmemiş critical/high YASAK); `disposition.critical_high_resolved: true`.
+- **Doğrulanabilirlik:** SBOM (spdx/cyclonedx) + **cosign/notation imza** + `verified_offline: true` (air-gap'te offline doğrulama) + **SLSA provenance** (L1-L3) + **trust-root** + revocation kontrolü.
+- **Model artefakt:** her model `sha256:` digest + provenance_ref (model zehirlenmesi guard — T-T3b).
+
+## 1. Bölümler (şema required)
+
+| Bölüm | Anlam |
+|---|---|
+| `release_ref` / `generated_at` | sürüm kimliği + üretim zamanı |
+| `images[]` | `name` + `sha256:` digest (moving-tag yasak) |
+| `sbom` | format (spdx/cyclonedx) + ref + digest |
+| `vuln_scan` | tool + report + `critical`/`high` sayıları (0 olmalı) |
+| `provenance` | SLSA level + attestation + builder |
+| `signature` | cosign/notation + trust-root + `verified_offline:true` |
+| `model_artifacts[]` | model digest + provenance |
+| `disposition` | `critical_high_resolved` + `revocation_checked` + patch-SLA |
+
+## 2. Doğrulama (drift-guard `scripts/check-release-evidence.mjs`)
+
+- Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`minimum`/integer; unsupported-keyword FAIL).
+- Cross-invariant: `vuln_scan.critical===0 && high===0`; image/release **moving-tag yasak** (digest-pin).
+- Gömülü self-test: **10 negatif vektör** (unresolved-crit/high, moving-tag-release/image, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance, bad-slsa, unsupported-keyword) her CI koşusunda fail-doğrulanır.
+
+## 3. Bağlantı
+- [[ATS-0007]] §6 (supply-chain/update-integrity) · [docs/security/threat-register.md](./threat-register.md) T-T3a/T-T3b · [docs/security/control-map.md](./control-map.md) (tedarik-zinciri/vuln satırları) · on-prem checklist §2 (PRIVATE air-gap import).

@@ -1,0 +1,38 @@
+{
+  "schema_version": "release-evidence/v1",
+  "release_ref": "ats-meeting-svc:2026.06.0",
+  "generated_at": "2026-06-29T12:00:00.000Z",
+  "images": [
+    { "name": "ghcr.io/halildeu/ats-meeting", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+  ],
+  "sbom": {
+    "format": "cyclonedx",
+    "ref": "sbom-meeting-2026.06.0",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "vuln_scan": {
+    "tool_ref": "trivy-0.50",
+    "report_ref": "vuln-report-2026.06.0",
+    "critical": 0,
+    "high": 0
+  },
+  "provenance": {
+    "slsa_level": "L3",
+    "attestation_ref": "att-slsa-2026.06.0",
+    "builder_ref": "hardened-runner-isolated"
+  },
+  "signature": {
+    "tool": "cosign",
+    "signature_ref": "sig-meeting-2026.06.0",
+    "trust_root_ref": "ats-internal-ca-v1",
+    "verified_offline": true
+  },
+  "model_artifacts": [
+    { "name": "stt-tr-v1", "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "provenance_ref": "model-prov-stt-v1" }
+  ],
+  "disposition": {
+    "critical_high_resolved": true,
+    "revocation_checked": true,
+    "patch_sla_ref": "patch-sla-policy-v1"
+  }
+}

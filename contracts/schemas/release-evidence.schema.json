@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/release-evidence.schema.json",
+  "title": "ATS Release Evidence Manifest (supply-chain / air-gap dogrulama)",
+  "description": "Air-gapped/on-prem teslimde verilen paketin DOGRULANABILIR kanit manifesti (ATS-0007 §6 + on-prem checklist §2). Moving tag YASAK (digest-pin); high/critical vuln disposition zorunlu; SBOM/signature/provenance/model-hash zorunlu. Bu bir SOZLESME semasidir; gercek build evidence P3/gate-locked.",
+  "$defs": {
+    "ref": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:/-]*$", "minLength": 1, "maxLength": 200 },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "release_ref", "generated_at", "images", "sbom", "vuln_scan",
+    "provenance", "signature", "model_artifacts", "disposition"
+  ],
+  "properties": {
+    "schema_version": { "const": "release-evidence/v1" },
+    "release_ref": { "$ref": "#/$defs/ref" },
+    "generated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "images": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "digest"],
+        "properties": {
+          "name": { "$ref": "#/$defs/ref" },
+          "digest": { "$ref": "#/$defs/digest" }
+        }
+      }
+    },
+    "sbom": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "ref", "digest"],
+      "properties": {
+        "format": { "enum": ["spdx", "cyclonedx"] },
+        "ref": { "$ref": "#/$defs/ref" },
+        "digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "vuln_scan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tool_ref", "report_ref", "critical", "high"],
+      "properties": {
+        "tool_ref": { "$ref": "#/$defs/ref" },
+        "report_ref": { "$ref": "#/$defs/ref" },
+        "critical": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["slsa_level", "attestation_ref", "builder_ref"],
+      "properties": {
+        "slsa_level": { "enum": ["L1", "L2", "L3"] },
+        "attestation_ref": { "$ref": "#/$defs/ref" },
+        "builder_ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "signature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tool", "signature_ref", "trust_root_ref", "verified_offline"],
+      "properties": {
+        "tool": { "enum": ["cosign", "notation"] },
+        "signature_ref": { "$ref": "#/$defs/ref" },
+        "trust_root_ref": { "$ref": "#/$defs/ref" },
+        "verified_offline": { "const": true }
+      }
+    },
+    "model_artifacts": {
+      "type": "array", "minItems": 0, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "digest", "provenance_ref"],
+        "properties": {
+          "name": { "$ref": "#/$defs/ref" },
+          "digest": { "$ref": "#/$defs/digest" },
+          "provenance_ref": { "$ref": "#/$defs/ref" }
+        }
+      }
+    },
+    "disposition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["critical_high_resolved", "revocation_checked", "patch_sla_ref"],
+      "properties": {
+        "critical_high_resolved": { "const": true },
+        "revocation_checked": { "const": true },
+        "patch_sla_ref": { "$ref": "#/$defs/ref" }
+      }
+    }
+  }
+}
