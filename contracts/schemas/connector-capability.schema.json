@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/connector-capability.schema.json",
+  "title": "ATS Connector Capability Registry",
+  "description": "Mevcut ATS'lere baglanti yetenek kaydi: export baseline + dar (narrow) write-back. candidate/job/stage/score YAZIMI YASAK (ATS-0001 boundary + ATS-0005 assist-not-conduct). Bu bir SOZLESME semasidir; runtime connector P1/gate-locked. P1 write-back yaln. ats_name+api_verified+loi_condition kanitlariyla acilir.",
+  "$defs": {
+    "ref": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:/-]*$", "minLength": 1, "maxLength": 120 }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "connectors"],
+  "properties": {
+    "schema_version": { "const": "connector-capability/v1" },
+    "connectors": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["connector_id", "ats_ref", "mode", "auth_model", "data_classes", "status"],
+        "properties": {
+          "connector_id": { "$ref": "#/$defs/ref" },
+          "ats_ref": { "$ref": "#/$defs/ref" },
+          "mode": { "enum": ["export", "narrow_writeback"] },
+          "export_methods": {
+            "type": "array", "uniqueItems": true,
+            "items": { "enum": ["pdf", "secure_link", "email", "webhook"] }
+          },
+          "auth_model": { "enum": ["oauth2", "api_key", "service_account", "none"] },
+          "data_classes": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": { "enum": ["evidence_packet_ref", "dossier_metadata", "audit_link", "none"] }
+          },
+          "writeback_fields": {
+            "type": "array", "uniqueItems": true,
+            "items": { "enum": ["dossier_url", "evidence_status", "audit_completed_at"] }
+          },
+          "status": { "enum": ["design", "gate-locked", "p1-evidence-required"] },
+          "p1_evidence": {
+            "type": "object", "additionalProperties": false,
+            "required": ["ats_name", "api_verified", "loi_condition"],
+            "properties": {
+              "ats_name": { "$ref": "#/$defs/ref" },
+              "api_verified": { "type": "boolean" },
+              "loi_condition": { "$ref": "#/$defs/ref" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

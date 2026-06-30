@@ -204,3 +204,16 @@ jobs:
           node-version: "20"
       - name: release-evidence drift guard
         run: node scripts/check-release-evidence.mjs
+
+  connector-capability-guard:
+    # contracts/schemas/connector-capability.schema.json + sample drift guard (ATS-0001/0005):
+    # export/narrow-writeback mode + auth + forbidden write-back deep-scan (candidate/job/stage/score
+    # YASAK) + narrow_writeback p1-evidence-gated + export-no-writeback + gömülü self-test (10 vektör).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: connector-capability drift guard
+        run: node scripts/check-connector-capability.mjs
