@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/evidence-packet.schema.json",
+  "title": "ATS Interview Evidence Packet (audit export)",
+  "description": "Citation-backed, human-approved, auditable interview evidence packet. Tum alanlar opak ref/policy-ref (serbest metin yok); ham media/transcript/PII ve score/ranking/affect FORBIDDEN. Bu bir SOZLESME semasidir; runtime packet generation/redaction/export enforcement P1/gate-locked.",
+  "$defs": {
+    "ref": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$", "minLength": 1 },
+    "refs": { "type": "array", "items": { "$ref": "#/$defs/ref" }, "minItems": 1, "uniqueItems": true }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "packet_id", "generated_at", "generator_version_ref", "locale", "timezone",
+    "tenant_ref", "ai_assistance_disclosure_ref", "interview_refs", "consent_refs", "rubric",
+    "claims", "unsupported_claim_policy", "human_decision", "model_version_ref", "worm_chain_refs",
+    "redaction", "excluded_raw_content", "retention_policy_ref", "integrity", "export_event_ref"
+  ],
+  "properties": {
+    "schema_version": { "const": "evidence-packet/v1" },
+    "packet_id": { "$ref": "#/$defs/ref" },
+    "generated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$" },
+    "generator_version_ref": { "$ref": "#/$defs/ref" },
+    "locale": { "type": "string", "pattern": "^[a-z]{2}-[A-Z]{2}$" },
+    "timezone": { "type": "string", "pattern": "^[A-Za-z]+/[A-Za-z_]+$" },
+    "tenant_ref": { "$ref": "#/$defs/ref" },
+    "ai_assistance_disclosure_ref": { "$ref": "#/$defs/ref" },
+    "interview_refs": { "$ref": "#/$defs/refs" },
+    "consent_refs": { "$ref": "#/$defs/refs" },
+    "rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rubric_version_ref", "criteria"],
+      "properties": {
+        "rubric_version_ref": { "$ref": "#/$defs/ref" },
+        "criteria": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["criterion_id", "job_relatedness_rationale_ref"],
+            "properties": {
+              "criterion_id": { "$ref": "#/$defs/ref" },
+              "job_relatedness_rationale_ref": { "$ref": "#/$defs/ref" }
+            }
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "statement_ref", "criterion_id", "source_segment_refs", "entailment", "human_reviewed"],
+        "properties": {
+          "claim_id": { "$ref": "#/$defs/ref" },
+          "statement_ref": { "$ref": "#/$defs/ref" },
+          "criterion_id": { "$ref": "#/$defs/ref" },
+          "source_segment_refs": { "$ref": "#/$defs/refs" },
+          "entailment": { "enum": ["supported", "partially_supported", "unsupported"] },
+          "human_reviewed": { "type": "boolean" }
+        }
+      }
+    },
+    "unsupported_claim_policy": { "const": "flag-and-exclude-from-decision" },
+    "human_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human_actor_ref", "oversight_role_ref", "human_authored_rationale_ref", "source_evidence_refs", "ai_output_version_ref", "decision_outcome_ref"],
+      "properties": {
+        "human_actor_ref": { "$ref": "#/$defs/ref" },
+        "oversight_role_ref": { "$ref": "#/$defs/ref" },
+        "human_authored_rationale_ref": { "$ref": "#/$defs/ref" },
+        "source_evidence_refs": { "$ref": "#/$defs/refs" },
+        "ai_output_version_ref": { "$ref": "#/$defs/ref" },
+        "decision_outcome_ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "model_version_ref": { "$ref": "#/$defs/ref" },
+    "worm_chain_refs": { "$ref": "#/$defs/refs" },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applied", "redaction_policy_ref", "redaction_run_ref"],
+      "properties": {
+        "applied": { "const": true },
+        "redaction_policy_ref": { "$ref": "#/$defs/ref" },
+        "redaction_run_ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "excluded_raw_content": { "const": true },
+    "retention_policy_ref": { "$ref": "#/$defs/ref" },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest_algorithm", "schema_digest", "packet_digest", "signature_ref"],
+      "properties": {
+        "digest_algorithm": { "const": "sha256" },
+        "schema_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "packet_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "signature_ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "export_event_ref": { "$ref": "#/$defs/ref" }
+  }
+}
