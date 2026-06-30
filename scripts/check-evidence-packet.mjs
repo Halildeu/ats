@@ -4,7 +4,8 @@
  *
  *  1. Minimal JSON-Schema validator (no npm dep, $ref/$defs+pattern dahil); desteklenmeyen
  *     validation keyword görürse FAIL (silent under-validation guard).
- *  2. Forbidden-field deep-scan (regex/alias, TR+EN); tüm string alanlar opak-ref pattern.
+ *  2. Forbidden-field deep-scan (regex/alias, TR+EN; key=schema+sample, value=sample); ref alanları
+ *     opak-ref pattern (timestamp/locale/digest gibi structured scalar'lar kendi pattern'ında).
  *  3. Cross-invariant: claim_id+criterion_id TEKİL; claim.criterion_id ∈ rubric; human_decision.
  *     source_evidence_refs ⊆ claims (entailment≠unsupported + human_reviewed).
  *  4. GÖMÜLÜ self-test: pozitif sample yanında negatif vektörlerin fail ettiği CI'da doğrulanır
