@@ -28,6 +28,9 @@
 ## Entegrasyon (public, living)
 - [integrations/connector-capability-standard.md](./integrations/connector-capability-standard.md) — ATS connector yetenek registry'si: export baseline + dar write-back (aday/karar yazımı YASAK; drift-guard `connector-capability-guard`).
 
+## Ürün akışı (public, living)
+- [product/interview-evidence-flow.md](./product/interview-evidence-flow.md) — uçtan-uca buyer-readable akış (disclosure→consent→record→AI-suggest→human-review→finalize→export/ATS→withdraw/DSAR); per-step backing+forbidden+p1-residual (drift-guard `product-flow-guard`). Akış sözleşmesi; runtime P1.
+
 ## Kanıt paketi (public, living)
 - [evidence/evidence-packet-manifest.md](./evidence/evidence-packet-manifest.md) — ATS-0004 citation-backed denetim kanıt paketi kanonik şeması (`contracts/schemas/evidence-packet.schema.json`; drift-guard `evidence-packet-guard`). Ham içerik/skor/affect fail-closed yasak.
 
