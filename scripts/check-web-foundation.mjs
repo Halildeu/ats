@@ -83,7 +83,7 @@ function pathScan() {
     const rel = String(f);
     if (/\.(tsx|jsx)$/.test(rel)) errors.push(`web/${rel}: .tsx/.jsx YASAK (çalışan-UI; runtime gate-locked)`);
     if (/\.stories\./.test(rel)) errors.push(`web/${rel}: story dosyası YASAK (runtime gate-locked)`);
-    if (/\.(ts|js|mjs|cjs)$/.test(rel)) {
+    if (/\.(ts|js|mjs|cjs|mts|cts)$/.test(rel)) {
       let body = ""; try { body = readFileSync(join(WEB, rel), "utf8"); } catch { continue; }
       const clean = body.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
       for (const re of RUNTIME_PAT) if (re.test(clean)) errors.push(`web/${rel}: runtime pattern ${re} YASAK`);
