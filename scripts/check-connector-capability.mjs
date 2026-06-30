@@ -22,7 +22,7 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = JSON.parse(readFileSync(join(REPO, "contracts/schemas/connector-capability.schema.json"), "utf8"));
 const SAMPLE = JSON.parse(readFileSync(join(REPO, "contracts/samples/connector-capability.sample.json"), "utf8"));
 
-const FORBIDDEN_WB = [/candidate/i, /\baday\b/i, /\bjob\b/i, /\bstage\b/i, /reject/i, /advance/i, /\bhire\b/i, /score|skor|puan/i, /rating|ranking/i, /disposition_decision/i];
+const FORBIDDEN_WB = [/candidate/i, /\baday\b/i, /\bjob\b/i, /\bstage\b/i, /asama|aşama/i, /reject/i, /reddet|eleme|\bred\b/i, /advance/i, /\bhire\b/i, /hiring/i, /decision/i, /karar/i, /ilan|pozisyon/i, /score|skor|puan/i, /rating|ranking/i];
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern"]);
 const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const typeOf = (n) => (Array.isArray(n) ? "array" : n === null ? "null" : typeof n);
@@ -80,6 +80,7 @@ function runChecks(schema, sample) {
       if (!(c.writeback_fields && c.writeback_fields.length >= 1)) errors.push(`${c.connector_id}: narrow_writeback writeback_fields(≥1) gerek`);
       if (c.status !== "p1-evidence-required") errors.push(`${c.connector_id}: narrow_writeback status=p1-evidence-required olmalı`);
       if (!c.p1_evidence || !c.p1_evidence.ats_name || c.p1_evidence.api_verified == null || !c.p1_evidence.loi_condition) errors.push(`${c.connector_id}: narrow_writeback p1_evidence(ats_name+api_verified+loi) gerek`);
+      else if (c.p1_evidence.api_verified !== false) errors.push(`${c.connector_id}: PRE-G0'da api_verified=false olmalı (true = gerçek API doğrulama iddiası; faz geçişi gerek)`);
     }
     if (c.mode === "export" && c.writeback_fields && c.writeback_fields.length > 0) errors.push(`${c.connector_id}: export modunda writeback_fields YASAK`);
   }
@@ -99,6 +100,12 @@ function selfTest() {
     ["bad-mode", () => { const s = clone(SAMPLE); s.connectors[0].mode = "full_sync"; return [SCHEMA, s]; }],
     ["bad-auth", () => { const s = clone(SAMPLE); s.connectors[0].auth_model = "ldap"; return [SCHEMA, s]; }],
     ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.connectors.items.properties.mode = { oneOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
+    ["api-verified-true-pre-g0", () => { const s = clone(SAMPLE); s.connectors[1].p1_evidence.api_verified = true; return [SCHEMA, s]; }],
+    ["decision-value", () => { const s = clone(SAMPLE); s.connectors[0].ats_ref = "decision-sync"; return [SCHEMA, s]; }],
+    ["karar-id", () => { const s = clone(SAMPLE); s.connectors[0].connector_id = "karar-sync-v1"; return [SCHEMA, s]; }],
+    ["asama-key", () => { const s = clone(SAMPLE); s.connectors[0].asama_field = "x"; return [SCHEMA, s]; }],
+    ["export-methods-empty", () => { const s = clone(SAMPLE); s.connectors[0].export_methods = []; return [SCHEMA, s]; }],
+    ["export-methods-missing", () => { const s = clone(SAMPLE); delete s.connectors[2].export_methods; return [SCHEMA, s]; }],
   ];
   const failed = [];
   for (const [name, build] of cases) { const [sc, sm] = build(); if (runChecks(sc, sm).length === 0) failed.push(name); }
@@ -113,4 +120,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`connector-capability OK — ${SAMPLE.connectors.length} connector; write-back dar (candidate/score/stage YASAK); narrow_writeback p1-evidence-gated; self-test 10 negatif vektör fail ediyor.`);
+console.log(`connector-capability OK — ${SAMPLE.connectors.length} connector; write-back dar (candidate/score/stage YASAK); narrow_writeback p1-evidence-gated; self-test 16 negatif vektör fail ediyor.`);

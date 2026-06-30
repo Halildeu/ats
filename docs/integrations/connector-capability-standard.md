@@ -16,7 +16,7 @@
 - Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`; unsupported-keyword FAIL).
 - **Forbidden write-back deep-scan** (key+value, schema+sample): candidate/job/stage/score/reject/advance/hire/rating yok.
 - Cross-invariant: narrow_writeback → writeback_fields(≥1)+p1-evidence-gated; export → writeback YOK; connector_id tekil.
-- Gömülü self-test: **10 negatif vektör** (forbidden-writeback-enum/key/value, writeback-without-p1, wrong-status, export-with-writeback, duplicate-id, bad-mode/auth, unsupported-keyword) her CI koşusunda fail-doğrulanır.
+- Gömülü self-test: **16 negatif vektör** (forbidden-writeback-enum/key/value, writeback-without-p1, wrong-status, export-with-writeback, duplicate-id, bad-mode/auth, unsupported-keyword) her CI koşusunda fail-doğrulanır.
 
 ## 2. Bağlantı
 - [[ATS-0001]] boundary · [[ATS-0005]] assist-not-conduct · [contracts/src/ats-connector.ts](../../contracts/src/ats-connector.ts) (ATSConnector sözleşmesi; export/writeBack) · evidence-packet (export edilen içerik) · G0 kriter-3 ATS-entegrasyon teyidi (PRIVATE ats-strategy). PRIVATE: per-ATS entegrasyon evidence şablonu.
