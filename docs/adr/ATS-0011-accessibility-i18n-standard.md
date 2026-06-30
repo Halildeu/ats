@@ -34,6 +34,8 @@ Varsayılan locale **tr-TR**; tüm UI metni **dışsallaştırılmış** (hardco
 
 Standart + registry + drift-guard **gate-safe** (spec + makine-doğrulanan kriter kaydı). Gerçek UI'ın bu kriterleri **karşıladığının kanıtı** (axe pass, eslint-a11y temiz, i18n key-integrity) = **P1, G0=GO sonrası**. Registry satırları `gate-locked`/`design`; yalnız registry-bütünlüğü `enforced (CI)`. "a11y yapıldı" DENMEZ (No Fake Work) — UI yok.
 
+> **Owner directive (2026-06-29):** Gate-safe **ürün-yüzeyi temeli** (`web/` foundation; design-system + tr-TR i18n + typed component contracts + a11y harness) açıldı. Bu foundation geldikçe, gerçekten **axe/eslint/i18n CI testiyle koşan** kriter satırları `gate-locked` → `enforced (CI)` geçebilir (yalnız test-bağlı path ile; over-claim guard `a11y-standard-guard` bunu zorlar). **Fonksiyonel mülakat UI'ı** (gerçek STT/citation/export/backend) hâlâ G0/P1 gated.
+
 ## Değerlendirilen alternatifler
 
 - **(A) a11y/i18n'i UI yazılırken düşün** — RED: retrofit pahalı + eksik; procurement filtresine yakalanır.
