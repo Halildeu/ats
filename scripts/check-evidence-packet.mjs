@@ -81,7 +81,7 @@ function runChecks(schema, sample) {
       scanKeys(obj[k], where);
     }
   };
-  scanKeys(schema.properties, "schema");
+  scanKeys(schema, "schema"); // $defs dahil tüm şema (key-only tarama; description değerleri güvenli)
   scanKeys(sample, "sample");
   // DEĞER tarama (yalnız sample — schema description'ları forbidden-kelime içerir, hariç):
   // forbidden-keyword içeren string değerler (tckn/skor/email...) reddedilir. Not: keyfi tek-token
@@ -130,6 +130,7 @@ function selfTest() {
     ["raw-content-included", () => { const s = clone(SAMPLE); s.excluded_raw_content = false; return [SCHEMA, s]; }],
     ["forbidden-value", () => { const s = clone(SAMPLE); s.claims[0].statement_ref = "skor-90"; return [SCHEMA, s]; }],
     ["ref-sibling-under-validation", () => { const sc = clone(SCHEMA); sc.properties.packet_id = { $ref: "#/$defs/ref", maxLength: 3 }; return [sc, SAMPLE]; }],
+    ["forbidden-schema-def-field", () => { const sc = clone(SCHEMA); sc.$defs.bad = { type: "object", additionalProperties: false, properties: { score: { type: "string" } } }; sc.properties.optional_bad_ref = { $ref: "#/$defs/bad" }; return [sc, SAMPLE]; }],
   ];
   const failed = [];
   for (const [name, build] of cases) {
@@ -148,4 +149,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`evidence-packet OK — sample schema'ya uyar ($ref/pattern+sibling-fail-closed), forbidden key+value scan, criterion↔claim + karar-kanıtı + tekillik; gömülü self-test 9 negatif vektör fail ediyor.`);
+console.log(`evidence-packet OK — sample schema'ya uyar ($ref/pattern+sibling-fail-closed), forbidden key+value scan, criterion↔claim + karar-kanıtı + tekillik; gömülü self-test 10 negatif vektör fail ediyor.`);

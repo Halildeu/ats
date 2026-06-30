@@ -41,7 +41,7 @@
 - Forbidden alias deep-scan (regex, TR+EN): ham/PII/skor/sıralama/affect **alan adları** (şema+sample) + forbidden-keyword **string değerler** (yalnız sample) reddedilir; tüm değerler ref-pattern (boşluk/cümle yok). Keyfi tek-token semantik opaklık → runtime ref-registry (P1).
 - `$ref` fail-closed: bir `$ref` node'unda `title`/`description` dışında sibling validation keyword YASAK (sessiz under-validation guard).
 - Cross-invariant: `claim_id`+`criterion_id` tekil; claim.criterion_id ∈ rubric; `source_evidence_refs` ⊆ claims (`unsupported` değil + `human_reviewed`).
-- **Gömülü self-test:** 7 negatif vektör (unsupported-evidence/unknown-criterion/pii-free-text/forbidden-alias/duplicate-claim/unsupported-keyword/raw-content) her CI koşusunda fail-doğrulanır (durable regression).
+- **Gömülü self-test:** 10 negatif vektör (unsupported-evidence/unknown-criterion/pii-free-text/forbidden-alias/duplicate-claim/unsupported-keyword/raw-content/forbidden-value/ref-sibling/schema-def-field) her CI koşusunda fail-doğrulanır (durable regression).
 
 ## 3. Bağlantı
 - [[ATS-0004]] (citation/eval/human-approval) · [[ATS-0005]] (assist-not-conduct) · [[ATS-0003]] (WORM/redaction) · human-oversight-standard (FINALIZED) · data-lifecycle (`evidence_packet`/`claim_citation_ref`) · eu-ai-act Art.12/13. PRIVATE: redacted sample-evidence-packet (`ats-strategy`).

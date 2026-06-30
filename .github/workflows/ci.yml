@@ -156,7 +156,7 @@ jobs:
     # contracts/schemas/evidence-packet.schema.json + sample drift guard (ATS-0004/0005):
     # minimal JSON-Schema validation ($ref/$defs/pattern + unsupported-keyword fail) + forbidden
     # raw/PII/score/affect alias deep-scan + criterion↔claim + claim_id/criterion_id tekillik +
-    # source_evidence_refs(supported+human_reviewed) + gömülü self-test (7 negatif vektör).
+    # source_evidence_refs(supported+human_reviewed) + gömülü self-test (10 negatif vektör).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
