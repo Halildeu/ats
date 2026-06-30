@@ -123,6 +123,18 @@ jobs:
       - name: web-foundation drift guard
         run: node scripts/check-web-foundation.mjs
 
+  product-flow-guard:
+    # docs/product/interview-evidence-flow.md drift guard: adım backing çözünürlüğü (path/[[ATS]]) +
+    # forbidden/p1_residual dolu + sentinel adımlar + human-oversight state & event-taxonomy hizalama.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: product-flow drift guard
+        run: node scripts/check-product-flow.mjs
+
   data-lifecycle-guard:
     # docs/privacy/data-lifecycle-register.md drift guard (ATS-0003 operationalized):
     # required veri-sınıfları + sözlük (pii_class/plane/deletion/WORM/transfer/status) +
