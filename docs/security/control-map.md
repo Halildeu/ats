@@ -41,7 +41,7 @@
 ## 2. Doğrulama (drift-guard `scripts/check-control-map.mjs`)
 
 - Required kontrol alanları (sentinel) mevcut + tekil.
-- Statü sözlük-geçerli (her `/`-segment); **YASAK cert/uygunluk ifadeleri** (EN+TR; certified/compliance/attestation/audit/sertifika/uyumlu... — case-insensitive) map'te görünemez.
+- Statü sözlük-geçerli (her `/`-segment); **YASAK ifadeler** (EN+TR sertifika/uygunluk/denetim iddiası eşanlamlıları — case-insensitive) map'te görünemez.
 - **Cross-doc binding:** her satırın "Our control" hücresi **en az bir threat-register'da MEVCUT** `T-/P-` ID'si içerir (kopuk-ID veya threat-bağsız satır FAIL). Repo-path/`PRIVATE:ats-strategy/...` yalnız **ek kanıt** (tek başına binding sayılmaz).
 - `enforced (CI)` (karma dahil) → satırda mevcut repo-path (over-claim guard).
 - Gömülü self-test (durable regression: kopuk-ID / binding-yok / geçersiz-status / enforced-path-yok / **forbidden-cert** + geçerli-satır-pass).

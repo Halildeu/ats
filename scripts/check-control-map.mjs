@@ -20,7 +20,7 @@ const FILE = join(REPO, "docs/security/control-map.md");
 const TR_FILE = join(REPO, "docs/security/threat-register.md");
 
 const STATUS_SEG = new Set(["enforced (CI)", "gate-locked", "design", "owner-evidence-required", "accepted-risk"]);
-const FORBIDDEN = /\bcertified|\bcertification|\bcompliant|\bcompliance|\bconformity|\bconformant|\baudited|audit report|\battested|attestation|soc ?2 type|iso ?27001 certif|sertifik|uyumlu|denetlendi/i;
+const FORBIDDEN = /\bcertified|\bcertification|\bcompliant|\bcompliance|\bconformity|\bconformant|\baudited|audit report|auditor verified|report available|\battested|attestation|soc ?2 type|soc ?2 ready|iso ?27001 certif|iso ?27001 ready|audit.?ready|sertifik|uyumlu|denetlendi/i;
 const REQUIRED = [
   "Erişim kontrolü", "Erişim gözden geçirme", "Kriptografi", "Tenant izolasyon", "Loglama",
   "Tedarik zinciri", "Tedarikçi", "Açıklık", "AI-spesifik", "Veri-mahremiyet", "Veri ikametgâhı",
@@ -62,7 +62,7 @@ for (const line of lines) {
 
 // forbidden cert (YASAK-tanım satırı hariç)
 lines.forEach((l, i) => {
-  if (/YASAK ifadeler|sertifika\/uygunluk iddiası|certified\/compliance/.test(l)) return;
+  if (/YASAK ifadeler|sertifika\/uygunluk iddiası/.test(l)) return; // yalnız §0/intro tanım satırları
   if (FORBIDDEN.test(l)) errors.push(`YASAK cert/uygunluk ifadesi satır ${i + 1}: "${l.trim().slice(0, 50)}"`);
 });
 
