@@ -113,7 +113,7 @@ jobs:
   web-foundation-guard:
     # web/ ürün-yüzeyi temeli (ATS-0011 operationalized): design-token WCAG kontrast HESAPLAMA +
     # target-size≥24 + tr-TR i18n catalog (key/ICU/no-empty) + typed component contracts
-    # (forbidden raw-PII/score/affect; no React runtime). Gömülü self-test (8 vektör).
+    # (forbidden raw-PII/score/affect; no React runtime). Gömülü self-test (12 vektör) + web/ path-scan (no-runtime).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
