@@ -5,12 +5,14 @@ fail-closed reddedilir. Gate C'nin bozuk-fixture'a yeşil verememesini garanti e
 """
 import copy
 import json
+import math
 import os
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
-from fixture_schema import validate  # noqa: E402
+from fixture_schema import validate, validate_schema  # noqa: E402
 
 
 def _load(name):
@@ -72,3 +74,45 @@ def test_segment_missing_speaker():
     f = copy.deepcopy(FIXTURE)
     f["reference"]["speakers"][0].pop("speaker", None)
     assert any("speaker" in e for e in validate(f, SCHEMA))
+
+
+def test_non_finite_number_rejected():
+    f = copy.deepcopy(FIXTURE)
+    f["claims"][0]["predicted_citation"] = {"start": float("-inf"), "end": float("inf")}
+    assert validate(f, SCHEMA) != []
+
+
+def test_nan_number_rejected():
+    f = copy.deepcopy(FIXTURE)
+    f["claims"][0]["ground_truth_valid_spans"] = [{"start": float("nan"), "end": 1}]
+    assert validate(f, SCHEMA) != []
+
+
+def test_bool_as_number_rejected():
+    f = copy.deepcopy(FIXTURE)
+    f["claims"][0]["ground_truth_valid_spans"] = [{"start": True, "end": 1}]
+    assert validate(f, SCHEMA) != []
+
+
+def test_schema_preflight_clean():
+    assert validate_schema(SCHEMA) == []
+
+
+def test_schema_preflight_unsupported_keyword():
+    s = copy.deepcopy(SCHEMA)
+    s["$defs"]["span"]["properties"]["start"]["minimum"] = 0  # desteklenmeyen keyword
+    assert any("minimum" in e for e in validate_schema(s))
+
+
+def test_run_eval_rejects_nonfinite_json():
+    # NaN/Infinity içeren JSON metni strict loader ile fail-closed reddedilir (evaluate yok).
+    bad = '{"id":"b","reference":{"transcript":"x","speakers":[]},"hypothesis":{"transcript":"x","speakers":[]},"claims":[{"claim_text":"c","predicted_citation":{"start":Infinity,"end":1},"shown_as_supported":true,"ground_truth_valid_spans":[]}]}'
+    p = os.path.join(HERE, "_tmp_bad.json")
+    with open(p, "w", encoding="utf-8") as fh:
+        fh.write(bad)
+    try:
+        r = subprocess.run([sys.executable, os.path.join(HERE, "run_eval.py"), p], capture_output=True, text=True)
+        assert r.returncode == 1
+        assert "GEÇERSİZ JSON" in r.stdout or "ŞEMA İHLALİ" in r.stdout
+    finally:
+        os.remove(p)

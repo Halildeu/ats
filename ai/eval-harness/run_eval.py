@@ -17,14 +17,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from metrics import wer, der, citation_metrics  # noqa: E402
-from fixture_schema import validate as validate_fixture  # noqa: E402
+from fixture_schema import validate as validate_fixture, validate_schema  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def _reject_constant(c):  # NaN/Infinity/-Infinity standart-dışı JSON sabitleri reddedilir
+    raise ValueError(f"standart-dışı JSON sabiti yasak: {c}")
+
+
+def load_json_strict(path: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        return json.loads(f.read(), parse_constant=_reject_constant)
+
+
 def load_schema() -> dict:
-    with open(os.path.join(HERE, "fixtures", "schema.json"), encoding="utf-8") as f:
-        return json.load(f)
+    return load_json_strict(os.path.join(HERE, "fixtures", "schema.json"))
 
 
 def evaluate(fixture: dict) -> dict:
@@ -71,13 +79,18 @@ def main() -> int:
     ap.add_argument("--thresholds", default=os.path.join(HERE, "thresholds.json"))
     args = ap.parse_args()
 
-    with open(args.fixture, encoding="utf-8") as f:
-        fixture = json.load(f)
-    with open(args.thresholds, encoding="utf-8") as f:
-        th = json.load(f)
+    try:
+        fixture = load_json_strict(args.fixture)
+        th = load_json_strict(args.thresholds)
+    except ValueError as e:
+        print(f"=== ATS-0004 Gate C — GEÇERSİZ JSON (fail-closed) ===\n  [KIRMIZI] {e}")
+        print("\n  SONUÇ: fixture/threshold geçersiz; eval koşulmadı; pilot-open hazır = False")
+        return 1
 
-    # FAIL-CLOSED: fixture şemaya uymuyorsa evaluate ETME (Gate C bozuk-fixture'a yeşil veremez).
-    schema_errors = validate_fixture(fixture, load_schema())
+    # FAIL-CLOSED: schema preflight (kendi bütünlüğü) + fixture şemaya uymuyorsa evaluate ETME.
+    schema = load_schema()
+    schema_self = validate_schema(schema)
+    schema_errors = schema_self + validate_fixture(fixture, schema)
     if schema_errors:
         print("=== ATS-0004 Gate C — FIXTURE ŞEMA İHLALİ (fail-closed) ===")
         for e in schema_errors:

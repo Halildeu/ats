@@ -16,14 +16,14 @@ eval-harness/
   fixture_schema.py     no-dep minimal JSON-Schema validator (schema enforcement)
   fixtures/example-fixture.json   SENTETİK self-test (gerçek mülakat değil)
   run_eval.py           orchestrator → şema-validate → kırmızı/yeşil Gate C raporu
-  tests/test_fixture_schema.py    schema enforcement testleri (9; CI ai-eval'de koşar)
+  tests/test_fixture_schema.py    schema enforcement testleri (15; CI ai-eval'de koşar)
   tests/test_metrics.py birim testler (harness güvenilirliği)
 ```
 
 ## Çalıştırma
 ```bash
 cd ai/eval-harness
-python3 -m pytest tests/ -q              # HARNESS SAĞLIĞI → 11/11, exit 0
+python3 -m pytest tests/ -q              # HARNESS SAĞLIĞI → 30/30, exit 0
 python3 run_eval.py                      # sentetik self-test → exit 1 (fail-closed, BEKLENEN)
 python3 run_eval.py path/to/golden.json  # gerçek golden Türkçe fixture
 ```
