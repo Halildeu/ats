@@ -41,6 +41,8 @@ function runChecks(schema, sample) {
   function checkKeywords(s, path) {
     if (!s || typeof s !== "object" || Array.isArray(s)) return;
     for (const k of Object.keys(s)) if (!KNOWN_KW.has(k)) errors.push(`schema ${path}: desteklenmeyen keyword "${k}"`);
+    // $ref fail-closed: yanında title/description dışında sibling keyword olamaz (sessiz under-validation)
+    if ("$ref" in s) for (const k of Object.keys(s)) if (!["$ref", "title", "description"].includes(k)) errors.push(`schema ${path}: $ref yanında sibling keyword "${k}" (under-validation; ayrı node kullan)`);
     if (s.properties) for (const [k, v] of Object.entries(s.properties)) checkKeywords(v, `${path}.${k}`);
     if (s.items) checkKeywords(s.items, `${path}[]`);
     if (s.$defs) for (const [k, v] of Object.entries(s.$defs)) checkKeywords(v, `${path}.$defs.${k}`);
@@ -71,6 +73,7 @@ function runChecks(schema, sample) {
   }
   validate(sample, schema, "$");
 
+  // anahtar tarama (schema+sample) — forbidden alan ADLARI
   const scanKeys = (obj, where) => {
     if (!obj || typeof obj !== "object") return;
     for (const k of Object.keys(obj)) {
@@ -80,6 +83,20 @@ function runChecks(schema, sample) {
   };
   scanKeys(schema.properties, "schema");
   scanKeys(sample, "sample");
+  // DEĞER tarama (yalnız sample — schema description'ları forbidden-kelime içerir, hariç):
+  // forbidden-keyword içeren string değerler (tckn/skor/email...) reddedilir. Not: keyfi tek-token
+  // ad (AhmetYilmaz) regex'le yakalanamaz → tam semantik opaklık runtime ref-registry (P1).
+  const scanValues = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    for (const v of Object.values(obj)) {
+      if (typeof v === "string") {
+        for (const re of FORBIDDEN_RE) if (re.test(v)) errors.push(`YASAK değer "${v}" (sample) — forbidden-keyword`);
+      } else {
+        scanValues(v);
+      }
+    }
+  };
+  scanValues(sample);
 
   // cross-invariant
   const critList = (sample.rubric?.criteria || []).map((c) => c.criterion_id);
@@ -111,6 +128,8 @@ function selfTest() {
     ["duplicate-claim-id", () => { const s = clone(SAMPLE); s.claims.push(clone(s.claims[0])); return [SCHEMA, s]; }],
     ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.packet_id = { oneOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
     ["raw-content-included", () => { const s = clone(SAMPLE); s.excluded_raw_content = false; return [SCHEMA, s]; }],
+    ["forbidden-value", () => { const s = clone(SAMPLE); s.claims[0].statement_ref = "skor-90"; return [SCHEMA, s]; }],
+    ["ref-sibling-under-validation", () => { const sc = clone(SCHEMA); sc.properties.packet_id = { $ref: "#/$defs/ref", maxLength: 3 }; return [sc, SAMPLE]; }],
   ];
   const failed = [];
   for (const [name, build] of cases) {
@@ -129,4 +148,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`evidence-packet OK — sample schema'ya uyar ($ref/pattern), criterion↔claim + karar-kanıtı + tekillik invariantları; gömülü self-test ${selfTest.length ? "" : ""}7 negatif vektör fail ediyor.`);
+console.log(`evidence-packet OK — sample schema'ya uyar ($ref/pattern+sibling-fail-closed), forbidden key+value scan, criterion↔claim + karar-kanıtı + tekillik; gömülü self-test 9 negatif vektör fail ediyor.`);

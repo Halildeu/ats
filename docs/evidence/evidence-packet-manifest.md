@@ -1,7 +1,7 @@
 # Evidence Packet / Audit Export Manifest (canonical)
 
 > **Public · living document.** Ürünün **çekirdeği**: citation-backed + insan-onaylı + denetlenebilir **mülakat kanıt paketi**'nin kanonik içeriği. "Paketin içinde ne var, ham medya var mı, citation nasıl gösterilir, model versiyonu nerede, WORM hash'i nasıl doğrulanır?" sorusunun tek cevabı. ([[ATS-0004]] citation/human-approval · [[ATS-0005]] assist-not-conduct · [[ATS-0003]] WORM/redaction).
-> **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI `evidence-packet-guard` yeşili = şema/sample drift kontrolü. **Runtime packet generation, redaction/serializer enforcement, gerçek export = P1/G0 sonrası gate-locked** — bu doküman onların yapıldığını iddia ETMEZ. Tüm alanlar **opak ref** (serbest metin yok → değer-düzeyinde PII smuggling pattern ile engellenir).
+> **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI `evidence-packet-guard` yeşili = şema/sample drift kontrolü. **Runtime packet generation, redaction/serializer enforcement, gerçek export = P1/G0 sonrası gate-locked** — bu doküman onların yapıldığını iddia ETMEZ. Tüm alanlar **opak ref** (serbest-metin/cümle yapısal engelli + forbidden-keyword değerler — `tckn`/`skor`/`email` vb. — guard'da reddedilir). **Ref'lerin tam semantik opaklığı** (keyfi tek-token ad gibi) regex'le garanti edilemez → generator/ref-registry **runtime enforcement (P1)**'e bağlıdır.
 > **Şema:** [contracts/schemas/evidence-packet.schema.json](../../contracts/schemas/evidence-packet.schema.json) (Draft 2020-12, `additionalProperties:false`).
 > **Örnek:** [contracts/samples/evidence-packet.sample.json](../../contracts/samples/evidence-packet.sample.json).
 > **Drift guard:** `scripts/check-evidence-packet.mjs` (CI job `evidence-packet-guard`) — sample şemaya uyar + yasak alan yok + claim invariantı.
@@ -38,7 +38,8 @@
 ## 2. Doğrulama (drift-guard `scripts/check-evidence-packet.mjs`)
 
 - Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`): sample şemaya uyar; **desteklenmeyen keyword görürse FAIL** (silent under-validation guard).
-- Forbidden-field alias deep-scan (regex, TR+EN; şema + sample): ham/PII/skor/sıralama/affect alan adları yok; tüm değerler opak-ref pattern (PII smuggling yapısal engelli).
+- Forbidden alias deep-scan (regex, TR+EN): ham/PII/skor/sıralama/affect **alan adları** (şema+sample) + forbidden-keyword **string değerler** (yalnız sample) reddedilir; tüm değerler ref-pattern (boşluk/cümle yok). Keyfi tek-token semantik opaklık → runtime ref-registry (P1).
+- `$ref` fail-closed: bir `$ref` node'unda `title`/`description` dışında sibling validation keyword YASAK (sessiz under-validation guard).
 - Cross-invariant: `claim_id`+`criterion_id` tekil; claim.criterion_id ∈ rubric; `source_evidence_refs` ⊆ claims (`unsupported` değil + `human_reviewed`).
 - **Gömülü self-test:** 7 negatif vektör (unsupported-evidence/unknown-criterion/pii-free-text/forbidden-alias/duplicate-claim/unsupported-keyword/raw-content) her CI koşusunda fail-doğrulanır (durable regression).
 
