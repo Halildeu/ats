@@ -177,6 +177,19 @@ jobs:
       - name: human-oversight drift guard
         run: node scripts/check-human-oversight.mjs
 
+  analysis-dimensions-guard:
+    # docs/ai-governance/interview-analysis-dimensions.md (ATS-0012): aktif boyutlar içerik-tabanlı
+    # (yasaklı input audio/video/biometric YOK; yasaklı output score/ranking/affect YOK) + yasaklı
+    # boyutlar (duygu/yalan/davranış) excluded-legal + substitute-eşli + aktif-değil + sentinel.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: analysis-dimensions drift guard
+        run: node scripts/check-analysis-dimensions.mjs
+
   evidence-packet-guard:
     # contracts/schemas/evidence-packet.schema.json + sample drift guard (ATS-0004/0005):
     # minimal JSON-Schema validation ($ref/$defs/pattern + unsupported-keyword fail) + forbidden
