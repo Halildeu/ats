@@ -52,6 +52,8 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **evidence.append.failed** | evidence | error | id-only | reason_code | gate-locked |
 | **evidence.tombstone.appended** | evidence | notice | id-only | actor_ref, reason_code | gate-locked |
 | **evidence.human_decision.finalized** | evidence | notice | id-only | actor_ref, ledger_entry_ref | gate-locked |
+| **evidence.packet.accessed** | evidence | notice | id-only | actor_ref | gate-locked |
+| **evidence.packet.shared** | evidence | notice | id-only | actor_ref, target_ref | gate-locked |
 | **evidence.recording.started** | evidence | info | id-only | actor_ref | gate-locked |
 | **evidence.recording.stopped** | evidence | notice | id-only | actor_ref | gate-locked |
 | **evidence.recording.blocked_no_consent** | evidence | warning | id-only | reason_code | gate-locked |
@@ -83,6 +85,8 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **privacy.dsar.fulfilled** | privacy | notice | id-only | actor_ref | gate-locked |
 | **privacy.erasure.executed** | privacy | notice | id-only | actor_ref, reason_code | gate-locked |
 | **privacy.retention.purged** | privacy | notice | id-only | reason_code | gate-locked |
+| **privacy.correction.requested** | privacy | notice | id-only | reason_code | gate-locked |
+| **privacy.correction.fulfilled** | privacy | notice | id-only | actor_ref | gate-locked |
 | **security.config.loaded** | security | info | none | — | design |
 | **system.startup** | system | info | none | — | design |
 

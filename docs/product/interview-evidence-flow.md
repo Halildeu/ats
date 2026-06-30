@@ -25,9 +25,9 @@
 | **HUMAN_RATIONALE_RECORDED** | İK-reviewer | [human-oversight](../governance/human-oversight-standard.md) (HUMAN_RATIONALE_RECORDED) | boş/otomatik gerekçe | gerekçe persist (primary-db) |
 | **FINALIZED** | İK-reviewer | [human-oversight](../governance/human-oversight-standard.md) (FINALIZED) + event `evidence.human_decision.finalized` | insan-gerekçesiz finalize / re-open | 6-pointer accountability + WORM |
 | **EXPORTED** | denetçi | [evidence-packet](../evidence/evidence-packet-manifest.md) (integrity) + [ats-connector](../../contracts/src/ats-connector.ts) + event `security.audit_export.generated` | ham-medya/PII/skor paket içinde | gerçek paket üretimi + imza |
-| **PACKET_ACCESSED_OR_SHARED** | denetçi | [data-lifecycle](../privacy/data-lifecycle-register.md) (audit_event) + event `security.audit_log.read` | erişim-logsuz paylaşım | erişim/paylaşım audit runtime |
+| **PACKET_ACCESSED_OR_SHARED** | denetçi | [data-lifecycle](../privacy/data-lifecycle-register.md) (audit_event) + event `evidence.packet.accessed` + event `evidence.packet.shared` | erişim-logsuz paylaşım | erişim/paylaşım audit runtime |
 | **ATS_ATTACHED** | sistem | [connector](../integrations/connector-capability-standard.md) + [ats-connector](../../contracts/src/ats-connector.ts) | candidate/stage/score write-back | gerçek dar ATS write-back |
-| **CONTEST_OR_CORRECTION** | aday | [[ATS-0005]] + [human-oversight](../governance/human-oversight-standard.md) | otomatik-ret / itiraz-yolu-yok | aday itiraz/düzeltme akışı |
+| **CONTEST_OR_CORRECTION** | aday | [[ATS-0005]] + [[ATS-0003]] (KVKK m.11 düzeltme) + event `privacy.correction.requested` + event `privacy.correction.fulfilled` | otomatik-ret / itiraz-yolu-yok | aday itiraz/düzeltme akışı runtime |
 | **CONSENT_WITHDRAWN** | aday | [[ATS-0003]] + event `consent.withdrawn` | geri-çekmeyi engelleme | withdrawal runtime |
 | **DSAR_RECEIVED** | denetçi | [[ATS-0003]] + event `privacy.dsar.received` + event `privacy.dsar.fulfilled` | DSAR yanıtsız bırakma | DSAR workflow runtime |
 | **ERASURE_EXECUTED** | sistem | [data-lifecycle](../privacy/data-lifecycle-register.md) (erasure_key_material) + event `privacy.erasure.executed` + event `evidence.tombstone.appended` | crypto-erase'siz "silindi" iddiası | erasure + unlinkable tombstone runtime |
