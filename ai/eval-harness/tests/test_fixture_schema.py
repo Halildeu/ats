@@ -104,12 +104,10 @@ def test_schema_preflight_unsupported_keyword():
     assert any("minimum" in e for e in validate_schema(s))
 
 
-def test_run_eval_rejects_nonfinite_json(tmp_path):
-    # NaN/Infinity içeren JSON metni strict loader ile fail-closed reddedilir (evaluate yok).
-    # tmp_path: source-tree'ye YAZMAZ (Codex 019f1905 durability).
+def test_run_eval_rejects_nonfinite_json():
+    # NaN/Infinity içeren JSON strict loader ile fail-closed reddedilir (evaluate yok).
+    # stdin tabanlı — DOSYA/temp YAZMAZ (read-only/no-temp ortamda da durable; Codex 019f1905).
     bad = '{"id":"b","reference":{"transcript":"x","speakers":[]},"hypothesis":{"transcript":"x","speakers":[]},"claims":[{"claim_text":"c","predicted_citation":{"start":Infinity,"end":1},"shown_as_supported":true,"ground_truth_valid_spans":[]}]}'
-    p = tmp_path / "bad.json"
-    p.write_text(bad, encoding="utf-8")
-    r = subprocess.run([sys.executable, os.path.join(HERE, "run_eval.py"), str(p)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, os.path.join(HERE, "run_eval.py"), "/dev/stdin"], input=bad, capture_output=True, text=True)
     assert r.returncode == 1
     assert "GEÇERSİZ JSON" in r.stdout or "ŞEMA İHLALİ" in r.stdout
