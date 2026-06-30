@@ -83,6 +83,7 @@
 | WORM derin-immutability + hash chain + tenant-scope | `contracts` + `backend` | `contracts/test/evidence-ledger.contract.test.ts` · `backend/contracts-java/src/test/java/com/ats/contracts/ContractTest.java` |
 | Citation fail-closed metrik invariant | `ai-eval` | `ai/eval-harness/tests/test_metrics.py` |
 | Tedarik zinciri (secret/dep/SHA-pin) | `gitleaks` + `dependency-review` | `.github/workflows/security.yml` |
+| Release evidence sözleşmesi (digest-pin/SBOM/imza-identity/SLSA-subject/vuln-disposition) — **şema/sample guard enforced (CI); gerçek release pipeline gate-locked (T-T3b)** | `release-evidence-guard` | `scripts/check-release-evidence.mjs` |
 | Register bütünlüğü (bu doküman) | `threat-register-guard` | `scripts/check-threat-register.mjs` |
 | Operasyonel event taksonomi (PII-redaction fail-closed invariantı, T-I6) | `event-taxonomy-guard` | `scripts/check-event-taxonomy.mjs` |
 

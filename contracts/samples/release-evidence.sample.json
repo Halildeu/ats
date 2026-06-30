@@ -2,29 +2,58 @@
   "schema_version": "release-evidence/v1",
   "release_ref": "ats-meeting-svc:2026.06.0",
   "generated_at": "2026-06-29T12:00:00.000Z",
+  "package": {
+    "checksum_manifest_ref": "checksums-2026.06.0",
+    "checksum_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "offline_verification_ref": "offline-verify-log-2026.06.0"
+  },
   "images": [
-    { "name": "ghcr.io/halildeu/ats-meeting", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+    { "name": "ghcr.io/halildeu/ats-meeting", "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "base_image_provenance_ref": "base-distroless-2026.06" }
   ],
   "sbom": {
     "format": "cyclonedx",
     "ref": "sbom-meeting-2026.06.0",
-    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "tool_ref": "syft-1.0"
   },
   "vuln_scan": {
     "tool_ref": "trivy-0.50",
+    "scanner_db_ref": "trivy-db-2026.06.29",
     "report_ref": "vuln-report-2026.06.0",
     "critical": 0,
     "high": 0
   },
+  "license_scan": {
+    "tool_ref": "scancode-32",
+    "report_ref": "license-report-2026.06.0",
+    "policy_violations": 0
+  },
+  "secret_scan": {
+    "tool_ref": "gitleaks-8",
+    "report_ref": "secret-report-2026.06.0",
+    "findings": 0
+  },
   "provenance": {
+    "predicate_type": "slsa-provenance",
     "slsa_level": "L3",
     "attestation_ref": "att-slsa-2026.06.0",
-    "builder_ref": "hardened-runner-isolated"
+    "attestation_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "subject_digests": ["sha256:1111111111111111111111111111111111111111111111111111111111111111"],
+    "builder_ref": "hardened-runner-isolated",
+    "source_repo_ref": "github.com/Halildeu/ats-backend",
+    "source_commit": "a1b2c3d4e5f6",
+    "build_type": "github-actions-reusable"
   },
   "signature": {
     "tool": "cosign",
     "signature_ref": "sig-meeting-2026.06.0",
-    "trust_root_ref": "ats-internal-ca-v1",
+    "expected_subject": "ats-release-signer",
+    "issuer_or_ca_ref": "ats-internal-ca-v1",
+    "key_id": "keyid-ats-2026",
+    "trust_root_ref": "ats-trust-root-v1",
+    "revocation_evidence_ref": "crl-snapshot-2026.06.29",
+    "offline_verification_ref": "cosign-verify-log-2026.06.0",
+    "transparency": "private-ca-no-tlog",
     "verified_offline": true
   },
   "model_artifacts": [

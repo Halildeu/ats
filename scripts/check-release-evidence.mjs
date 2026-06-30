@@ -20,8 +20,15 @@ const SAMPLE = JSON.parse(readFileSync(join(REPO, "contracts/samples/release-evi
 
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum", "maximum"]);
 const MOVING_TAG = /:(latest|main|stable|edge|dev)\b/i;
+const MOVING_EXACT = new Set(["latest", "main", "stable", "edge", "dev"]);
 const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const typeOf = (n) => (Array.isArray(n) ? "array" : n === null ? "null" : Number.isInteger(n) ? "integer" : typeof n);
+// canonical (key-sıralı) stringify — uniqueItems order-insensitive
+const canon = (v) => {
+  if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]";
+  if (v && typeof v === "object") return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
+  return JSON.stringify(v);
+};
 
 function runChecks(schema, sample) {
   const errors = [];
@@ -44,9 +51,11 @@ function runChecks(schema, sample) {
     if (sc.maxLength != null && typeof node === "string" && node.length > sc.maxLength) errors.push(`${path}: maxLength`);
     if (sc.pattern && typeof node === "string" && !new RegExp(sc.pattern).test(node)) errors.push(`${path}: pattern ihlali "${node}"`);
     if (sc.minimum != null && typeof node === "number" && node < sc.minimum) errors.push(`${path}: minimum`);
+    if (sc.maximum != null && typeof node === "number" && node > sc.maximum) errors.push(`${path}: maximum ${sc.maximum}`);
     if (sc.type === "array" && Array.isArray(node)) {
       if (sc.minItems != null && node.length < sc.minItems) errors.push(`${path}: minItems`);
-      if (sc.uniqueItems && new Set(node.map((x) => JSON.stringify(x))).size !== node.length) errors.push(`${path}: uniqueItems`);
+      if (sc.maxItems != null && node.length > sc.maxItems) errors.push(`${path}: maxItems ${sc.maxItems}`);
+      if (sc.uniqueItems && new Set(node.map(canon)).size !== node.length) errors.push(`${path}: uniqueItems`);
       if (sc.items) node.forEach((el, i) => validate(el, sc.items, `${path}[${i}]`));
     }
     if (sc.type === "object" && node && typeof node === "object" && !Array.isArray(node)) {
@@ -61,8 +70,16 @@ function runChecks(schema, sample) {
     if (sample.vuln_scan.critical !== 0) errors.push(`vuln_scan.critical=${sample.vuln_scan.critical} (shippable: çözülmemiş critical YASAK)`);
     if (sample.vuln_scan.high !== 0) errors.push(`vuln_scan.high=${sample.vuln_scan.high} (shippable: çözülmemiş high YASAK)`);
   }
-  if (MOVING_TAG.test(sample.release_ref || "")) errors.push(`release_ref moving-tag (digest-pin zorunlu): "${sample.release_ref}"`);
-  for (const img of sample.images || []) if (MOVING_TAG.test(img.name || "")) errors.push(`image moving-tag (digest-pin zorunlu): "${img.name}"`);
+  if (sample.license_scan && sample.license_scan.policy_violations !== 0) errors.push(`license_scan.policy_violations=${sample.license_scan.policy_violations} (shippable: 0 olmalı)`);
+  if (sample.secret_scan && sample.secret_scan.findings !== 0) errors.push(`secret_scan.findings=${sample.secret_scan.findings} (shippable: 0 olmalı)`);
+  // provenance subject, release image digest'lerini kapsamalı (attestation artifact'a bağlı)
+  if (sample.provenance && Array.isArray(sample.images)) {
+    const subj = new Set(sample.provenance.subject_digests || []);
+    for (const img of sample.images) if (!subj.has(img.digest)) errors.push(`provenance.subject_digests image digest'i kapsamıyor: "${img.name}" (attestation subject-binding)`);
+  }
+  const movingRef = (s) => MOVING_TAG.test(s) || MOVING_EXACT.has(String(s).toLowerCase());
+  if (movingRef(sample.release_ref || "")) errors.push(`release_ref moving-tag (digest-pin zorunlu): "${sample.release_ref}"`);
+  for (const img of sample.images || []) if (movingRef(img.name || "")) errors.push(`image moving-tag (digest-pin zorunlu): "${img.name}"`);
   return errors;
 }
 
@@ -79,6 +96,12 @@ function selfTest() {
     ["missing-provenance", () => { const s = clone(SAMPLE); delete s.provenance; return [SCHEMA, s]; }],
     ["bad-slsa", () => { const s = clone(SAMPLE); s.provenance.slsa_level = "L9"; return [SCHEMA, s]; }],
     ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.release_ref = { oneOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
+    ["license-violation", () => { const s = clone(SAMPLE); s.license_scan.policy_violations = 1; return [SCHEMA, s]; }],
+    ["secret-finding", () => { const s = clone(SAMPLE); s.secret_scan.findings = 1; return [SCHEMA, s]; }],
+    ["provenance-subject-mismatch", () => { const s = clone(SAMPLE); s.provenance.subject_digests = ["sha256:9999999999999999999999999999999999999999999999999999999999999999"]; return [SCHEMA, s]; }],
+    ["release-ref-bare-moving", () => { const s = clone(SAMPLE); s.release_ref = "latest"; return [SCHEMA, s]; }],
+    ["missing-signature-subject", () => { const s = clone(SAMPLE); delete s.signature.expected_subject; return [SCHEMA, s]; }],
+    ["maximum-enforced", () => { const sc = clone(SCHEMA); sc.properties.vuln_scan.properties.critical.maximum = 0; const s = clone(SAMPLE); s.vuln_scan.critical = 1; return [sc, s]; }],
   ];
   const failed = [];
   for (const [name, build] of cases) { const [sc, sm] = build(); if (runChecks(sc, sm).length === 0) failed.push(name); }
@@ -93,4 +116,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`release-evidence OK — sample schema'ya uyar; digest-pin (moving-tag yasak) + vuln crit/high=0 + offline-verify + SLSA/SBOM/signature/model-hash zorunlu; self-test 10 negatif vektör fail ediyor.`);
+console.log(`release-evidence OK — sample schema'ya uyar; digest-pin (moving-tag yasak) + vuln crit/high=0 + offline-verify + SLSA/SBOM/signature/model-hash zorunlu; self-test 17 negatif vektör fail ediyor.`);

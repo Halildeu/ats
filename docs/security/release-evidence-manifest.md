@@ -1,6 +1,6 @@
 # Release Evidence Manifest (supply-chain / air-gap doğrulama)
 
-> **Public · living document.** Air-gapped/on-prem teslimde verilen paketin **doğrulanabilir kanıt** manifesti — "verdiğiniz paketin doğrulanabilir kanıt formatı nedir?" sorusunun cevabı ([[ATS-0007]] §6 supply-chain + on-prem checklist §2).
+> **Public · living document.** Air-gapped/on-prem teslimde verilen paketin **doğrulanabilir kanıt** manifesti — on-prem checklist §2'nin **supply-chain evidence subset'i** (tam §2 değil; chain-of-custody/internal-registry-import/egress-zero-preflight/trust-root-rotation gibi operasyonel adımlar PRIVATE on-prem checklist'te kalır). "Verdiğiniz paketin doğrulanabilir kanıt formatı nedir?" sorusunun cevabı ([[ATS-0007]] §6).
 > **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI yeşili = şema/sample drift. **Gerçek build evidence** (cosign imza, gerçek SBOM, SLSA attestation, gerçek vuln-scan) = release pipeline P3/gate-locked — bu doküman onların üretildiğini iddia ETMEZ.
 > **Şema:** [contracts/schemas/release-evidence.schema.json](../../contracts/schemas/release-evidence.schema.json) · **Örnek:** [contracts/samples/release-evidence.sample.json](../../contracts/samples/release-evidence.sample.json) · **Drift guard:** `scripts/check-release-evidence.mjs` (CI `release-evidence-guard`).
 
@@ -28,7 +28,7 @@
 
 - Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`minimum`/integer; unsupported-keyword FAIL).
 - Cross-invariant: `vuln_scan.critical===0 && high===0`; image/release **moving-tag yasak** (digest-pin).
-- Gömülü self-test: **10 negatif vektör** (unresolved-crit/high, moving-tag-release/image, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance, bad-slsa, unsupported-keyword) her CI koşusunda fail-doğrulanır.
+- Gömülü self-test: **17 negatif vektör** (unresolved-crit/high, moving-tag-release/image, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance, bad-slsa, unsupported-keyword) her CI koşusunda fail-doğrulanır.
 
 ## 3. Bağlantı
 - [[ATS-0007]] §6 (supply-chain/update-integrity) · [docs/security/threat-register.md](./threat-register.md) T-T3a/T-T3b · [docs/security/control-map.md](./control-map.md) (tedarik-zinciri/vuln satırları) · on-prem checklist §2 (PRIVATE air-gap import).
