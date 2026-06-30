@@ -169,7 +169,7 @@ jobs:
   rubric-guard:
     # contracts/schemas/rubric.schema.json + sample drift guard (ATS-0005): job-related criteria only
     # + protected-attribute registry (TR+EN: yaş/din/etnik/sağlık/cinsiyet/sendika/siyasi/hamilelik
-    # key+value reddi) + scoring/affect yasağı + criterion_type enum + gömülü self-test (8 vektör).
+    # key+value reddi) + scoring/affect yasağı + criterion_type enum + gömülü self-test (31 neg + 3 allow).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

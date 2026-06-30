@@ -40,11 +40,12 @@ const PROTECTED = [
   { re: /siyasi|politik|political|\bparti\b/, label: "siyasi" },
   { re: /felsefi|philosophical|world view|ideoloj/, label: "felsefi inanç" },
   { re: /criminal|sabika|adli sicil|conviction/, label: "sabıka kaydı" },
-  { re: /native language|mother tongue|ana dil|\baccent\b|aksan|\bsive\b/, label: "ana-dil/aksan" },
+  { re: /native language|mother tongue|ana dil|native speaker|native english|\baccent\b|aksan|\bsive\b/, label: "ana-dil/aksan" },
   { re: /dernek|vakif|association member|foundation member/, label: "dernek/vakıf üyeliği" },
 ];
-// iş-ilişkili çakışmalar (false-positive engeli): protected eşleşse de bunlar varsa ALLOW
-const ALLOW = /race condition|data race|health domain|healthcare|clinical|medical domain|health tech|language skill|language proficiency|english|foreign language/;
+// iş-ilişkili çakışma NÖTRLEME (safe-phrase strip — global early-return DEĞİL): yalnız bu phrase'ler
+// metinden ÇIKARILIR; kalan metin yine protected/scoring taranır (karışık string bypass engeli).
+const ALLOW_STRIP = /race condition|data race|health domain|medical domain|health tech|healthcare domain/g;
 const SCORING = [/score|skor|puan/, /weight|agirlik/, /\brank|ranking|siralama/, /rating/, /affect|sentiment|emotion|duygu/];
 
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern"]);
@@ -86,8 +87,7 @@ function runChecks(schema, sample) {
   validate(sample, schema, "$");
 
   const flag = (str, where) => {
-    const nt = norm(str);
-    if (ALLOW.test(nt)) return; // iş-ilişkili çakışma → allow
+    const nt = norm(str).replace(ALLOW_STRIP, " "); // iş-ilişkili phrase'i çıkar, KALANI tara
     for (const p of PROTECTED) if (p.re.test(nt)) errors.push(`KORUMALI-ÖZELLIK (${p.label}) "${str}" (${where}; ayrımcılık/KVKK m.6)`);
     for (const re of SCORING) if (re.test(nt)) errors.push(`YASAK scoring/affect "${str}" (${where}; assist-not-conduct)`);
   };
@@ -138,6 +138,17 @@ function selfTest() {
     ["schema-forbidden-field", () => { const sc = clone(SCHEMA); sc.properties.candidate_age_ref = { type: "string" }; return [sc, SAMPLE]; }],
     ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.rubric_version_ref = { allOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
     ["overlong-ref", () => setId("c-" + "x".repeat(120))],
+    // mixed allow+protected (early-return bypass regression — Codex 019f17a2 iter-2)
+    ["english-native-speaker", () => setId("c-english-native-speaker")],
+    ["english-accent", () => setId("c-english-accent")],
+    ["native-english", () => setId("c-native-english")],
+    ["clinical-pregnancy-status", () => setId("c-clinical-pregnancy-status")],
+    ["clinical-age-risk", () => setId("c-clinical-age-risk")],
+    ["health-domain-disability", () => setId("c-health-domain-disability")],
+    ["healthcare-sick-leave", () => setId("c-healthcare-sick-leave")],
+    ["language-skill-native-language", () => setId("c-language-skill-native-language")],
+    ["race-condition-age", () => setId("c-race-condition-age")],
+    ["medical-domain-pregnancy", () => setId("c-medical-domain-pregnancy")],
   ];
   const allow = [
     ["race-condition", () => setId("c-race-condition-debugging")],
@@ -158,4 +169,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize+context-allow) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 21 neg + 3 allow doğrulandı.`);
+console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize + safe-phrase-strip) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 31 neg + 3 allow doğrulandı.`);
