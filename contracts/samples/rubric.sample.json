@@ -1,0 +1,25 @@
+{
+  "schema_version": "rubric/v1",
+  "rubric_version_ref": "rubric-backend-eng-v1",
+  "locale": "tr-TR",
+  "criteria": [
+    {
+      "criterion_id": "c-system-design",
+      "criterion_type": "competency",
+      "job_relatedness_rationale_ref": "jr-system-design-v1",
+      "allowed_evidence_types": ["interview_response", "work_sample"]
+    },
+    {
+      "criterion_id": "c-sql-knowledge",
+      "criterion_type": "knowledge",
+      "job_relatedness_rationale_ref": "jr-sql-v1",
+      "allowed_evidence_types": ["interview_response"]
+    },
+    {
+      "criterion_id": "c-prior-incident-experience",
+      "criterion_type": "experience",
+      "job_relatedness_rationale_ref": "jr-incident-v1",
+      "allowed_evidence_types": ["interview_response", "reference_check"]
+    }
+  ]
+}

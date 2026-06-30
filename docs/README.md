@@ -26,6 +26,9 @@
 ## Kanıt paketi (public, living)
 - [evidence/evidence-packet-manifest.md](./evidence/evidence-packet-manifest.md) — ATS-0004 citation-backed denetim kanıt paketi kanonik şeması (`contracts/schemas/evidence-packet.schema.json`; drift-guard `evidence-packet-guard`). Ham içerik/skor/affect fail-closed yasak.
 
+## Mülakat rubric standardı (public, living)
+- [governance/rubric-standard.md](./governance/rubric-standard.md) — ATS-0005 iş-ilişkili rubric sözleşmesi (`contracts/schemas/rubric.schema.json`; drift-guard `rubric-guard`). Korumalı-özellik (yaş/din/etnik...) + scoring/affect fail-closed yasak.
+
 ## AI yönetişimi (public, living)
 - [governance/human-oversight-standard.md](./governance/human-oversight-standard.md) — ATS-0004/0005 karar state-machine'i: "AI karar vermez; insan onaylar+gerekçe+kanıt" (drift-guard `human-oversight-guard`; otomatik-finalize yasak).
 - [ai-governance/eu-ai-act-technical-file-index.md](./ai-governance/eu-ai-act-technical-file-index.md) — ATS-0005 EU AI Act madde→artefakt **readiness** indeksi (drift-guard `eu-ai-act-guard`; overclaim-yasağı). Uygunluk beyanı DEĞİL.
