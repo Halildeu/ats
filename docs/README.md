@@ -18,6 +18,7 @@
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
 ## Güvenlik (public, living)
+- [security/control-map.md](./security/control-map.md) — ISO 27001:2022/SOC 2 TSC/OWASP kontrol alanları → threat-register ID cross-doc eşlemesi (drift-guard `control-map-guard`; sertifika beyanı DEĞİL).
 - [security/threat-register.md](./security/threat-register.md) — STRIDE + LINDDUN → kontrol → test matrisi (ATS-0007 register'ı; bugün enforced guard'lar + gate-locked kontroller).
 
 ## Gözlemlenebilirlik (public, living)
