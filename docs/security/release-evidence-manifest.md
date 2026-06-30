@@ -30,7 +30,7 @@
 
 - Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`minimum`/`maximum`/`maxItems`/integer; canonical-uniqueItems; unsupported-keyword FAIL).
 - Cross-invariant: `vuln_scan.critical/high=0` + `license_scan.policy_violations=0` + `secret_scan.findings=0`; **provenance.subject_digests image digest'lerini kapsamalı** (attestation subject-binding); image/release **moving-tag yasak** (digest-pin; kolonsuz `latest`/`main` dahil).
-- Gömülü self-test: **17 negatif vektör** (unresolved-crit/high, moving-tag-release/image/bare, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance/signature-subject, bad-slsa, unsupported-keyword, license-violation, secret-finding, provenance-subject-mismatch, maximum-enforced) her CI koşusunda fail-doğrulanır.
+- Gömülü self-test: **17 negatif vektör** (unresolved-crit/high, moving-tag-release/image/bare, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance/signature-subject, bad-slsa, unsupported-keyword, license-violation, secret-finding, provenance-subject-mismatch, maximum-isolated, maxItems-isolated) her CI koşusunda fail-doğrulanır.
 
 ## 3. Bağlantı
 - [[ATS-0007]] §6 (supply-chain/update-integrity) · [docs/security/threat-register.md](./threat-register.md) T-T3a/T-T3b · [docs/security/control-map.md](./control-map.md) (tedarik-zinciri/vuln satırları) · on-prem checklist §2 (PRIVATE air-gap import).
