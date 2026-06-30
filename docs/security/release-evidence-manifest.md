@@ -16,19 +16,21 @@
 | Bölüm | Anlam |
 |---|---|
 | `release_ref` / `generated_at` | sürüm kimliği + üretim zamanı |
-| `images[]` | `name` + `sha256:` digest (moving-tag yasak) |
-| `sbom` | format (spdx/cyclonedx) + ref + digest |
-| `vuln_scan` | tool + report + `critical`/`high` sayıları (0 olmalı) |
-| `provenance` | SLSA level + attestation + builder |
-| `signature` | cosign/notation + trust-root + `verified_offline:true` |
+| `package` | checksum-manifest + digest + offline-verification ref |
+| `images[]` | `name` + `sha256:` digest + base-image-provenance (moving-tag yasak) |
+| `sbom` | format (spdx/cyclonedx) + ref + digest + tool |
+| `vuln_scan` | tool + scanner-DB + report + `critical`/`high` (0 olmalı) |
+| `license_scan` / `secret_scan` | tool + report + `policy_violations`/`findings` (0 olmalı) |
+| `provenance` | predicate-type + SLSA-level + attestation(+digest) + **subject_digests** (image'a bağlı) + source-repo/commit + build-type |
+| `signature` | cosign/notation + **expected_subject** + issuer/CA + key-id + trust-root + revocation + offline-verify + transparency + `verified_offline:true` |
 | `model_artifacts[]` | model digest + provenance |
 | `disposition` | `critical_high_resolved` + `revocation_checked` + patch-SLA |
 
 ## 2. Doğrulama (drift-guard `scripts/check-release-evidence.mjs`)
 
-- Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`minimum`/integer; unsupported-keyword FAIL).
-- Cross-invariant: `vuln_scan.critical===0 && high===0`; image/release **moving-tag yasak** (digest-pin).
-- Gömülü self-test: **17 negatif vektör** (unresolved-crit/high, moving-tag-release/image, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance, bad-slsa, unsupported-keyword) her CI koşusunda fail-doğrulanır.
+- Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`minimum`/`maximum`/`maxItems`/integer; canonical-uniqueItems; unsupported-keyword FAIL).
+- Cross-invariant: `vuln_scan.critical/high=0` + `license_scan.policy_violations=0` + `secret_scan.findings=0`; **provenance.subject_digests image digest'lerini kapsamalı** (attestation subject-binding); image/release **moving-tag yasak** (digest-pin; kolonsuz `latest`/`main` dahil).
+- Gömülü self-test: **17 negatif vektör** (unresolved-crit/high, moving-tag-release/image/bare, bad-digest, verified-offline-false, disposition-not-resolved, missing-provenance/signature-subject, bad-slsa, unsupported-keyword, license-violation, secret-finding, provenance-subject-mismatch, maximum-enforced) her CI koşusunda fail-doğrulanır.
 
 ## 3. Bağlantı
 - [[ATS-0007]] §6 (supply-chain/update-integrity) · [docs/security/threat-register.md](./threat-register.md) T-T3a/T-T3b · [docs/security/control-map.md](./control-map.md) (tedarik-zinciri/vuln satırları) · on-prem checklist §2 (PRIVATE air-gap import).
