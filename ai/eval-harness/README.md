@@ -12,9 +12,11 @@ eval-harness/
   metrics/der.py        DER (diarization) — frame-based + optimal speaker mapping (küçük set)
   metrics/citation.py   precision/recall + unsupported-claim + fail-closed
   thresholds.json       eşikler (ŞU AN placeholder/uncalibrated — fixture'da kilitlenecek)
-  fixtures/schema.json  golden fixture şeması
+  fixtures/schema.json  golden fixture şeması (run_eval FAIL-CLOSED doğrular)
+  fixture_schema.py     no-dep minimal JSON-Schema validator (schema enforcement)
   fixtures/example-fixture.json   SENTETİK self-test (gerçek mülakat değil)
-  run_eval.py           orchestrator → kırmızı/yeşil Gate C raporu
+  run_eval.py           orchestrator → şema-validate → kırmızı/yeşil Gate C raporu
+  tests/test_fixture_schema.py    schema enforcement testleri (9; CI ai-eval'de koşar)
   tests/test_metrics.py birim testler (harness güvenilirliği)
 ```
 
