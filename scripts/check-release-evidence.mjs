@@ -101,7 +101,9 @@ function selfTest() {
     ["provenance-subject-mismatch", () => { const s = clone(SAMPLE); s.provenance.subject_digests = ["sha256:9999999999999999999999999999999999999999999999999999999999999999"]; return [SCHEMA, s]; }],
     ["release-ref-bare-moving", () => { const s = clone(SAMPLE); s.release_ref = "latest"; return [SCHEMA, s]; }],
     ["missing-signature-subject", () => { const s = clone(SAMPLE); delete s.signature.expected_subject; return [SCHEMA, s]; }],
-    ["maximum-enforced", () => { const sc = clone(SCHEMA); sc.properties.vuln_scan.properties.critical.maximum = 0; const s = clone(SAMPLE); s.vuln_scan.critical = 1; return [sc, s]; }],
+    // izole numeric/array keyword testleri (cross-invariant'tan bağımsız — Codex 019f1816 PARTIAL)
+    ["maximum-isolated", () => [{ type: "object", additionalProperties: false, properties: { n: { type: "integer", maximum: 0 } } }, { n: 5 }]],
+    ["maxItems-isolated", () => [{ type: "object", additionalProperties: false, properties: { a: { type: "array", maxItems: 0, items: { type: "integer" } } } }, { a: [1] }]],
   ];
   const failed = [];
   for (const [name, build] of cases) { const [sc, sm] = build(); if (runChecks(sc, sm).length === 0) failed.push(name); }
