@@ -9,6 +9,7 @@
     "common.cancel": "Vazgeç",
     "consent.disclosure.title": "Aydınlatma ve Açık Rıza",
     "consent.disclosure.body": "Mülakat kaydı KVKK kapsamında işlenir; rızanızı dilediğiniz an geri çekebilirsiniz.",
+    "consent.aiAssistanceDisclosure": "Bu süreçte yapay zeka YALNIZCA kanıt/alıntı çıkarımında yardımcıdır; kararı insan verir (EU AI Act m.50).",
     "consent.recordConsent": "Kaydı onaylıyorum",
     "consent.withdraw": "Rızamı geri çekiyorum",
     "recording.blockedNoConsent": "Rıza alınmadan kayıt başlatılamaz.",

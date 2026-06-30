@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * Product flow-map drift guard (Codex 019f18ea round-3 #1).
+ * Product flow-map drift guard (Codex 019f1918 REVISE absorb).
  *
- * docs/product/interview-evidence-flow.md §1 akış tablosu:
- *  - her adım backing en az bir çözülür ref (mevcut repo path / [[ATS-XXXX]]); forbidden+p1_residual dolu.
- *  - sentinel adımlar silinemez.
- *  - hizalama: bahsedilen human-oversight state'leri ilgili doc'ta; event'ler event-taxonomy'de mevcut.
+ * docs/product/interview-evidence-flow.md §1:
+ *  - backing'deki TÜM markdown-link path + [[ATS-XXXX]] ref MEVCUT (tek ölü-link fail); ≥1 anchor.
+ *  - forbidden + p1_residual dolu; adım tekil; sentinel adımlar silinemez.
+ *  - token hizalama: `ns.x` event token'ı event-taxonomy §2'de **token** olarak; (STATE) token'ı
+ *    human-oversight §1'de **STATE** olarak BİREBİR (typo yakalanır).
  *  - gömülü self-test.
  *
  * Bağımsız (npm dep YOK), CI job `product-flow-guard`.
@@ -16,13 +17,11 @@ import { fileURLToPath } from "node:url";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FILE = join(REPO, "docs/product/interview-evidence-flow.md");
-const HUMAN_OVERSIGHT = join(REPO, "docs/governance/human-oversight-standard.md");
-const EVENT_TAX = join(REPO, "docs/observability/event-taxonomy.md");
+const HUMAN = join(REPO, "docs/governance/human-oversight-standard.md");
+const EVENTS = join(REPO, "docs/observability/event-taxonomy.md");
 
-const SENTINELS = ["CONSENT_RECORDED", "AI_SUGGESTED_EVIDENCE", "HUMAN_RATIONALE_RECORDED", "FINALIZED", "WITHDRAWN_OR_DSAR"];
-const REQ_STATES = ["HUMAN_REVIEWING", "HUMAN_RATIONALE_RECORDED", "FINALIZED"];
-const REQ_EVENTS = ["consent.recorded", "evidence.human_decision.finalized", "privacy.dsar.received", "evidence.recording.blocked_no_consent"];
-
+const SENTINELS = ["AI_ASSISTANCE_DISCLOSED", "CONSENT_RECORDED", "AI_CITED_CLAIMS", "HUMAN_RATIONALE_RECORDED", "FINALIZED", "ERASURE_EXECUTED", "DSAR_RECEIVED", "RETENTION_PURGED"];
+const EVENT_NS = /^(consent|evidence|privacy|security|ai_pipeline|auth|authz|admin|connector|system)\.[a-z0-9_]+(\.[a-z0-9_]+)*$/;
 const adrDir = join(REPO, "docs/adr");
 const adrFiles = existsSync(adrDir) ? readdirSync(adrDir) : [];
 const adrExists = (id) => adrFiles.some((f) => f.startsWith(id));
@@ -49,43 +48,52 @@ function runChecks(text, humanDoc, eventDoc) {
   for (const r of rows) {
     if (r.length < 5) { errors.push(`az hücre: ${r[0]}`); continue; }
     const [step, , backing, forbidden, p1] = r;
+    if (seen.has(step)) errors.push(`duplicate adım: ${step}`);
     seen.add(step);
-    // backing çözülür ref
+    // TÜM markdown-link path mevcut
     const paths = [...backing.matchAll(/\]\(([^)]+)\)/g)].map((m) => m[1]).filter((p) => /^(\.\.?\/)/.test(p));
+    for (const p of paths) if (!existsSync(join(REPO, "docs/product", p))) errors.push(`${step}: ölü backing link "${p}"`);
     const adrRefs = [...backing.matchAll(/\[\[(ATS-\d+)\]\]/g)].map((m) => m[1]);
     for (const id of adrRefs) if (!adrExists(id)) errors.push(`${step}: kopuk ADR ref [[${id}]]`);
-    const pathOk = paths.some((p) => existsSync(join(REPO, "docs/product", p)));
-    if (!pathOk && !adrRefs.some(adrExists)) errors.push(`${step}: backing çözülür ref yok ("${backing}")`);
+    if (paths.length === 0 && adrRefs.length === 0) errors.push(`${step}: çözülür anchor yok`);
     if (!forbidden) errors.push(`${step}: forbidden boş`);
     if (!p1) errors.push(`${step}: p1_residual boş`);
+    // event token'ları taksonomide
+    for (const m of backing.matchAll(/`([^`]+)`/g)) {
+      const tok = m[1];
+      if (EVENT_NS.test(tok) && !eventDoc.includes(`**${tok}**`)) errors.push(`${step}: event "${tok}" event-taxonomy §2'de yok (typo?)`);
+    }
+    // state token'ları human-oversight'ta
+    for (const m of backing.matchAll(/\(([A-Z][A-Z_]{3,})\)/g)) {
+      const st = m[1];
+      if (!humanDoc.includes(`**${st}**`)) errors.push(`${step}: state "${st}" human-oversight §1'de yok (typo?)`);
+    }
   }
   for (const s of SENTINELS) if (!seen.has(s)) errors.push(`sentinel adım eksik: ${s}`);
-  // hizalama
-  for (const st of REQ_STATES) if (!humanDoc.includes(st)) errors.push(`human-oversight state yok: ${st}`);
-  for (const ev of REQ_EVENTS) if (!eventDoc.includes(ev)) errors.push(`event-taxonomy event yok: ${ev}`);
   return errors;
 }
 
 function selfTest() {
   const base = readFileSync(FILE, "utf8");
-  const human = readFileSync(HUMAN_OVERSIGHT, "utf8");
-  const ev = readFileSync(EVENT_TAX, "utf8");
+  const human = readFileSync(HUMAN, "utf8");
+  const ev = readFileSync(EVENTS, "utf8");
   const mut = (a, b) => base.replace(a, b);
   const cases = [
     ["sentinel-delete", base.replace(/\| \*\*FINALIZED\*\* .*\n/, "")],
-    ["empty-forbidden", mut("| otomatik karar / skor / sıralama | gerçek STT/diarization/LLM/citation runtime |", "|  | gerçek STT/diarization/LLM/citation runtime |")],
+    ["empty-forbidden", mut("| otomatik karar / skor / sıralama | LLM citation/entailment runtime |", "|  | LLM citation/entailment runtime |")],
     ["empty-p1", mut("gerekçe persist (primary-db) |", " |")],
-    ["broken-backing", mut("[[ATS-0004]] + [ai-provider](../../contracts/src/ai-provider.ts)", "[[ATS-9999]]")],
+    ["broken-adr", mut("| **AI_CITED_CLAIMS** | sistem | [[ATS-0004]]", "| **AI_CITED_CLAIMS** | sistem | [[ATS-9999]]")],
+    ["dead-path-alongside-valid", mut("[human-oversight](../governance/human-oversight-standard.md) (FINALIZED)", "[human-oversight](../governance/human-oversight-standard.md) [x](../nope/zzz.md) (FINALIZED)")],
+    ["typo-event", mut("event `consent.recorded`", "event `consent.recroded`")],
+    ["typo-state", mut("(HUMAN_REVIEWING)", "(HUMAN_REVIEWINGX)")],
+    ["duplicate-step", mut("| **RETENTION_PURGED**", "| **FINALIZED** | x | [[ATS-0004]] | x | x |\n| **RETENTION_PURGED**")],
   ];
   const failed = [];
   for (const [name, txt] of cases) if (runChecks(txt, human, ev).length === 0) failed.push(name);
-  // alignment negatifleri
-  if (runChecks(base, "", ev).length === 0) failed.push("missing-human-state");
-  if (runChecks(base, human, "").length === 0) failed.push("missing-event");
   return failed;
 }
 
-const errors = runChecks(readFileSync(FILE, "utf8"), readFileSync(HUMAN_OVERSIGHT, "utf8"), readFileSync(EVENT_TAX, "utf8"));
+const errors = runChecks(readFileSync(FILE, "utf8"), readFileSync(HUMAN, "utf8"), readFileSync(EVENTS, "utf8"));
 for (const n of selfTest()) errors.push(`SELF-TEST kaçtı: ${n}`);
 
 if (errors.length > 0) {
@@ -93,4 +101,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`product-flow OK — ${SENTINELS.length} sentinel adım; backing çözülür + forbidden/p1 dolu; human-oversight + event-taxonomy hizalı; self-test 6 negatif vektör fail ediyor.`);
+console.log(`product-flow OK — ${SENTINELS.length} sentinel; tüm backing-link mevcut + event/state token taksonomi/state-machine'de birebir; self-test 8 negatif vektör fail ediyor.`);
