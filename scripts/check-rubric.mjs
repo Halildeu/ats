@@ -3,10 +3,10 @@
  * Rubric standard drift guard (ATS-0005 · Codex 019f17a2 REVISE absorb).
  *
  *  1. Minimal JSON-Schema validator (no-dep, $ref/$defs/pattern/maxLength/maxItems; unsupported-kw FAIL).
- *  2. PROTECTED-ATTRIBUTE registry (TR-normalize + context-allow): korumalı-özellik (yaş/din/etnik/
+ *  2. PROTECTED-ATTRIBUTE registry (TR-normalize + SAFE-PHRASE-STRIP): korumalı-özellik (yaş/din/etnik/
  *     sendika/sağlık-durumu/cinsiyet/cinsel-yönelim/medeni-hal/ebeveyn/siyasi/felsefi/sabıka/ana-dil-aksan/
- *     dernek-vakıf/hamilelik) key+value'da reddedilir; iş-ilişkili çakışmalar (race-condition, health-domain,
- *     clinical, language-skill) ALLOW-list ile korunur (false-positive engeli).
+ *     dernek-vakıf/hamilelik) key+value+schema-key'de reddedilir; iş-ilişkili çakışma phrase'leri (race-condition/
+ *     health-domain/medical-domain) metinden ÇIKARILIR (early-return değil) → kalan protected token yine yakalanır.
  *  3. SCORING/AFFECT yasağı (key+value): score/weight/rank/rating/affect.
  *  4. criterion_id tekil; her criterion job_relatedness_rationale_ref.
  *  5. Schema KEY drift taraması ($defs+properties adları) — opsiyonel forbidden alan engeli.

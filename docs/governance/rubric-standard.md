@@ -16,9 +16,9 @@
 
 - Minimal JSON-Schema validator (no-dep, `$ref`/`$defs`/`pattern`/`maxLength`/`maxItems`; unsupported-keyword FAIL).
 - **Protected-attribute registry (TR-normalize + safe-phrase-strip):** korumalı-özellik token'ları key+value+schema-key'de reddedilir; iş-ilişkili çakışma phrase'i çıkarılıp kalan taranır.
-- **Scoring/affect yasağı:** scoring/sıralama/affect alan adları reddedilir.
+- **Scoring/affect yasağı:** scoring/sıralama/affect token'ları key+value+schema-key'de reddedilir.
 - Her criterion `job_relatedness_rationale_ref` + geçerli `criterion_type`.
-- **Korumalı-özellik kapsamı (TR+EN):** yaş/doğum-tarihi · din/inanç/mezhep · etnik/ırk/köken/milliyet · sendika · sağlık/engellilik/sağlık-durumu · cinsiyet/cinsel-yönelim/gender-identity · medeni-hal/ebeveyn/caregiver · siyasi · felsefi-inanç · sabıka-kaydı · ana-dil/aksan · dernek/vakıf-üyeliği · hamilelik. **False-positive engeli:** race-condition / health-domain / clinical / language-skill ALLOW.
+- **Korumalı-özellik kapsamı (TR+EN):** yaş/doğum-tarihi · din/inanç/mezhep · etnik/ırk/köken/milliyet · sendika · sağlık/engellilik/sağlık-durumu · cinsiyet/cinsel-yönelim/gender-identity · medeni-hal/ebeveyn/caregiver · siyasi · felsefi-inanç · sabıka-kaydı · ana-dil/aksan · dernek/vakıf-üyeliği · hamilelik. **False-positive engeli (safe-phrase-strip):** race-condition / data-race / health-domain / medical-domain / health-tech çakışma phrase'leri çıkarılır (clinical / language-skill / english-proficiency zaten protected-eşleşmez → pass).
 - **Gömülü outcome-aware self-test:** **31 negatif vektör** (TR-translit yaş/ırk/inanç + sağlık-durumu/cinsel-yönelim/sabıka/ana-dil/ebeveyn/dernek/felsefi + scoring-value/field + bad-type + duplicate + missing-job-relatedness + schema-forbidden-field + unsupported-keyword + overlong-ref + **mixed allow+protected** english-native-speaker/clinical-pregnancy/race-condition-age/medical-domain-pregnancy...) **fail** + 3 ALLOW vektör (race-condition/health-domain/clinical) **pass** her CI koşusunda doğrulanır (durable regression).
 
 ## 2. Bağlantı
