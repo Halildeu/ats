@@ -8,10 +8,12 @@ Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalış
 
 ## ⛔ Gate disiplini (kritik)
 
-**P1 ürün fonksiyonel build'i (STT/citation/UI/export) G0=GO'dan ÖNCE YAPILMAZ** (ticari validasyon: ≥3 LOI + ≥2 DPO + ATS-teyit). Şu an yalnız **gate-safe** iş yapılır:
+**Fonksiyonel mülakat davranışı (ingest → STT → diarization → LLM → citation/entailment runtime → export/render → gerçek backend/PII/WORM/connector write-back) G0=GO'dan ÖNCE YAPILMAZ** (ticari validasyon: ≥3 LOI + ≥2 DPO + ATS-teyit; gerçek-veri/rıza/owner-threshold gerektirir). Owner direktifi (2026-06-29) ile **gate-safe ürün-yüzeyi temeli** açıldı: `web/` foundation (design-system + tr-TR i18n + typed component contracts + a11y harness) — **synthetic-only**, runtime pipeline yok.
 
-- ✅ Gate-safe (şimdi): monorepo iskeleti + ATS-0001 4 contract + contract-test + CI boundary-guard.
-- 🔒 Gate-locked (G0=GO sonrası): P1 fonksiyonel (ingest → STT → diarization → citation → human-approve → audit → export).
+- ✅ Gate-safe (şimdi): monorepo + ATS-0001 contracts + gate-safe registry/guard seti (17 CI guard) + **ürün-yüzeyi temeli** (`web/` foundation; standartların kod karşılığı, synthetic fixture, CI-enforced a11y/i18n/boundary).
+- 🔒 Gate-locked (G0=GO sonrası): **fonksiyonel** pipeline (gerçek ingest/STT/diarization/citation-runtime/human-approve-persistence/audit-WORM/export/connector write-back) + scoring/ranking (ATS-0005; affect/auto-reject kalıcı RED) + gerçek-veri/G0 market kanıtı.
+
+> **No-Fake-Work çizgisi:** `web/` foundation = doğrulanabilir scaffold + standard enforcement; "ürün UI tamamlandı / pilot-ready / citation çalışıyor / a11y compliant" İDDİA EDİLMEZ. Stories/fixtures `synthetic`.
 
 ## Monorepo haritası
 
