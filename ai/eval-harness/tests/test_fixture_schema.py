@@ -104,15 +104,12 @@ def test_schema_preflight_unsupported_keyword():
     assert any("minimum" in e for e in validate_schema(s))
 
 
-def test_run_eval_rejects_nonfinite_json():
+def test_run_eval_rejects_nonfinite_json(tmp_path):
     # NaN/Infinity içeren JSON metni strict loader ile fail-closed reddedilir (evaluate yok).
+    # tmp_path: source-tree'ye YAZMAZ (Codex 019f1905 durability).
     bad = '{"id":"b","reference":{"transcript":"x","speakers":[]},"hypothesis":{"transcript":"x","speakers":[]},"claims":[{"claim_text":"c","predicted_citation":{"start":Infinity,"end":1},"shown_as_supported":true,"ground_truth_valid_spans":[]}]}'
-    p = os.path.join(HERE, "_tmp_bad.json")
-    with open(p, "w", encoding="utf-8") as fh:
-        fh.write(bad)
-    try:
-        r = subprocess.run([sys.executable, os.path.join(HERE, "run_eval.py"), p], capture_output=True, text=True)
-        assert r.returncode == 1
-        assert "GEÇERSİZ JSON" in r.stdout or "ŞEMA İHLALİ" in r.stdout
-    finally:
-        os.remove(p)
+    p = tmp_path / "bad.json"
+    p.write_text(bad, encoding="utf-8")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "run_eval.py"), str(p)], capture_output=True, text=True)
+    assert r.returncode == 1
+    assert "GEÇERSİZ JSON" in r.stdout or "ŞEMA İHLALİ" in r.stdout

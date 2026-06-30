@@ -82,13 +82,13 @@ def main() -> int:
     try:
         fixture = load_json_strict(args.fixture)
         th = load_json_strict(args.thresholds)
+        schema = load_schema()
     except ValueError as e:
         print(f"=== ATS-0004 Gate C — GEÇERSİZ JSON (fail-closed) ===\n  [KIRMIZI] {e}")
-        print("\n  SONUÇ: fixture/threshold geçersiz; eval koşulmadı; pilot-open hazır = False")
+        print("\n  SONUÇ: fixture/threshold/schema geçersiz; eval koşulmadı; pilot-open hazır = False")
         return 1
 
     # FAIL-CLOSED: schema preflight (kendi bütünlüğü) + fixture şemaya uymuyorsa evaluate ETME.
-    schema = load_schema()
     schema_self = validate_schema(schema)
     schema_errors = schema_self + validate_fixture(fixture, schema)
     if schema_errors:
