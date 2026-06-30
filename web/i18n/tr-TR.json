@@ -1,0 +1,25 @@
+{
+  "$schema_note": "ATS-0011 tr-TR mesaj kataloğu — machine-checked (key naming + ICU plural + no-empty). Varsayılan locale tr-TR (I18N-1). Tüm UI metni burada (hardcoded YASAK, I18N-2).",
+  "schema_version": "i18n-catalog/v1",
+  "locale": "tr-TR",
+  "messages": {
+    "common.appName": "Mülakat Kanıt Platformu",
+    "common.loading": "Yükleniyor…",
+    "common.save": "Kaydet",
+    "common.cancel": "Vazgeç",
+    "consent.disclosure.title": "Aydınlatma ve Açık Rıza",
+    "consent.disclosure.body": "Mülakat kaydı KVKK kapsamında işlenir; rızanızı dilediğiniz an geri çekebilirsiniz.",
+    "consent.recordConsent": "Kaydı onaylıyorum",
+    "consent.withdraw": "Rızamı geri çekiyorum",
+    "recording.blockedNoConsent": "Rıza alınmadan kayıt başlatılamaz.",
+    "evidence.reviewTitle": "Kanıt İncelemesi",
+    "evidence.citationCount": "{count, plural, one {# alıntı} other {# alıntı}}",
+    "evidence.unsupportedFlag": "Desteklenmeyen iddia — karar kanıtı olarak kullanılamaz",
+    "review.rationaleLabel": "İnsan gerekçesi",
+    "review.finalize": "Kararı kesinleştir",
+    "review.exported": "Kanıt paketi dışa aktarıldı",
+    "dsar.requestReceived": "Veri sahibi talebi alındı",
+    "error.required": "Bu alan zorunludur",
+    "error.generic": "Bir sorun oluştu; lütfen tekrar deneyin"
+  }
+}

@@ -110,6 +110,19 @@ jobs:
       - name: a11y/i18n standard drift guard
         run: node scripts/check-a11y-standard.mjs
 
+  web-foundation-guard:
+    # web/ ürün-yüzeyi temeli (ATS-0011 operationalized): design-token WCAG kontrast HESAPLAMA +
+    # target-size≥24 + tr-TR i18n catalog (key/ICU/no-empty) + typed component contracts
+    # (forbidden raw-PII/score/affect; no React runtime). Gömülü self-test (8 vektör).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: web-foundation drift guard
+        run: node scripts/check-web-foundation.mjs
+
   data-lifecycle-guard:
     # docs/privacy/data-lifecycle-register.md drift guard (ATS-0003 operationalized):
     # required veri-sınıfları + sözlük (pii_class/plane/deletion/WORM/transfer/status) +
