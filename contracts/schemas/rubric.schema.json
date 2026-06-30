@@ -4,7 +4,7 @@
   "title": "ATS Structured Interview Rubric",
   "description": "İş-ilişkili (job-related) yapılandırılmış mülakat rubric'i. Numeric/comparative scoring, ranking, affect ve korumalı-özellik (protected-attribute) kriterleri FORBIDDEN. Bu bir SOZLESME semasidir; runtime rubric editor/enforcement P1/gate-locked.",
   "$defs": {
-    "ref": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$", "minLength": 1 }
+    "ref": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]*$", "minLength": 1, "maxLength": 80 }
   },
   "type": "object",
   "additionalProperties": false,

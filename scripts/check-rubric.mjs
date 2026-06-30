@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 /**
- * Rubric standard drift guard (ATS-0005 · Codex 019f13b1 round-2 #5).
+ * Rubric standard drift guard (ATS-0005 · Codex 019f17a2 REVISE absorb).
  *
- *  1. Minimal JSON-Schema validator (no-dep, $ref/$defs/pattern; unsupported-keyword FAIL).
- *  2. PROTECTED-ATTRIBUTE registry (TR+EN): korumalı-özellik kriterleri (hamilelik/yaş/din/etnik/
- *     sendika/sağlık/cinsiyet/medeni-hal/siyasi...) hiçbir key/value'da görünemez (ayrımcılık + KVKK m.6).
- *  3. SCORING/AFFECT yasağı: score/weight/rank/rating/affect alan adları yok (assist-not-conduct).
- *  4. Her criterion job_relatedness_rationale_ref taşır (iş-ilişkililik zorunlu); criterion_type enum.
- *  5. GÖMÜLÜ self-test (durable regression).
+ *  1. Minimal JSON-Schema validator (no-dep, $ref/$defs/pattern/maxLength/maxItems; unsupported-kw FAIL).
+ *  2. PROTECTED-ATTRIBUTE registry (TR-normalize + context-allow): korumalı-özellik (yaş/din/etnik/
+ *     sendika/sağlık-durumu/cinsiyet/cinsel-yönelim/medeni-hal/ebeveyn/siyasi/felsefi/sabıka/ana-dil-aksan/
+ *     dernek-vakıf/hamilelik) key+value'da reddedilir; iş-ilişkili çakışmalar (race-condition, health-domain,
+ *     clinical, language-skill) ALLOW-list ile korunur (false-positive engeli).
+ *  3. SCORING/AFFECT yasağı (key+value): score/weight/rank/rating/affect.
+ *  4. criterion_id tekil; her criterion job_relatedness_rationale_ref.
+ *  5. Schema KEY drift taraması ($defs+properties adları) — opsiyonel forbidden alan engeli.
+ *  6. GÖMÜLÜ outcome-aware self-test (negatif fail + ALLOW pozitif pass; durable regression).
+ *
+ * NOT (No Fake Work): regex yalnız AÇIK/okunabilir token'ları yakalar; opak ref'in semantik içeriği
+ * (c-x1 ile encode) regex'le garanti EDİLEMEZ → semantik review ref-registry + human/legal onay P1/gate-locked.
  *
  * Bağımsız (npm dep YOK), CI job `rubric-guard`.
  */
@@ -19,13 +25,28 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = JSON.parse(readFileSync(join(REPO, "contracts/schemas/rubric.schema.json"), "utf8"));
 const SAMPLE = JSON.parse(readFileSync(join(REPO, "contracts/samples/rubric.sample.json"), "utf8"));
 
-const PROTECTED_RE = [
-  /hamile|gebe|pregnan/i, /\byaş\b|\bage\b|doğum.?tarih|birth.?date/i, /\bdin\b|inanç|mezhep|religio/i,
-  /etnik|ethnic|\bırk\b|\brace\b|köken|milliyet|nationalit/i, /sendika|\bunion\b/i,
-  /sağlık|hastalık|engelli|disabil|\bhealth\b|medical/i, /cinsel|cinsiyet|gender|\bsex\b|lgbt/i,
-  /medeni.?hal|marital|\bevli\b|\bbekar\b/i, /siyasi|politik|political|\bparti\b/i,
+// TR fold + diacritic strip + hyphen/underscore→space (token-context)
+const norm = (s) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[-_]+/g, " ");
+
+const PROTECTED = [
+  { re: /hamile|gebe|pregnan|maternity|dogum izin/, label: "hamilelik" },
+  { re: /\byas\b|\bage\b|dogum tarih|birth date|\bdob\b|age range|30plus|yas arali/, label: "yaş" },
+  { re: /\bdin\b|\bdini\b|inanc|mezhep|religio/, label: "din/inanç" },
+  { re: /etnik|ethnic|\birk\b|\brace\b|koken|milliyet|nationalit|ancestry/, label: "etnik/ırk" },
+  { re: /sendika|trade union|union member/, label: "sendika" },
+  { re: /\bhealth\b|saglik|hastalik|engelli|disab|health status|medical condition|sick leave|chronic/, label: "sağlık/engellilik" },
+  { re: /cinsel|cinsiyet|gender|\bsex\b|lgbt|\btrans\b|nonbinary|sexual orient|gender ident|gender expression/, label: "cinsiyet/yönelim" },
+  { re: /medeni hal|marital|\bevli\b|\bbekar\b|\bmarried\b|parental|caregiver|family status|ebeveyn|cocuk sahibi/, label: "medeni/ebeveyn" },
+  { re: /siyasi|politik|political|\bparti\b/, label: "siyasi" },
+  { re: /felsefi|philosophical|world view|ideoloj/, label: "felsefi inanç" },
+  { re: /criminal|sabika|adli sicil|conviction/, label: "sabıka kaydı" },
+  { re: /native language|mother tongue|ana dil|\baccent\b|aksan|\bsive\b/, label: "ana-dil/aksan" },
+  { re: /dernek|vakif|association member|foundation member/, label: "dernek/vakıf üyeliği" },
 ];
-const SCORING_RE = [/score|skor|puan/i, /weight|ağırlık/i, /rank|ranking|sıralama/i, /rating/i, /affect|sentiment|emotion|duygu/i];
+// iş-ilişkili çakışmalar (false-positive engeli): protected eşleşse de bunlar varsa ALLOW
+const ALLOW = /race condition|data race|health domain|healthcare|clinical|medical domain|health tech|language skill|language proficiency|english|foreign language/;
+const SCORING = [/score|skor|puan/, /weight|agirlik/, /\brank|ranking|siralama/, /rating/, /affect|sentiment|emotion|duygu/];
+
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern"]);
 const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const typeOf = (n) => (Array.isArray(n) ? "array" : n === null ? "null" : typeof n);
@@ -48,9 +69,11 @@ function runChecks(schema, sample) {
     if ("const" in sc && !deepEqual(node, sc.const)) errors.push(`${path}: const değil`);
     if (sc.enum && !sc.enum.some((e) => deepEqual(node, e))) errors.push(`${path}: enum dışı "${node}"`);
     if (sc.minLength != null && typeof node === "string" && node.length < sc.minLength) errors.push(`${path}: minLength`);
+    if (sc.maxLength != null && typeof node === "string" && node.length > sc.maxLength) errors.push(`${path}: maxLength ${sc.maxLength}`);
     if (sc.pattern && typeof node === "string" && !new RegExp(sc.pattern).test(node)) errors.push(`${path}: pattern ihlali "${node}"`);
     if (sc.type === "array" && Array.isArray(node)) {
       if (sc.minItems != null && node.length < sc.minItems) errors.push(`${path}: minItems`);
+      if (sc.maxItems != null && node.length > sc.maxItems) errors.push(`${path}: maxItems ${sc.maxItems}`);
       if (sc.uniqueItems && new Set(node.map((x) => JSON.stringify(x))).size !== node.length) errors.push(`${path}: uniqueItems`);
       if (sc.items) node.forEach((el, i) => validate(el, sc.items, `${path}[${i}]`));
     }
@@ -61,46 +84,78 @@ function runChecks(schema, sample) {
     }
   }
   validate(sample, schema, "$");
-  // protected-attribute + scoring scan (key + value, sample)
-  const scan = (obj) => {
+
+  const flag = (str, where) => {
+    const nt = norm(str);
+    if (ALLOW.test(nt)) return; // iş-ilişkili çakışma → allow
+    for (const p of PROTECTED) if (p.re.test(nt)) errors.push(`KORUMALI-ÖZELLIK (${p.label}) "${str}" (${where}; ayrımcılık/KVKK m.6)`);
+    for (const re of SCORING) if (re.test(nt)) errors.push(`YASAK scoring/affect "${str}" (${where}; assist-not-conduct)`);
+  };
+  const scanSample = (obj) => {
     if (!obj || typeof obj !== "object") return;
     for (const [k, v] of Object.entries(obj)) {
-      for (const re of PROTECTED_RE) { if (re.test(k)) errors.push(`KORUMALI-ÖZELLIK alan adı "${k}" (ayrımcılık/KVKK m.6)`); if (typeof v === "string" && re.test(v)) errors.push(`KORUMALI-ÖZELLIK değer "${v}"`); }
-      for (const re of SCORING_RE) { if (re.test(k)) errors.push(`YASAK scoring/affect alan adı "${k}" (assist-not-conduct)`); }
-      if (typeof v === "object") scan(v);
+      flag(k, "sample-key");
+      if (typeof v === "string") flag(v, "sample-value");
+      else scanSample(v);
     }
   };
-  scan(sample);
-  // her criterion job_relatedness_rationale_ref + criterion_type (şema zaten zorunlu kılar; ek güvence)
-  for (const c of sample.criteria || []) {
-    if (!c.job_relatedness_rationale_ref) errors.push(`criterion ${c.criterion_id}: job_relatedness_rationale_ref eksik`);
-  }
+  scanSample(sample);
+  const scanSchemaKeys = (s) => {
+    if (!s || typeof s !== "object") return;
+    if (s.properties) for (const k of Object.keys(s.properties)) { flag(k, "schema-key"); scanSchemaKeys(s.properties[k]); }
+    if (s.$defs) for (const k of Object.keys(s.$defs)) scanSchemaKeys(s.$defs[k]);
+    if (s.items) scanSchemaKeys(s.items);
+  };
+  scanSchemaKeys(schema);
+
+  const ids = (sample.criteria || []).map((c) => c.criterion_id);
+  if (new Set(ids).size !== ids.length) errors.push("criterion_id tekil değil (duplicate)");
+  for (const c of sample.criteria || []) if (!c.job_relatedness_rationale_ref) errors.push(`criterion ${c.criterion_id}: job_relatedness_rationale_ref eksik`);
   return errors;
 }
 
 function selfTest() {
   const clone = (x) => JSON.parse(JSON.stringify(x));
-  const cases = [
-    ["protected-criterion-id", () => { const s = clone(SAMPLE); s.criteria[0].criterion_id = "c-hamilelik-durumu"; return [SCHEMA, s]; }],
-    ["protected-age", () => { const s = clone(SAMPLE); s.criteria[0].criterion_id = "c-yaş-30plus"; return [SCHEMA, s]; }],
-    ["protected-value", () => { const s = clone(SAMPLE); s.criteria[0].job_relatedness_rationale_ref = "jr-din-uygunluk"; return [SCHEMA, s]; }],
+  const setId = (id) => { const s = clone(SAMPLE); s.criteria[0].criterion_id = id; return [SCHEMA, s]; };
+  const neg = [
+    ["age-translit", () => setId("c-yas-30plus")],
+    ["birthdate", () => setId("c-dogum-tarihi")],
+    ["ethnicity-translit", () => setId("c-irk")],
+    ["religion-translit", () => setId("c-inanc")],
+    ["health-status", () => setId("candidate-health-status")],
+    ["sexual-orientation", () => setId("c-sexual-orientation")],
+    ["gender-identity", () => setId("c-gender-identity")],
+    ["criminal-record", () => setId("c-criminal-record")],
+    ["native-language", () => setId("c-native-language")],
+    ["parental-status", () => setId("c-parental-status")],
+    ["association", () => setId("c-dernek-uyeligi")],
+    ["philosophical", () => setId("c-felsefi-gorus")],
+    ["scoring-value", () => setId("c-score-calibration")],
     ["scoring-field", () => { const s = clone(SAMPLE); s.criteria[0].weight = 5; return [SCHEMA, s]; }],
     ["bad-criterion-type", () => { const s = clone(SAMPLE); s.criteria[0].criterion_type = "personality"; return [SCHEMA, s]; }],
-    ["free-text-rationale", () => { const s = clone(SAMPLE); s.criteria[0].job_relatedness_rationale_ref = "çünkü genç lazım"; return [SCHEMA, s]; }],
+    ["duplicate-criterion-id", () => { const s = clone(SAMPLE); s.criteria.push(clone(s.criteria[0])); return [SCHEMA, s]; }],
     ["missing-job-relatedness", () => { const s = clone(SAMPLE); delete s.criteria[0].job_relatedness_rationale_ref; return [SCHEMA, s]; }],
-    ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.rubric_version_ref = { oneOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
+    ["schema-forbidden-field", () => { const sc = clone(SCHEMA); sc.properties.candidate_age_ref = { type: "string" }; return [sc, SAMPLE]; }],
+    ["unsupported-keyword", () => { const sc = clone(SCHEMA); sc.properties.rubric_version_ref = { allOf: [{ type: "string" }] }; return [sc, SAMPLE]; }],
+    ["overlong-ref", () => setId("c-" + "x".repeat(120))],
+  ];
+  const allow = [
+    ["race-condition", () => setId("c-race-condition-debugging")],
+    ["health-domain", () => setId("c-health-domain-knowledge")],
+    ["clinical-rationale", () => { const s = clone(SAMPLE); s.criteria[0].job_relatedness_rationale_ref = "jr-clinical-knowledge"; return [SCHEMA, s]; }],
   ];
   const failed = [];
-  for (const [name, build] of cases) { const [sc, sm] = build(); if (runChecks(sc, sm).length === 0) failed.push(name); }
+  for (const [name, build] of neg) { const [sc, sm] = build(); if (runChecks(sc, sm).length === 0) failed.push("NEG-kaçtı:" + name); }
+  for (const [name, build] of allow) { const [sc, sm] = build(); const e = runChecks(sc, sm); if (e.length !== 0) failed.push("ALLOW-bloklandı:" + name + "→" + e.join(";")); }
   return failed;
 }
 
 const errors = runChecks(SCHEMA, SAMPLE);
-for (const n of selfTest()) errors.push(`SELF-TEST kaçtı: ${n}`);
+for (const n of selfTest()) errors.push(`SELF-TEST: ${n}`);
 
 if (errors.length > 0) {
   console.error("rubric drift guard FAILED:");
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`rubric OK — sample schema'ya uyar; korumalı-özellik + scoring/affect alanı yok; her criterion job-related; gömülü self-test 8 negatif vektör fail ediyor.`);
+console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize+context-allow) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 21 neg + 3 allow doğrulandı.`);
