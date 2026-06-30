@@ -165,3 +165,16 @@ jobs:
           node-version: "20"
       - name: evidence-packet drift guard
         run: node scripts/check-evidence-packet.mjs
+
+  rubric-guard:
+    # contracts/schemas/rubric.schema.json + sample drift guard (ATS-0005): job-related criteria only
+    # + protected-attribute registry (TR+EN: yaş/din/etnik/sağlık/cinsiyet/sendika/siyasi/hamilelik
+    # key+value reddi) + scoring/affect yasağı + criterion_type enum + gömülü self-test (31 neg + 3 allow).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: rubric drift guard
+        run: node scripts/check-rubric.mjs
