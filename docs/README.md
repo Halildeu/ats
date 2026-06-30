@@ -14,7 +14,7 @@
 | [ATS-0007](./adr/ATS-0007-security-key-management-threat-model.md) | security & key-management threat model | Accepted |
 | [ATS-0010](./adr/ATS-0010-audit-observability-event-taxonomy.md) | audit & observability event taxonomy | Accepted |
 | [ATS-0011](./adr/ATS-0011-accessibility-i18n-standard.md) | accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) | Accepted |
-| [ATS-0012](./adr/ATS-0012-interview-analysis-dimensions.md) | mülakat analiz-boyutları (compliant; affect/deception→muadil) | Önerildi |
+| [ATS-0012](./adr/ATS-0012-interview-analysis-dimensions.md) | mülakat analiz-boyutları (Art.5 affect/biometric kaçınma + deception dışlama) | Önerildi |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
