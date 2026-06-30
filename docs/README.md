@@ -25,6 +25,9 @@
 ## Gözlemlenebilirlik (public, living)
 - [observability/event-taxonomy.md](./observability/event-taxonomy.md) — ATS-0010 kanonik operasyonel event registry'si (zarf + PII-redaction invariantı; drift-guard `event-taxonomy-guard`). İş-kanıtı WORM ledger'dan ayrı düzlem.
 
+## Entegrasyon (public, living)
+- [integrations/connector-capability-standard.md](./integrations/connector-capability-standard.md) — ATS connector yetenek registry'si: export baseline + dar write-back (aday/karar yazımı YASAK; drift-guard `connector-capability-guard`).
+
 ## Kanıt paketi (public, living)
 - [evidence/evidence-packet-manifest.md](./evidence/evidence-packet-manifest.md) — ATS-0004 citation-backed denetim kanıt paketi kanonik şeması (`contracts/schemas/evidence-packet.schema.json`; drift-guard `evidence-packet-guard`). Ham içerik/skor/affect fail-closed yasak.
 

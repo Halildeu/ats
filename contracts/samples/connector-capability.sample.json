@@ -1,0 +1,38 @@
+{
+  "schema_version": "connector-capability/v1",
+  "connectors": [
+    {
+      "connector_id": "generic-export-v1",
+      "ats_ref": "generic-ats",
+      "mode": "export",
+      "export_methods": ["pdf", "secure_link", "email"],
+      "auth_model": "oauth2",
+      "data_classes": ["evidence_packet_ref", "audit_link"],
+      "status": "gate-locked"
+    },
+    {
+      "connector_id": "greenhouse-writeback-v1",
+      "ats_ref": "greenhouse",
+      "mode": "narrow_writeback",
+      "export_methods": ["secure_link"],
+      "auth_model": "oauth2",
+      "data_classes": ["dossier_metadata", "audit_link"],
+      "writeback_fields": ["dossier_url", "evidence_status", "audit_completed_at"],
+      "status": "p1-evidence-required",
+      "p1_evidence": {
+        "ats_name": "greenhouse",
+        "api_verified": false,
+        "loi_condition": "loi-greenhouse-pending"
+      }
+    },
+    {
+      "connector_id": "no-api-fallback-v1",
+      "ats_ref": "legacy-ats",
+      "mode": "export",
+      "export_methods": ["pdf", "email"],
+      "auth_model": "none",
+      "data_classes": ["evidence_packet_ref"],
+      "status": "design"
+    }
+  ]
+}
