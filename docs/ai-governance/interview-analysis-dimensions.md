@@ -44,4 +44,4 @@
 §0 sözlük + invariant 1–4: aktif boyut allowlist (sadece 5); aktif satırda yasaklı input/output **ve yasaklı kavram-alias** yok; excluded equivalence partial→active-substitute / none→muadil-aranmaz; sentinel yasaklılar korunur + aktif-değil; gömülü self-test.
 
 ## 4. Bağlantı
-- [[ATS-0012]] kararı · [[ATS-0005]] (affect yasağı/assist/no-scoring) · [[ATS-0004]] (citation/fail-closed) · [[ATS-0003]] (biyometrik/özel-nitelikli) · rubric-standard (iş-ilişkili/protected-attr) · eu-ai-act-index (Art.5 banned / readiness≠conformity).
+- [[ATS-0012]] kararı · [[ATS-0005]] (affect yasağı/assist/no-scoring) · [[ATS-0004]] (citation/fail-closed) · [[ATS-0003]] (biyometrik/özel-nitelikli) · rubric-standard (iş-ilişkili/protected-attr) · eu-ai-act-index (Art.5 banned / readiness≠conformity) · [[speaker-attribution-standard]] (ATS-0013: diarization takma-ad S1..Sn; sesten-kimlik default-dışlanmış).

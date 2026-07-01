@@ -57,6 +57,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **evidence.recording.started** | evidence | info | id-only | actor_ref | gate-locked |
 | **evidence.recording.stopped** | evidence | notice | id-only | actor_ref | gate-locked |
 | **evidence.recording.blocked_no_consent** | evidence | warning | id-only | reason_code | gate-locked |
+| **evidence.speaker.attributed** | evidence | notice | id-only | actor_ref | gate-locked |
 | **evidence.attachment.scan_rejected** | evidence | error | none | reason_code | gate-locked |
 | **ai_pipeline.citation.rejected** | ai_pipeline | warning | id-only | reason_code | gate-locked |
 | **ai_pipeline.output.pii_blocked** | ai_pipeline | error | none | reason_code | gate-locked |

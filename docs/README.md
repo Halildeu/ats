@@ -15,6 +15,7 @@
 | [ATS-0010](./adr/ATS-0010-audit-observability-event-taxonomy.md) | audit & observability event taxonomy | Accepted |
 | [ATS-0011](./adr/ATS-0011-accessibility-i18n-standard.md) | accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) | Accepted |
 | [ATS-0012](./adr/ATS-0012-interview-analysis-dimensions.md) | mülakat analiz-boyutları (Art.5 affect/biometric kaçınma + deception dışlama) | Önerildi |
+| [ATS-0013](./adr/ATS-0013-speaker-attribution-diarization-vs-voice-id.md) | speaker attribution (diarization + biyometrisiz eşleme; sesten-kimlik default-dışlanmış) | Önerildi |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
@@ -40,6 +41,7 @@
 
 ## AI yönetişimi (public, living)
 - [ai-governance/interview-analysis-dimensions.md](./ai-governance/interview-analysis-dimensions.md) — ATS-0012 mülakat analiz-boyutları: içerik-tabanlı (CV-tutarlılık/çelişki/kalite/kapsama/citation; Art.5-yasaklı-affect/biometric'ten **kaçınma** tasarımı); duygu/ses-ton/davranış (Art.5) + yalan/deception (ürün-politikası) **excluded→safe-alternative** (drift-guard `analysis-dimensions-guard`; uygunluk iddiası değil).
+- [ai-governance/speaker-attribution-standard.md](./ai-governance/speaker-attribution-standard.md) — ATS-0013 paylaşımlı tek-mikrofon senaryosu: **diarization = ayrıştırma** (session-scoped, takma-ad S1..Sn; kalıcı şablon YOK) + **biyometrisiz attribution** (cihaz-metadata / sözlü-tanıtım-lexical / katılımcı-cihazı / insan-etiketleme; insan onayı zorunlu); **sesten-kimlik (voiceprint) default-dışlanmış sentinel** (drift-guard `speaker-attribution-guard`).
 - [governance/human-oversight-standard.md](./governance/human-oversight-standard.md) — ATS-0004/0005 karar state-machine'i: "AI karar vermez; insan onaylar+gerekçe+kanıt" (drift-guard `human-oversight-guard`; otomatik-finalize yasak).
 - [ai-governance/eu-ai-act-technical-file-index.md](./ai-governance/eu-ai-act-technical-file-index.md) — ATS-0005 EU AI Act madde→artefakt **readiness** indeksi (drift-guard `eu-ai-act-guard`; overclaim-yasağı). Uygunluk beyanı DEĞİL.
 
