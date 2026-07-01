@@ -3,7 +3,7 @@
  * Data-lifecycle register drift guard (ATS-0003 operationalized · Codex 019f13be REVISE absorb).
  *
  * docs/privacy/data-lifecycle-register.md (header-eşlemeli sütun parse):
- *  1. 25 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
+ *  1. 26 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
  *  2. Sözlük: sensitivity/plane/deletion/WORM/WORM-identity-binding/transfer/status.
  *  3. İnvariantlar:
  *     1) content/raw-pii/secret/mixed 'worm-ledger'de OLAMAZ.
@@ -32,7 +32,7 @@ const STATUS = new Set(["gate-locked", "design"]);
 const DELETABLE = new Set(["hard-delete", "crypto-erase", "transient"]);
 const PROVIDER_TRANSFER = new Set(["self-host-only", "no-train-DPA", "SCC", "KVKK-açık-rıza"]);
 const REQUIRED = [
-  "raw_media", "transcript_raw", "transcript_redacted", "speaker_label", "candidate_pii",
+  "raw_media", "transcript_raw", "transcript_redacted", "speaker_label", "speaker_attribution_map", "candidate_pii",
   "participant_pii", "embedding_vector", "redaction_map", "pseudonymization_map", "erasure_key_material",
   "recording_permission_state", "consent_record", "worm_metadata", "model_version_log",
   "human_decision_rationale", "claim_citation_ref", "evidence_packet", "dsar_request_log",
