@@ -9,13 +9,15 @@
  *     imzası/biyometrisi, şablon, enrollment, embedding, cross-session, speaker recognition, voice
  *     biometrics, konuşmacı tanıma); lexical_self_introduction + human_labeling satırında "insan onayı"
  *     tokeni ZORUNLU (otomatik kimlik iddiası yasak).
- *  §2 sentinel voiceprint_enrollment: excluded-biometric olarak DURMALI + aktif edilemez + koşulu
- *     ayrı-ADR/açık-rıza/owner-risk-kabul içermeli.
+ *  §2 sentinel voiceprint_enrollment (ATS-0014 owner beyanı 2026-07-02 sonrası): status =
+ *     active-internal-consented olarak DURMALI + §1'e taşınamaz + satırında iç-kullanıcı / aday-ASLA
+ *     (candidate_exclusion) / amaç-sınır / self-service / DPIA / P1 tokenları ZORUNLU (scope-daralması
+ *     machine-checked; aday-enrollment'a genişleme fail).
  *  §0 diarization embedding invariant cümlesi literal-pinli (silinemez/yumuşatılamaz).
  *  Bölüm yapısı allowlist: HER H2 yalnız §0–§4 (ara "## 1a." VE rakamsız "## Ek ..." kaçağı → fail).
  *  Cross-doc binding: event-taxonomy'de evidence.speaker.attributed + ledger_entry_ref + target_ref;
  *  data-lifecycle-register'da speaker_attribution_map.
- *  + gömülü self-test (16 negatif vektör).
+ *  + gömülü self-test (19 negatif vektör).
  *
  * Bağımsız (npm dep YOK), CI job `speaker-attribution-guard`. Regex ≠ runtime: attribution runtime P1.
  */
@@ -94,10 +96,17 @@ function runChecks(text, taxText, lifeText) {
   if (!sentinelRow) errors.push(`sentinel ${SENTINEL} §2'de eksik (silinemez)`);
   else {
     const [, , kosul, status] = sentinelRow;
-    if (status !== "excluded-biometric") errors.push(`${SENTINEL}: status excluded-biometric olmalı ("${status}")`);
-    if (!/ayrı ADR/i.test(kosul) || !/açık.?rıza/i.test(kosul) || !/risk-kabul/i.test(kosul)) {
-      errors.push(`${SENTINEL}: koşul satırı ayrı-ADR + açık-rıza + owner-risk-kabul içermeli`);
-    }
+    if (status !== "active-internal-consented") errors.push(`${SENTINEL}: status active-internal-consented olmalı — ATS-0014 owner beyanı ("${status}")`);
+    const SCOPE_TOKENS = [
+      [/iç-kullanıcı/i, "iç-kullanıcı (internal-only scope)"],
+      [/aday ASLA/i, "aday ASLA (aday-enrollment yasağı)"],
+      [/candidate_exclusion/i, "candidate_exclusion invariantı"],
+      [/amaç-sınır/i, "amaç-sınırı (authentication/izleme yasak)"],
+      [/self-service/i, "self-service silme"],
+      [/DPIA/, "imzalı DPIA (runtime-enable kanıtı)"],
+      [/\bP1\b/, "runtime P1 gate"],
+    ];
+    for (const [re, label] of SCOPE_TOKENS) if (!re.test(kosul)) errors.push(`${SENTINEL}: koşul/scope hücresinde zorunlu token eksik: ${label}`);
   }
 
   if (!text.includes(EMBED_INVARIANT)) errors.push(`§0 embedding invariant cümlesi eksik/yumuşatılmış (literal pin): "${EMBED_INVARIANT.slice(0, 60)}..."`);
@@ -107,6 +116,7 @@ function runChecks(text, taxText, lifeText) {
   if (!taxRow) errors.push("event-taxonomy: evidence.speaker.attributed satırı eksik");
   else if (!/ledger_entry_ref/.test(taxRow) || !/target_ref/.test(taxRow)) errors.push("event-taxonomy: evidence.speaker.attributed required-extra ledger_entry_ref + target_ref içermeli (two-plane)");
   if (!lifeText.includes("**speaker_attribution_map**")) errors.push("data-lifecycle-register: speaker_attribution_map veri-sınıfı eksik");
+  if (!lifeText.includes("**voiceprint_template**")) errors.push("data-lifecycle-register: voiceprint_template veri-sınıfı eksik (ATS-0014)");
 
   return errors;
 }
@@ -124,7 +134,10 @@ function selfTest() {
     ["sentinel-deleted", base.replace(/\| \*\*voiceprint_enrollment\*\* .*\n/, ""), tax, life],
     ["sentinel-activated", mut("\n\n## 2.", "\n| **voiceprint_enrollment** | ses karakteristigi | no | active-compliant | x |\n\n## 2."), tax, life],
     ["embed-invariant-weakened", mut("**persist edilmez**, **export edilmez**", "gerektiğinde persist edilebilir"), tax, life],
-    ["excluded-status-invalid", mut("| excluded-biometric |", "| optional |"), tax, life],
+    ["sentinel-status-invalid", mut("| active-internal-consented |", "| optional |"), tax, life],
+    ["candidate-exclusion-removed", mut("**aday ASLA enroll edilmez** (candidate_exclusion; eleme-yoluyla öneri)", "eşleme kapsamı genişletilebilir"), tax, life],
+    ["dpia-p1-removed", mut("**imzalı DPIA** ([[dpia-voice-enrollment]]) + VERBIS = runtime-enable kanıtı; runtime **P1** gate-locked", "hemen kullanılabilir"), tax, life],
+    ["crossdoc-lifecycle-voiceprint-missing", base, tax, life.replace(/\| \*\*voiceprint_template\*\* .*\n/, "")],
     ["duplicate-active-row", mut("\n\n## 2.", "\n| **device_metadata** | ikinci kopya | no | active-compliant | dup |\n\n## 2."), tax, life],
     ["non-bold-alias-row", mut("\n\n## 2.", "\n| voice_map | akustik eşleme | no | active-compliant | alias |\n\n## 2."), tax, life],
     ["section-1a-escape", mut("\n\n## 2.", "\n\n## 1a. Ek aktif yöntemler\n\n| **auto_voice** | akustik | no | active-compliant | kaçak |\n\n## 2."), tax, life],
@@ -147,4 +160,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment excluded+aktif-değil+ADR/rıza/risk-kabul koşullu, embedding invariantı pinli, H2 bölüm-yapısı allowlist (rakamsız dahil), cross-doc (taxonomy ledger_entry_ref+target_ref, lifecycle speaker_attribution_map); self-test 16 negatif vektör fail ediyor.");
+console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment=active-internal-consented (ATS-0014; §1'e taşınamaz; iç-kullanıcı/aday-ASLA/candidate_exclusion/amaç-sınır/self-service/DPIA/P1 tokenları zorunlu), embedding invariantı pinli, H2 bölüm-yapısı allowlist, cross-doc (taxonomy ledger_entry_ref+target_ref, lifecycle speaker_attribution_map+voiceprint_template); self-test 19 negatif vektör fail ediyor.");

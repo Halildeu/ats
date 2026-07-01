@@ -1,7 +1,7 @@
 # ATS-0014 — Voice-enrollment opt-in modülü (YALNIZ iç-kullanıcı; aday kategorik-dışlanmış) — owner risk-kabul kapılı
 
-- **Durum:** Önerildi — **owner risk-kabul bekliyor** (aktivasyon = bu ADR Accepted + registry-v2 flip PR'ı; o zamana kadar [[ATS-0013]] sentinel'i `excluded-biometric` kalır)
-- **Tarih:** 2026-07-02
+- **Durum:** **Accepted** — owner risk-kabul beyanı **KAYITLI (2026-07-02)**: (a) owner mesajı "Açık rıza sorun değil bunları zaten alacağız"; (b) owner /goal direktifi "KVK gibi konuları da izinlerinin alınacağını düşünülerek beklemeden KVKK'ya takılmadan tam otonom" → internal-only scope risk-kabul olarak bu ADR'ye işlendi. Registry-v2 flip aynı gün yapıldı ([[speaker-attribution-standard]] §2 → `active-internal-consented`, design-plane). **Runtime-enable AYRI kapı:** imzalı [[dpia-voice-enrollment]] + VERBIS + P1 gate (çift kilit).
+- **Tarih:** 2026-07-02 (taslak + owner beyanı + flip aynı gün)
 - **Bağlam kaynağı:** owner 2026-07-02 "açık rıza sorun değil, bunları zaten alacağız" + paylaşımlı tek-mikrofon senaryosu · [[ATS-0013]] sentinel koşulu (ayrı ADR + açık-rıza + özel-nitelikli envanter + owner risk-kabul) · [[ATS-0003]] (kayıt-rızası akışı mevcut)
 - **Karar tipi:** Ürün/veri-kapsam kararı (gate-safe; modül runtime'ı P1+). **Uygunluk iddiası DEĞİL.**
 
@@ -32,14 +32,16 @@
 - **Geçici eşleştirme adayın sesine de dokunur:** 1:N eşleme her kümenin (aday dahil) oturum-embedding'ini iç-şablon-DB ile karşılaştırır — adaydan kalıcı şablon üretilmez/saklanmaz ama **geçici biyometrik işleme** sayılabilir. Mitigasyon: aday kayıt-rızası metnine "konuşmacı ayrıştırma/eşleştirme amaçlı geçici ses işleme" cümlesi eklenir (owner "rızaları zaten alacağız" beyanıyla uyumlu) + no-match → anında at + hiçbir aday-referansı loglanmaz.
 - **Ölçülülük içtihadı artığı:** alternatif dururken biyometrik convenience — gönüllülük + dezavantajsızlık + dar amaç belgelense de Kurul riski sıfırlanmaz.
 
-## Aktivasyon önkoşulları (sıralı; hepsi tamamlanmadan registry flip YOK)
+## Aktivasyon önkoşulları — durum kaydı (2026-07-02 amendment)
 
-1. **Owner risk-kabul beyanı** (bu ADR'ye yazılı: "artık-riskleri kabul ediyorum, internal-only scope ile aktive et").
-2. Rıza metinleri: (a) iç-kullanıcı enrollment açık-rıza metni (amaç/saklama/silme/dezavantajsızlık); (b) **aday kayıt-rızasına açık dil**: aday enroll edilmez + kalıcı şablon üretilmez, ANCAK adayın **geçici oturum ses temsili enroll-olmuş iç-konuşmacı şablonlarıyla karşılaştırılabilir** ve no-match sonucundan "muhtemel aday/misafir" ÖNERİSİ üretilebilir; sonuç insan onayına tabidir; aday referansı loglanmaz/persist edilmez.
-3. **DPIA + ölçülülük dosyası (owner/DPO kanıt kapısı):** veri-koruma etki değerlendirmesi + DPO/owner sign-off + ölçülülük/gereklilik **alternatif analizi** (neden biyometrisiz yollar yetmiyor/nasıl eşdeğer sunuluyor) + **EU AI Act high-risk delta pack** ([[eu-ai-act-technical-file-index]] Art.9/11/16/43 owner-evidence hattı) + (jurisdiction'a göre) **BIPA written-release + yayımlı retention/destruction policy**.
-4. Özel-nitelikli veri envanteri + (TR tenant için) VERBIS kategori güncellemesi — owner/DPO adımı.
-5. **Registry-v2 flip PR'ı:** [[speaker-attribution-standard]] + guard v2 — `voiceprint_enrollment` → `active-internal-consented` (yeni status; aday-dışlama + amaç-sınırı + self-service-silme invariantları machine-checked; sentinel silinmez, scope'u değişir).
-6. Modül runtime'ı **P1+ gate-locked** kalır (G0=GO sonrası; PRE-G0'da fonksiyonel build YASAK).
+**Design-plane vs runtime-enable ayrımı:** owner beyanı + taslak artefaktlarla **design-plane flip** yapılır (registry status); **runtime-enable** için imzalı owner-evidence şarttır (çift kilit: P1 gate + imzalı DPIA).
+
+1. ✅ **Owner risk-kabul beyanı** — KAYITLI (Durum satırındaki iki beyan; internal-only scope).
+2. ✅ **Rıza metinleri (taslak landed):** [[consent-texts-voice-enrollment]] — (a) iç-kullanıcı enrollment açık-rıza metni (amaç/saklama/silme/dezavantajsızlık); (b) aday kayıt-rızası ek-cümlesi: aday enroll edilmez + kalıcı şablon üretilmez, ANCAK geçici oturum ses temsili iç-şablonlarla karşılaştırılabilir + no-match→"muhtemel aday/misafir" ÖNERİSİ + insan onayı + aday referansı loglanmaz/persist edilmez. **Tenant adaptasyonu + yayım = owner/DPO.**
+3. ✅(taslak) / ⏳(imza) **DPIA + ölçülülük dosyası:** [[dpia-voice-enrollment]] — DPIA + ölçülülük/gereklilik alternatif analizi + risk matrisi + EU AI Act high-risk delta ([[eu-ai-act-technical-file-index]] Art.9/11/16/43 owner-evidence hattı) + jurisdictional BIPA release/retention-policy eki. **DPO/owner sign-off PENDING — imzalı hali runtime-enable kanıtı.**
+4. ⏳ Özel-nitelikli veri envanteri + (TR tenant) **VERBIS** kategori güncellemesi — owner/DPO adımı (runtime-enable önkoşulu).
+5. ✅ **Registry-v2 flip (bu amendment ile):** [[speaker-attribution-standard]] §2 → `active-internal-consented` + guard v2 (aday-dışlama/amaç-sınırı/self-service-silme/DPIA/P1 tokenları machine-checked; sentinel silinmez, §1'e taşınamaz).
+6. ⏳ Modül runtime'ı **P1+ gate-locked** (G0=GO sonrası; PRE-G0'da fonksiyonel build YASAK) + **imzalı DPIA/VERBIS olmadan runtime açılamaz**.
 
 ## Değerlendirilen alternatifler
 
@@ -49,7 +51,7 @@
 
 ## Gate disiplini
 
-Bu ADR gate-safe kapsam/risk çerçevesidir; hiçbir şeyi aktive etmez. [[ATS-0013]] sentinel'i owner risk-kabul + flip PR'ına kadar `excluded-biometric` kalır. "modül çalışıyor" DENMEZ.
+Bu ADR + amendment gate-safe kapsam/risk çerçevesidir. Flip **design-plane**'dir: registry status değişir, **çalışan hiçbir özellik yoktur ve açılamaz** — runtime P1 gate-locked + imzalı-DPIA/VERBIS çift kilidi. "modül çalışıyor" DENMEZ.
 
 ## Bağlantı
 
