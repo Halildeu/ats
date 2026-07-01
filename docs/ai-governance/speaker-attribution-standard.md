@@ -34,7 +34,7 @@
 
 | method | sebep | koşul (gelecekte açılırsa) | status |
 |---|---|---|---|
-| **voiceprint_enrollment** | kalıcı ses-şablonu (voiceprint) + cross-session kimlik eşleme = KVKK m.6 **özel-nitelikli biyometrik** veri (açık rıza şart) + GDPR Art.4(14)/Art.9 biyometrik eşiği + EU AI Act **biyometrik-tanımlama yüksek-risk** sınıfı + US eyalet-hukuku maruziyeti (Illinois BIPA vb.; jurisdictional). Kategorik yasak DEĞİL — ağır rejim; default kapsam dışı | **ayrı ADR** + açık-rıza akışı + özel-nitelikli veri envanteri/retention ([[data-lifecycle-register]]) + **owner risk-kabul**; ancak opsiyonel modül olarak | excluded-biometric |
+| **voiceprint_enrollment** | kalıcı ses-şablonu (voiceprint) + cross-session kimlik eşleme = KVKK m.6 **özel-nitelikli biyometrik** veri (açık rıza şart) + GDPR Art.4(14)/Art.9 biyometrik eşiği + EU AI Act **biyometrik-tanımlama yüksek-risk** sınıfı + US eyalet-hukuku maruziyeti (Illinois BIPA vb.; jurisdictional). Kategorik yasak DEĞİL — ağır rejim; default kapsam dışı | **ayrı ADR** + açık-rıza akışı + özel-nitelikli veri envanteri/retention ([[data-lifecycle-register]]) + **owner risk-kabul**; ancak opsiyonel modül olarak — taslak: [[ATS-0014]] internal-only opt-in (owner risk-kabul bekliyor) | excluded-biometric |
 
 ## 3. Doğrulama (`scripts/check-speaker-attribution.mjs`)
 
