@@ -12,10 +12,10 @@
  *  §2 sentinel voiceprint_enrollment: excluded-biometric olarak DURMALI + aktif edilemez + koşulu
  *     ayrı-ADR/açık-rıza/owner-risk-kabul içermeli.
  *  §0 diarization embedding invariant cümlesi literal-pinli (silinemez/yumuşatılamaz).
- *  Bölüm yapısı allowlist: yalnız §0–§4 (ara bölüm, örn. "## 1a.", guard-kaçağı → fail).
+ *  Bölüm yapısı allowlist: HER H2 yalnız §0–§4 (ara "## 1a." VE rakamsız "## Ek ..." kaçağı → fail).
  *  Cross-doc binding: event-taxonomy'de evidence.speaker.attributed + ledger_entry_ref + target_ref;
  *  data-lifecycle-register'da speaker_attribution_map.
- *  + gömülü self-test (15 negatif vektör).
+ *  + gömülü self-test (16 negatif vektör).
  *
  * Bağımsız (npm dep YOK), CI job `speaker-attribution-guard`. Regex ≠ runtime: attribution runtime P1.
  */
@@ -58,10 +58,10 @@ function strictRows(lines, secName, errors) {
 function runChecks(text, taxText, lifeText) {
   const errors = [];
 
-  // bölüm yapısı allowlist — "## 1a." tarzı guard-kaçağı ara bölüm yasak
+  // bölüm yapısı allowlist — HER H2 §0–§4 setinde olmalı ("## 1a." VE rakamsız "## Ek ..." kaçağı yasak)
   for (const l of text.split("\n")) {
     const m = l.match(/^##\s+(\S+)/);
-    if (m && /^\d/.test(m[1]) && !SECTION_ALLOWED.has(m[1])) errors.push(`izinsiz numaralı bölüm başlığı: "## ${m[1]}" (yalnız §0–§4)`);
+    if (m && !SECTION_ALLOWED.has(m[1])) errors.push(`izinsiz bölüm başlığı: "## ${m[1]}" (yalnız §0–§4; ara/rakamsız H2 yasak)`);
   }
 
   const sec1 = section(text, /^##\s*1\./);
@@ -128,6 +128,7 @@ function selfTest() {
     ["duplicate-active-row", mut("\n\n## 2.", "\n| **device_metadata** | ikinci kopya | no | active-compliant | dup |\n\n## 2."), tax, life],
     ["non-bold-alias-row", mut("\n\n## 2.", "\n| voice_map | akustik eşleme | no | active-compliant | alias |\n\n## 2."), tax, life],
     ["section-1a-escape", mut("\n\n## 2.", "\n\n## 1a. Ek aktif yöntemler\n\n| **auto_voice** | akustik | no | active-compliant | kaçak |\n\n## 2."), tax, life],
+    ["non-number-h2-hidden-active", mut("\n\n## 2.", "\n\n## Ek aktif yöntemler\n\n| **speaker_identification** | akustik embedding | no | active-compliant | otomatik |\n\n## 2."), tax, life],
     ["prose-contradiction-sec1", mut("\n\n## 2.", "\n\nGerekirse konuşmacı tanıma ile otomatik eşleme yapılabilir.\n\n## 2."), tax, life],
     ["turkish-alias-active", mut("küme kısa-kesit inceleme UI", "küme ses izi eşlemesi"), tax, life],
     ["crossdoc-event-ref-missing", base, tax.replace("| **evidence.speaker.attributed** | evidence | notice | id-only | actor_ref, ledger_entry_ref, target_ref | gate-locked |", "| **evidence.speaker.attributed** | evidence | notice | id-only | actor_ref | gate-locked |"), life],
@@ -146,4 +147,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment excluded+aktif-değil+ADR/rıza/risk-kabul koşullu, embedding invariantı pinli, bölüm-yapısı allowlist, cross-doc (taxonomy ledger_entry_ref+target_ref, lifecycle speaker_attribution_map); self-test 15 negatif vektör fail ediyor.");
+console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment excluded+aktif-değil+ADR/rıza/risk-kabul koşullu, embedding invariantı pinli, H2 bölüm-yapısı allowlist (rakamsız dahil), cross-doc (taxonomy ledger_entry_ref+target_ref, lifecycle speaker_attribution_map); self-test 16 negatif vektör fail ediyor.");

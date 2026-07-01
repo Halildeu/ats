@@ -31,7 +31,7 @@ Hukuki gerçek: **sesten kimlik = voiceprint = biyometrik veri** → KVKK m.6 ö
 
 ## Değerlendirilen alternatifler
 
-- **(A) Voiceprint enrollment ile otomatik tanıma** — RED (default): özel-nitelikli biyometrik rejim + BIPA + high-risk; değeri (etiketleme zahmetinden tasarruf) riske değmez. Opsiyonel modül yolu §Karar-3'te açık bırakıldı.
+- **(A) Voiceprint enrollment ile otomatik tanıma** — RED (default): özel-nitelikli biyometrik rejim (KVKK m.6 + GDPR Art.9) + US eyalet-hukuku maruziyeti (BIPA vb.; jurisdictional) + EU AI Act biometric-ID high-risk; değeri (etiketleme zahmetinden tasarruf) riske değmez. Opsiyonel modül yolu §Karar-3'te açık bırakıldı.
 - **(B) Attribution hiç yapmama (hep S1/S2)** — RED: kanıt paketinde "kim söyledi" bağlamı zayıflar; insan-onaylı eşleme düşük-riskli ve yeterli.
 - **(C) Diarization + biyometrisiz attribution + sentinel dışlama (seçilen).**
 
