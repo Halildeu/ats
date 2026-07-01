@@ -15,7 +15,7 @@
 | **KVKK Kurulu ölçülülük/gereklilik içtihadı** | **HAYIR** | Kurul, rızaya RAĞMEN daha az müdahaleci alternatif varken biyometrik işlemeyi hukuka aykırı bulabiliyor (işyeri PDKS/spor-salonu kararları hattı). Mitigasyon: gerçek gönüllülük + her an biyometrisiz alternatif ([[speaker-attribution-standard]] §1 yolları) + reddedene sıfır-dezavantaj + dar amaç |
 | **İşe-alım güç asimetrisi (aday rızası)** | **HAYIR** | adayın rızası "özgürce verilmiş" sayılmayabilir (iş fırsatı baskısı). Mitigasyon: **aday HİÇBİR KOŞULDA enroll edilmez** (kategorik dışlama; bu modülün aday için değeri de yok — aday tek-seferlik konuşmacı, enrollment tekrarlayan konuşmacı içindir) |
 | **EU AI Act high-risk yükümlülükleri** | **HAYIR** | rıza AI Act'ten muafiyet değildir; biyometrik-tanımlama + işe-alım bağlamı high-risk kalır → [[eu-ai-act-technical-file-index]] readiness kapsar; conformity owner-evidence |
-| Çalışan/iç-kullanıcı rıza asimetrisi (EU) | **KISMEN** | işveren-çalışan rızası da asimetrik; mitigasyon: convenience-opt-in + alternatif her zaman açık + dezavantajsızlık + self-service silme |
+| Çalışan/iç-kullanıcı rıza asimetrisi (KVKK + GDPR + iş hukuku) | **KISMEN** | işveren-çalışan/iş-ilişkisi rızası her iki rejimde de asimetrik (özgür-irade sorgusu). Mitigasyon: convenience-opt-in + **biyometrisiz alternatifin operasyonel olarak EŞDEĞER erişilebilirliği** + **opt-out sonrası sıfır performans/değerlendirme etkisi** + self-service silme + **DPO/HR policy kaydı** |
 
 ## Karar (önerilen tasarım — owner kabulüyle yürürlüğe girer)
 
@@ -35,10 +35,11 @@
 ## Aktivasyon önkoşulları (sıralı; hepsi tamamlanmadan registry flip YOK)
 
 1. **Owner risk-kabul beyanı** (bu ADR'ye yazılı: "artık-riskleri kabul ediyorum, internal-only scope ile aktive et").
-2. Rıza metinleri: (a) iç-kullanıcı enrollment açık-rıza metni (amaç/saklama/silme/dezavantajsızlık); (b) aday kayıt-rızasına geçici-eşleştirme cümlesi.
-3. Özel-nitelikli veri envanteri + (TR tenant için) VERBIS kategori güncellemesi — owner/DPO adımı.
-4. **Registry-v2 flip PR'ı:** [[speaker-attribution-standard]] + guard v2 — `voiceprint_enrollment` → `active-internal-consented` (yeni status; aday-dışlama + amaç-sınırı + self-service-silme invariantları machine-checked; sentinel silinmez, scope'u değişir).
-5. Modül runtime'ı **P1+ gate-locked** kalır (G0=GO sonrası; PRE-G0'da fonksiyonel build YASAK).
+2. Rıza metinleri: (a) iç-kullanıcı enrollment açık-rıza metni (amaç/saklama/silme/dezavantajsızlık); (b) **aday kayıt-rızasına açık dil**: aday enroll edilmez + kalıcı şablon üretilmez, ANCAK adayın **geçici oturum ses temsili enroll-olmuş iç-konuşmacı şablonlarıyla karşılaştırılabilir** ve no-match sonucundan "muhtemel aday/misafir" ÖNERİSİ üretilebilir; sonuç insan onayına tabidir; aday referansı loglanmaz/persist edilmez.
+3. **DPIA + ölçülülük dosyası (owner/DPO kanıt kapısı):** veri-koruma etki değerlendirmesi + DPO/owner sign-off + ölçülülük/gereklilik **alternatif analizi** (neden biyometrisiz yollar yetmiyor/nasıl eşdeğer sunuluyor) + **EU AI Act high-risk delta pack** ([[eu-ai-act-technical-file-index]] Art.9/11/16/43 owner-evidence hattı) + (jurisdiction'a göre) **BIPA written-release + yayımlı retention/destruction policy**.
+4. Özel-nitelikli veri envanteri + (TR tenant için) VERBIS kategori güncellemesi — owner/DPO adımı.
+5. **Registry-v2 flip PR'ı:** [[speaker-attribution-standard]] + guard v2 — `voiceprint_enrollment` → `active-internal-consented` (yeni status; aday-dışlama + amaç-sınırı + self-service-silme invariantları machine-checked; sentinel silinmez, scope'u değişir).
+6. Modül runtime'ı **P1+ gate-locked** kalır (G0=GO sonrası; PRE-G0'da fonksiyonel build YASAK).
 
 ## Değerlendirilen alternatifler
 
