@@ -32,6 +32,7 @@
 | **transcript_raw** | STT ham çıktısı | processor | content | primary-db | açık-rıza | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
 | **transcript_redacted** | PII-azaltılmış transkript | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
 | **speaker_label** | diarization etiketi (S1/S2) | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
+| **speaker_attribution_map** | S1..Sn ↔ katılımcı display-ref eşlemesi (insan-onaylı; ATS-0013 — biyometrik şablon DEĞİL) | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
 | **candidate_pii** | aday kimlik verisi | processor | raw-pii | primary-db | açık-rıza | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
 | **participant_pii** | interviewer kimlik verisi | processor | raw-pii | primary-db | açık-rıza/sözleşme (m.5/2-c) | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
 | **embedding_vector** | citation arama indexi | processor | pseudonymized | vector-index | açık-rıza | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
@@ -58,7 +59,7 @@
 
 ## 2. Doğrulama (drift-guard `scripts/check-data-lifecycle.mjs`)
 
-- Tüm required veri-sınıfları (sentinel, 25) mevcut + **tekil** (duplicate fail).
+- Tüm required veri-sınıfları (sentinel, 26) mevcut + **tekil** (duplicate fail).
 - Sözlük geçerliliği (sensitivity/plane/deletion/WORM/identity-binding/transfer/status).
 - §0 invariant 1–6 (WORM-içerik-yasağı; worm-ledger→EVET+tombstone+subject-binding; content/raw/secret silinebilir; kms-vault→secret; provider transfer-tipi; legal/retention dolu+duplicate).
 - Header-eşlemeli sütun parse.

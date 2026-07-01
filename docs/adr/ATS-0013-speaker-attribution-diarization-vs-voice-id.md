@@ -9,7 +9,7 @@
 
 Owner senaryosu: mülakat/toplantıda bazen herkes **aynı odada**, **tek bilgisayar + tek mikrofon** üzerinden **çok sayıda kişi** konuşuyor. Cihaz/oturum metadata'sı ("bu cihaz Halil'in") konuşmacı-kişi eşlemesi için tek başına yetmez. Owner "kişiyi sesinden tanımak" istedi.
 
-Hukuki gerçek: **sesten kimlik = voiceprint = biyometrik veri** → KVKK m.6 özel-nitelikli (açık rıza şart) + EU AI Act biyometrik-tanımlama yüksek-risk + US BIPA dava yüzeyi. Kategorik yasak değil ama ağır rejim. Buna karşılık **diarization** (oturum-içi konuşmacı AYIRMA, `S1..Sn` takma-ad) kimlik iddiası taşımaz ve kalıcı şablon üretmezse tanımlama eşiğini geçmez.
+Hukuki gerçek: **sesten kimlik = voiceprint = biyometrik veri** → KVKK m.6 özel-nitelikli (açık rıza şart) + GDPR Art.4(14)/Art.9 biyometrik eşiği + EU AI Act biyometrik-tanımlama yüksek-risk + US eyalet-hukuku maruziyeti (örn. Illinois BIPA; jurisdictional). Kategorik yasak değil ama ağır rejim. Buna karşılık **diarization** (oturum-içi konuşmacı AYIRMA, `S1..Sn` takma-ad) kimlik iddiası taşımaz ve kalıcı şablon üretmezse tanımlama eşiğini geçmez.
 
 ## Karar
 
@@ -21,12 +21,12 @@ Hukuki gerçek: **sesten kimlik = voiceprint = biyometrik veri** → KVKK m.6 ö
    - **lexical_self_introduction** — toplantı başı sözlü tanıtım/yoklama; transkript İÇERİĞİNDEN öneri (söylenen sözden, akustik karakteristikten değil) + insan onayı;
    - **per_participant_device** — opsiyonel: aynı odada herkes kendi cihazından da katılır;
    - **human_labeling** — paylaşımlı-mikrofon **kanonik yolu**: görüşmeci küme başına kısa-kesit dinleyip atar; atama = insan beyanı + `evidence.speaker.attributed` audit event'i.
-   Attribution opsiyoneldir; eşlenmemiş `S1` geçerli kalır.
+   Attribution opsiyoneldir; eşlenmemiş `S1` geçerli kalır. Atama kaydının iş gerçeği **ledger'a bağlanır** (`ledger_entry_ref`; log düzleminde yalnız opak `target_ref` — two-plane, [[ATS-0010]]) ve eşleme **`speaker_attribution_map`** veri-sınıfı olarak yaşam-döngüsü rejimine tabidir ([[data-lifecycle-register]]).
 3. **identification (voiceprint_enrollment) — DEFAULT-DIŞLANMIŞ sentinel:** kalıcı ses-şablonu + cross-session otomatik "bu ses = Ahmet" eşlemesi ürünün default kapsamında YOK. Gelecekte açılması ancak: **ayrı ADR + açık-rıza akışı + özel-nitelikli envanter/retention + owner risk-kabul** ile opsiyonel modül olarak.
 
 ## Sonuçlar
 
-**Olumlu:** owner'ın paylaşımlı-mikrofon senaryosu biyometrik veri işlemeden çözülür (diarization + insan/içerik-tabanlı eşleme); ürün KVKK özel-nitelikli/BIPA/high-risk-biometric rejimine girmez; kanıt zinciri insan-onaylı kalır ([[human-oversight-standard]]).
+**Olumlu:** owner'ın paylaşımlı-mikrofon senaryosu **kalıcı ses-şablonu/kimlik eşlemesi üretmeden** çözülür (diarization + insan/içerik-tabanlı eşleme); **default kapsam voiceprint/biyometrik-TANIMLAMA rejimine girmez** — dar iddia: ham ses/görüntü kaydının kendisi yine kişisel veridir ve [[data-lifecycle-register]] `raw_media` rejimiyle (açık rıza + özel-nitelikli-doğarsa-minimizasyon) işlenir; kanıt zinciri insan-onaylı kalır ([[human-oversight-standard]]).
 **Olumsuz:** tam otomatik "sistem herkesi sesinden tanır" konforu yok (bilinçli); paylaşımlı odada görüşmeciye küme-etiketleme adımı düşer (UI bunu 30-sn'lik akışa indirir, P1). Overlap'li konuşmada diarization kalitesi düşebilir — kalite sınırı dürüstçe raporlanır, kimliğe zorlanmaz.
 
 ## Değerlendirilen alternatifler
