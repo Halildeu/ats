@@ -9,9 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  * domain modülleri (com.ats.consent/ingest/orchestration/review/export/dsr)
  * framework-annotation'sız kalır; bean wiring {@link WiringConfig}'te açıktır.
  *
- * Bu dilimde REST veri-endpoint'i YOKTUR (yalnız /healthz). Authn/z kapısı,
- * İLK veri-endpoint dilimiyle BİRLİKTE gelir — kapısız veri yüzeyi açılmaz
- * (fail-closed; ATS-0007 threat-register).
+ * Veri-endpoint'leri {@link com.ats.app.web} altında ve TÜMÜ authn/z kapısının
+ * arkasındadır ({@link SecurityConfig}: JWT + tenant-claim zorunlu; /healthz
+ * hariç kapısız yüzey yok — slice-9 "kapısız veri yüzeyi açılmaz" taahhüdü
+ * slice-10'da böyle tutuldu; ATS-0007 threat-register).
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

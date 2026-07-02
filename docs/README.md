@@ -61,7 +61,7 @@
 
 ## Implementation (public, CI-yeşil)
 - `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)
-- `../backend/` — ats-core: P1 domain modülleri (ingest/orchestration/review/export/dsr, framework-free) + `persistence-postgres` (ATS-0018) + `app-boot` composition (Spring Boot 3 yalnız orada; /healthz; veri-endpoint'i henüz yok) + ArchUnit
+- `../backend/` — ats-core: P1 domain modülleri (ingest/orchestration/review/export/dsr, framework-free) + `persistence-postgres` (ATS-0018) + `app-boot` composition (Spring Boot 3 yalnız orada; /healthz + JWT-kapılı ilk veri-endpoint'leri — tenant token'dan) + ArchUnit
 - `../ai/eval-harness/` — ATS-0004 Gate C ölçüm rig'i
 - `../.github/workflows/` — ci (boundary+contracts+backend) + security (gitleaks+dependency-review)
 

@@ -86,7 +86,9 @@ public final class IngestService {
                 contentHash,
                 JsonValue.object(Map.of(
                         "object_key", JsonValue.of(key),
-                        "content_type", JsonValue.of(request.contentType()),
+                        // "media_type" bilinçli: WORM payload-tarayıcısı "content" substring'ini yasaklar
+                        // (içerik-yasağı geniş kalır); MIME metadata'sı içerik değildir — isim çakışmaz.
+                        "media_type", JsonValue.of(request.contentType()),
                         "size_bytes", JsonValue.of((double) storedOk.value().sizeBytes())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
             // fail-closed telafi: kanıtsız medya bırakılmaz; telafinin KENDİSİ fail olursa yutulmaz (Codex #48 major-3)

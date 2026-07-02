@@ -10,9 +10,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Tek endpoint: /healthz (liveness + gerçek DB ping). Veri endpoint'i DEĞİLDİR
- * — kişisel veri/iş verisi taşımaz; authn/z kapısı ilk veri-endpoint dilimiyle
- * gelir. Hata detayı dışarı SIZDIRILMAZ (yalnız durum kelimesi).
+ * /healthz — liveness + gerçek DB ping. Veri endpoint'i DEĞİLDİR (kişisel/iş
+ * verisi taşımaz) ve bu yüzden SecurityConfig'te permitAll kalan TEK yüzeydir;
+ * diğer tüm endpoint'ler JWT kapısının arkasındadır. Hata detayı dışarı
+ * SIZDIRILMAZ (yalnız durum kelimesi).
  */
 @RestController
 class HealthController {
