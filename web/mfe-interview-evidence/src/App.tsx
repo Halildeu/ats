@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Input, Text } from "@ats/ui/f3";
 import { fetchTranscript, type TranscriptDto } from "./api";
 import { SegmentView } from "./SegmentView";
 import { t } from "./i18n";
+import { handleCallback, oidcConfigFromEnv, startLogin } from "./oidc";
+
+const OIDC = oidcConfigFromEnv();
 
 /**
  * F3 segment-view uygulaması (P1 dev yüzeyi).
- * DÜRÜST SINIR: kimlik girişi dev-token yapıştırmasıyla (gerçek OIDC
- * login-flow AYRI kimlik dilimi); tenant/actor JWT içindedir — UI taşır,
- * asla üretmez/değiştirmez.
+ * Kimlik: OIDC Authorization-Code+PKCE (VITE_OIDC_ISSUER set ise) — token
+ * YALNIZ bellekte; config yoksa dev-paste fallback görünür (yalnız lokal).
+ * tenant/actor JWT içindedir — UI taşır, asla üretmez/değiştirmez.
  */
 export default function App() {
   const [token, setToken] = useState("");
@@ -17,6 +20,20 @@ export default function App() {
   const [transcript, setTranscript] = useState<TranscriptDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // OIDC callback: sayfa code+state ile döndüyse token'ı değiş (yalnız bellekte tut)
+  useEffect(() => {
+    if (!OIDC) {
+      return;
+    }
+    handleCallback(OIDC)
+        .then((r) => {
+          if (r) {
+            setToken(r.accessToken);
+          }
+        })
+        .catch((e) => setError(e instanceof Error ? e.message : t("error.generic")));
+  }, []);
 
   async function onLoad() {
     setLoading(true);
@@ -44,13 +61,23 @@ export default function App() {
         aria-label={t("transcript.loadFormLabel")}
         style={{ display: "grid", gap: 12, margin: "20px 0", maxWidth: 560 }}
       >
-        <Input
-          label={t("transcript.tokenLabel")}
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          data-testid="token-input"
-        />
+        {OIDC ? (
+          token ? (
+            <Text as="p" data-testid="auth-status">{t("auth.loggedIn")}</Text>
+          ) : (
+            <Button onClick={() => void startLogin(OIDC)} data-testid="login-button">
+              {t("auth.login")}
+            </Button>
+          )
+        ) : (
+          <Input
+            label={t("transcript.tokenLabel")}
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            data-testid="token-input"
+          />
+        )}
         <Input
           label={t("transcript.interviewIdLabel")}
           value={interviewId}
