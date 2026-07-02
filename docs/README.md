@@ -52,7 +52,7 @@
 ## Mahremiyet / veri-yaşam-döngüsü (public, living)
 - [privacy/data-lifecycle-register.md](./privacy/data-lifecycle-register.md) — ATS-0003 operationalized: veri-sınıfı × retention/erasure/transfer kanonik matrisi (drift-guard `data-lifecycle-guard`). WORM-içerik-yasağı + crypto-erase/unlinkable invariantları makine-zorlanır (DPO/procurement yüzeyi).
 - [privacy/consent-texts-voice-enrollment.md](./privacy/consent-texts-voice-enrollment.md) — ATS-0014 rıza-metni TASLAKLARI: iç-kullanıcı enrollment açık-rızası + aday kayıt-rızası geçici-işleme ek-cümlesi (tenant adaptasyonu owner/DPO; hukuki görüş değildir).
-- [privacy/dpia-voice-enrollment.md](./privacy/dpia-voice-enrollment.md) — ATS-0014 DPIA + ölçülülük/alternatif-analizi TASLAĞI (owner/DPO sign-off PENDING; imzalı hali = runtime-enable kanıtı).
+- [privacy/dpia-voice-enrollment.md](./privacy/dpia-voice-enrollment.md) — ATS-0014 DPIA + ölçülülük/alternatif-analizi — **OWNER-APPROVED 2026-07-02** (kayıtlı beyan; DPO pre-G0 atanmadı) + **VERBIS kopyala-yapıştır paketi (§6)**. Runtime-enable hâlâ kapalı: VERBIS + fiili rıza + P1.
 
 ## Frontend standardı (public, living)
 - [frontend/a11y-i18n-standard.md](./frontend/a11y-i18n-standard.md) — ATS-0011 WCAG 2.2 AA + Türkçe-first i18n kanonik kriter registry'si (drift-guard `a11y-standard-guard`). Enforcement (axe/eslint/i18n-extract) P1 UI ile aktif.

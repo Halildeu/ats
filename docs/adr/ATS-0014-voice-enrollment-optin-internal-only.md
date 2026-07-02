@@ -38,8 +38,8 @@
 
 1. ✅ **Owner risk-kabul beyanı** — KAYITLI (Durum satırındaki iki beyan; internal-only scope).
 2. ✅ **Rıza metinleri (taslak landed):** [[consent-texts-voice-enrollment]] — (a) iç-kullanıcı enrollment açık-rıza metni (amaç/saklama/silme/dezavantajsızlık); (b) aday kayıt-rızası ek-cümlesi: aday enroll edilmez + kalıcı şablon üretilmez, ANCAK geçici oturum ses temsili iç-şablonlarla karşılaştırılabilir + no-match→"muhtemel aday/misafir" ÖNERİSİ + insan onayı + aday referansı loglanmaz/persist edilmez. **Tenant adaptasyonu + yayım = owner/DPO.**
-3. ✅(taslak) / ⏳(imza) **DPIA + ölçülülük dosyası:** [[dpia-voice-enrollment]] — DPIA + ölçülülük/gereklilik alternatif analizi + risk matrisi + EU AI Act high-risk delta ([[eu-ai-act-technical-file-index]] Art.9/11/16/43 owner-evidence hattı) + jurisdictional BIPA release/retention-policy eki. **DPO/owner sign-off PENDING — imzalı hali runtime-enable kanıtı.**
-4. ⏳ Özel-nitelikli veri envanteri + (TR tenant) **VERBIS** kategori güncellemesi — owner/DPO adımı (runtime-enable önkoşulu).
+3. ✅ **DPIA + ölçülülük dosyası — OWNER-APPROVED (2026-07-02):** [[dpia-voice-enrollment]] — owner kayıtlı beyanla onayladı ("onaylıyorum / tam otonom devam", kalan-madde listesi sunulduktan sonra); DPO pre-G0'da atanmadı (atanırsa eş-imza; tenant-onboarding'de kurumsal imza tekrarlanabilir).
+4. ⏳ (TR tenant) **VERBIS** kategori güncellemesi — **kopyala-yapıştır paket hazır** ([[dpia-voice-enrollment]] §6); VERBIS girişi şirket yetkilisi kimliği gerektirir → owner yürütür (runtime-enable önkoşulu).
 5. ✅ **Registry-v2 flip (bu amendment ile):** [[speaker-attribution-standard]] §2 → `active-internal-consented` + guard v2 (aday-dışlama/amaç-sınırı/self-service-silme/DPIA/P1 tokenları machine-checked; sentinel silinmez, §1'e taşınamaz).
 6. ⏳ Modül runtime'ı **P1+ gate-locked** (G0=GO sonrası; PRE-G0'da fonksiyonel build YASAK) + **imzalı DPIA/VERBIS olmadan runtime açılamaz**.
 
