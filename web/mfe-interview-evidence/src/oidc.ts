@@ -25,8 +25,13 @@ type Discovery = {
 
 const PKCE_COOKIE = "ats_oidc_pkce"; // {state,verifier} b64url-JSON — callback'te hemen silinir
 
+/** Saf: cookie öznitelikleri — HTTPS'te Secure ZORUNLU (dev http://localhost istisnası). */
+export function pkceCookieAttributes(protocol: string): string {
+  return `Max-Age=300; Path=/; SameSite=Lax${protocol === "https:" ? "; Secure" : ""}`;
+}
+
 function setPkceCookie(value: string): void {
-  document.cookie = `${PKCE_COOKIE}=${value}; Max-Age=300; Path=/; SameSite=Lax`;
+  document.cookie = `${PKCE_COOKIE}=${value}; ${pkceCookieAttributes(window.location.protocol)}`;
 }
 
 function readAndClearPkceCookie(): string | null {
@@ -146,8 +151,9 @@ export async function exchangeCode(
     throw new Error(`token exchange başarısız: ${resp.status}`);
   }
   const json = (await resp.json()) as { access_token?: string; token_type?: string };
-  if (!json.access_token || (json.token_type ?? "Bearer").toLowerCase() !== "bearer") {
-    throw new Error("token yanıtı geçersiz (access_token/token_type)");
+  // token_type OAuth'ta ZORUNLU alandır — eksikse de fail-closed (Bearer varsayılmaz)
+  if (!json.access_token || json.token_type?.toLowerCase() !== "bearer") {
+    throw new Error("token yanıtı geçersiz (access_token/token_type zorunlu; yalnız Bearer)");
   }
   return json.access_token;
 }

@@ -1,6 +1,6 @@
 /** oidc.ts saf-fonksiyon testleri (node env; WebCrypto global). */
 import { describe, expect, it } from "vitest";
-import { buildAuthorizeUrl, exchangeCode, randomToken, s256Challenge } from "./oidc";
+import { buildAuthorizeUrl, exchangeCode, pkceCookieAttributes, randomToken, s256Challenge } from "./oidc";
 
 const CFG = { issuer: "http://idp.test", clientId: "ats-mfe", redirectUri: "http://app.test/", scope: "openid ats.transcript.read" };
 
@@ -56,8 +56,21 @@ describe("exchangeCode", () => {
         .rejects.toThrow("token yanıtı geçersiz");
   });
 
+  it("token_type EKSİKSE fail-closed (Bearer varsayılmaz)", async () => {
+    await expect(exchangeCode("http://idp.test/token", CFG, "c", "v",
+        okFetch({ access_token: "t" }))).rejects.toThrow("token yanıtı geçersiz");
+  });
+
   it("bearer-dışı token_type fail-closed", async () => {
     await expect(exchangeCode("http://idp.test/token", CFG, "c", "v",
         okFetch({ access_token: "t", token_type: "MAC" }))).rejects.toThrow("token yanıtı geçersiz");
+  });
+});
+
+describe("pkceCookieAttributes", () => {
+  it("https'te Secure ZORUNLU, http-dev'de yok", () => {
+    expect(pkceCookieAttributes("https:")).toContain("; Secure");
+    expect(pkceCookieAttributes("http:")).not.toContain("Secure");
+    expect(pkceCookieAttributes("https:")).toContain("SameSite=Lax");
   });
 });

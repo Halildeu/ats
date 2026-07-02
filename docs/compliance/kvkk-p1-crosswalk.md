@@ -29,7 +29,7 @@
 |---|---|---|
 | VERBIS kaydı güncellemesi (voice-enrollment kategorisi) | owner (fiziksel portal işlemi) | kopyala-yapıştır paketi HAZIR (`docs/privacy/dpia-voice-enrollment.md` §6) |
 | DPO/hukuk resmi incelemesi + uygunluk beyanı | owner + DPO | pre-G0; bu doküman girdi malzemesidir |
-| Gerçek OIDC login akışı (dev-token yerine) | build (sıradaki dilim) | planlı |
+| Prod kurumsal IdP tenant-wiring + refresh-token politikası (OIDC Auth-Code+PKCE akışı LANDED/browser-verified) | deploy-wiring | akış hazır; prod IdP bağlaması deploy işi |
 | Prod deploy sertleştirmesi (edge, api-docs kısıtı, migration-role ayrımı) | deploy-wiring | ADR-0018/slice notlarında kayıtlı |
 
 ## 3. Standart-hizalama bağlantıları

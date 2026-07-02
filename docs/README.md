@@ -70,7 +70,7 @@
 
 ## P1 durum (dürüst özet — 2026-07-03)
 **Bitti (build+verified):** domain hattı F1/F2/F4/F5/F6/F7/F9/F10 + durable persistence (WORM+6 store+purge) + app-boot composition + JWT/scope'lu TAM API yüzeyi + @ats/ui curated kit + **browser-verified F3 segment-view** + retention-scheduler (default-off) + OpenAPI + KVKK crosswalk (K1..K10 kanıt-referanslı).
-**Kalan build-doğa:** OIDC login dilimi (dev-token yerine), F3-sonrası UI akışları (citation-panel/review ekranları).
+**Kalan build-doğa:** F3-sonrası UI akışları (citation-panel/review ekranları). OIDC Auth-Code+PKCE login LANDED (browser-verified; prod IdP bağlaması deploy-wiring).
 **Ayrı-doğa (owner/dış-bağımlı):** deploy-wiring (ats-gitops billing + ats-ai Faz24 endpoint'leri), F8 write-back (G0-partner-bağlı), VERBIS girişi (paket hazır), DPO/hukuk incelemesi, G0 saha kanıtları (ATS-0016: release-gate).
 
 ## Strateji/G0/rekabet/procurement (PRIVATE)

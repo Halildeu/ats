@@ -14,5 +14,7 @@ zaman-damgalı segment listesi (S1..Sn takma-ad rozetleri — ATS-0013; mm:ss; m
 4. MFE: `npm install && npm run dev` → http://localhost:5183 (vite `/api` proxy'si :8080'e)
 5. Konsoldaki token'ı yapıştır; consent PUT + transcript seed için README-dev akışına bak.
 
-**DÜRÜST SINIR:** dev-token aracı yalnız lokal geliştirme içindir (anahtar bellekte, kalıcı sır yok);
-gerçek OIDC login-flow AYRI kimlik dilimidir. "Çalışıyor" iddiası browser-verify kanıtına bağlıdır.
+**KİMLİK:** OIDC Authorization-Code+PKCE akışı LANDED (VITE_OIDC_ISSUER set → login butonu;
+token yalnız bellekte; PKCE cookie HTTPS'te Secure flag'iyle set edilir — prod serving HTTPS olmalı).
+dev-IdP + dev-token aracı YALNIZ lokal geliştirme içindir (anahtar bellekte, kalıcı sır yok);
+prod'da gerçek kurumsal IdP bağlanır (deploy-wiring). "Çalışıyor" iddiası browser-verify kanıtına bağlıdır.
