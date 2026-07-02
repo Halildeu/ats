@@ -20,9 +20,12 @@ import java.util.regex.Pattern;
  */
 public final class SegmentSanitizer {
 
-    // blok anotasyonlar: [..] (..) {..} <..> ve tam-genişlik/CJK varyantları
+    // blok anotasyonlar: [..] (..) {..} <..> ve tam-genişlik/CJK/guillemet varyantları
+    // (Codex retro-review blocker-2: geniş Unicode sarmalayıcılar eklendi)
     private static final Pattern BLOCK_ANNOTATION = Pattern.compile(
-            "\\[[^\\]]*\\]|\\([^)]*\\)|\\{[^}]*\\}|<[^>]*>|（[^）]*）|【[^】]*】|〔[^〕]*〕");
+            "\\[[^\\]]*\\]|\\([^)]*\\)|\\{[^}]*\\}|<[^>]*>|（[^）]*）|【[^】]*】|〔[^〕]*〕"
+                    + "|「[^」]*」|『[^』]*』|《[^》]*》|〈[^〉]*〉|«[^»]*»|‹[^›]*›"
+                    + "|［[^］]*］|｛[^｝]*｝|＜[^＞]*＞");
     // *aksiyon* / _aksiyon_ blokları
     private static final Pattern STARRED_ANNOTATION = Pattern.compile("\\*[^*]{1,80}\\*|_[^_]{1,80}_");
     // satır-başı paralinguistik önek: "gülerek: merhaba", "laughs - hello", "iç çekerek: ..."
@@ -33,8 +36,19 @@ public final class SegmentSanitizer {
     // emoji / sembol işaretleri (duygu-proxy'si)
     private static final Pattern EMOJI_SYMBOL = Pattern.compile(
             "[\\p{So}\\p{Sk}\\x{1F000}-\\x{1FAFF}\\x{2190}-\\x{27BF}\\x{FE00}-\\x{FE0F}\\x{200D}]");
-    // temizlik sonrası anotasyon-benzeri KALINTI göstergesi (eşleşmemiş marker karakterleri)
-    private static final Pattern RESIDUE_MARKER = Pattern.compile("[\\[\\](){}<>*_（）【】〔〕]");
+    // temizlik sonrası anotasyon-benzeri KALINTI göstergesi (eşleşmemiş marker karakterleri;
+    // geniş Unicode sarmalayıcı seti dahil)
+    private static final Pattern RESIDUE_MARKER = Pattern.compile(
+            "[\\[\\](){}<>*_（）【】〔〕「」『』《》〈〉«»‹›［］｛｝＜＞]");
+    // key[:=]value biçimli paralinguistik/anotasyon METADATA kalıntısı (EN+TR) — bu şekil lexical
+    // konuşma değil sağlayıcı-metadata'sıdır; temizlik sonrası görülürse segment FAIL-CLOSED düşer
+    // (Codex retro-review blocker-2: diarization_confidence/prosody/tone/voice-stress/pause vb.)
+    private static final Pattern METADATA_RESIDUAL = Pattern.compile(
+            "(?:^|\\b)(?:diarization[_-]?confidence|confidence|prosody|tone|voice[_-]?stress|stress(?:[_-]?level)?"
+                    + "|pause(?:[_-]?duration)?(?:[_-]?ms)?|speech[_-]?rate|pitch|arousal|valence|sentiment"
+                    + "|emotion|affect|mood|filler[_-]?ratio|gaze|posture"
+                    + "|ton(?:lama)?|duraklama|stres|kaygı|duygu|güven)\\s*[:=]\\s*\\S+",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern WHITESPACE = Pattern.compile("\\s{2,}");
 
     public record Sanitized(List<Transcript.Segment> segments, int strippedAnnotationCount) {}
@@ -50,10 +64,23 @@ public final class SegmentSanitizer {
                     k -> "S" + (speakerAlias.size() + 1));
             String text = seg.text() == null ? "" : seg.text();
 
+            // METADATA taraması HAM metinde de yapılır: aksiyon-blok temizliği (örn. _duration_
+            // alt-çizgi deseni) metadata şeklini bozup kaçırmasın diye (fail-closed önce)
+            if (METADATA_RESIDUAL.matcher(text).find()) {
+                stripped++;
+                continue;
+            }
+
             int before = text.length();
             text = BLOCK_ANNOTATION.matcher(text).replaceAll(" ");
             text = STARRED_ANNOTATION.matcher(text).replaceAll(" ");
-            text = INLINE_PREFIX.matcher(text.strip()).replaceFirst("");
+            // zincirli önekler ("laughs: sighs: hello") tek geçişte kaçıyordu — sabitlenene kadar döngü
+            String prev;
+            int guard = 0;
+            do {
+                prev = text;
+                text = INLINE_PREFIX.matcher(text.strip()).replaceFirst("");
+            } while (!text.equals(prev) && ++guard < 8);
             text = EMOJI_SYMBOL.matcher(text).replaceAll("");
             if (text.length() != before) {
                 stripped++;
@@ -66,6 +93,10 @@ public final class SegmentSanitizer {
             if (RESIDUE_MARKER.matcher(lexical).find()) {
                 stripped++;
                 continue; // fail-closed: anotasyon-benzeri kalıntı taşıyan segment düşer
+            }
+            if (METADATA_RESIDUAL.matcher(lexical).find()) {
+                stripped++;
+                continue; // fail-closed: paralinguistik METADATA kalıntısı (confidence/prosody/ton/stres) düşer
             }
             out.add(new Transcript.Segment(index++, alias, seg.startMs(), seg.endMs(), lexical));
         }
