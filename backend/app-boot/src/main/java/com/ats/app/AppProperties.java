@@ -31,6 +31,10 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest) {
             if (maxUploadBytes <= 0) {
                 maxUploadBytes = 104_857_600L; // 100 MiB
             }
+            if (maxUploadBytes > Integer.MAX_VALUE - 1L) {
+                throw new IllegalStateException("ats.ingest.max-upload-bytes tek-parça bellek okuması"
+                        + " sınırını aşıyor (<= " + (Integer.MAX_VALUE - 1) + " olmalı)");
+            }
         }
     }
 

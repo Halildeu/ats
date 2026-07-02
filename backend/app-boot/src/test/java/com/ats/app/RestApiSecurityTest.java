@@ -102,11 +102,11 @@ class RestApiSecurityTest {
 
     @Test
     void wrong_issuer_and_wrong_audience_are_401() {
-        String wrongIssuer = JWT.token(Map.of("tenant", "t-a", "scope", "ats.user"),
+        String wrongIssuer = JWT.token(Map.of("tenant", "t-a", "scope", JwtTestSupport.ALL_SCOPES),
                 "https://evil.test", List.of(JwtTestSupport.AUDIENCE), "user-1");
         assertEquals(401, putConsent(wrongIssuer, "iv-1", "GRANTED").getStatusCode().value());
 
-        String wrongAud = JWT.token(Map.of("tenant", "t-a", "scope", "ats.user"),
+        String wrongAud = JWT.token(Map.of("tenant", "t-a", "scope", JwtTestSupport.ALL_SCOPES),
                 JwtTestSupport.ISSUER, List.of("other-api"), "user-1");
         assertEquals(401, putConsent(wrongAud, "iv-1", "GRANTED").getStatusCode().value());
     }
@@ -115,7 +115,7 @@ class RestApiSecurityTest {
 
     @Test
     void token_without_tenant_claim_is_403() {
-        String noTenant = JWT.token(Map.of("scope", "ats.user"),
+        String noTenant = JWT.token(Map.of("scope", JwtTestSupport.ALL_SCOPES),
                 JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
         assertEquals(403, putConsent(noTenant, "iv-1", "GRANTED").getStatusCode().value());
     }
@@ -125,6 +125,29 @@ class RestApiSecurityTest {
         String noScope = JWT.token(Map.of("tenant", "t-a", "scope", "openid profile"),
                 JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
         assertEquals(403, putConsent(noScope, "iv-1", "GRANTED").getStatusCode().value());
+    }
+
+    @Test
+    void scope_separation_consent_scope_cannot_upload_and_vice_versa() {
+        // yalnız consent.write: PUT consent OK, POST recording 403
+        String consentOnly = JWT.token(Map.of("tenant", "t-sep", "scope", "ats.consent.write"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        assertEquals(204, putConsent(consentOnly, "iv-sep", "GRANTED").getStatusCode().value());
+        assertEquals(403, upload(consentOnly, "iv-sep",
+                "RIFFxxxxWAVE".getBytes(StandardCharsets.UTF_8)).getStatusCode().value());
+
+        // yalnız recording.write: consent PUT 403 (herhangi ats-kullanıcısı consent YAZAMAZ)
+        String recordingOnly = JWT.token(Map.of("tenant", "t-sep", "scope", "ats.recording.write"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        assertEquals(403, putConsent(recordingOnly, "iv-sep2", "GRANTED").getStatusCode().value());
+    }
+
+    @Test
+    void unknown_endpoint_is_deny_all_even_with_full_scopes() {
+        String token = JWT.token("t-sep", "user-1");
+        ResponseEntity<String> resp = rest.exchange("/api/v1/other-surface",
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class);
+        assertEquals(403, resp.getStatusCode().value(), "bilinmeyen yüzey fail-closed denyAll");
     }
 
     // --- akış ---
@@ -141,14 +164,24 @@ class RestApiSecurityTest {
         assertTrue(up.getBody().contains("objectKey"));
         assertTrue(up.getBody().contains("evidenceId"));
 
+        assertTrue(wormCount("api-tenant-a", "consent.recorded") >= 1,
+                "consent PUT WORM kanıtı üretmiş olmalı (Codex #64 blocker-2)");
+        assertTrue(wormCount("api-tenant-a", "recording.ingested") >= 1,
+                "upload WORM satırı üretmiş olmalı");
+    }
+
+    private int wormCount(String tenant, String eventType) {
         try (Connection c = dataSource.getConnection();
                 PreparedStatement ps = c.prepareStatement(
-                        "SELECT count(*) FROM worm_ledger WHERE tenant_id = ?")) {
-            ps.setString(1, "api-tenant-a");
+                        "SELECT count(*) FROM worm_ledger WHERE tenant_id = ? AND event_type = ?")) {
+            ps.setString(1, tenant);
+            ps.setString(2, eventType);
             try (ResultSet rs = ps.executeQuery()) {
-                assertTrue(rs.next());
-                assertTrue(rs.getInt(1) >= 1, "upload WORM satırı üretmiş olmalı");
+                rs.next();
+                return rs.getInt(1);
             }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 
@@ -174,6 +207,23 @@ class RestApiSecurityTest {
                 "/api/v1/interviews/iv-happy/transcript?key=iv-happy/tr-0000",
                 HttpMethod.GET, new HttpEntity<>(bearer(tokenB)), String.class);
         assertEquals(404, resp.getStatusCode().value());
+    }
+
+    @Test
+    void chunked_upload_without_content_length_is_411() throws Exception {
+        String token = JWT.token("api-tenant-a", "recruiter-1");
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) java.net.URI.create(
+                rest.getRootUri() + "/api/v1/interviews/iv-chunk/recordings").toURL().openConnection();
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setChunkedStreamingMode(64); // Content-Length başlığı GÖNDERİLMEZ
+        conn.setRequestProperty("Authorization", "Bearer " + token);
+        conn.setRequestProperty("Content-Type", "audio/wav");
+        try (var os = conn.getOutputStream()) {
+            os.write("RIFFxxxxWAVE".getBytes(StandardCharsets.UTF_8));
+        }
+        assertEquals(411, conn.getResponseCode(), "chunked/Content-Length'siz upload fail-closed 411");
+        conn.disconnect();
     }
 
     @Test

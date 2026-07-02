@@ -57,6 +57,8 @@ const EXTRA_ALLOWED = new Set([
   "reason_code",
   "ledger_entry_ref",
   "target_ref",
+  // kapalı enum değeri (GRANTED|DENIED|WITHDRAWN) — PII taşımaz (slice-10 consent WORM kanıtı)
+  "state",
   "—",
   "-",
 ]);

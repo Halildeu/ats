@@ -1,7 +1,7 @@
 package com.ats.app.web;
 
 import com.ats.app.AppProperties;
-import com.ats.consent.ConsentStore;
+import com.ats.consent.ConsentService;
 import com.ats.consent.RecordingPermission;
 import com.ats.ingest.IngestService;
 import com.ats.ingest.UploadRequest;
@@ -38,14 +38,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class InterviewApiController {
 
-    private final ConsentStore consentStore;
+    private final ConsentService consentService;
     private final IngestService ingestService;
     private final TranscriptStore transcriptStore;
     private final long maxUploadBytes;
 
-    InterviewApiController(ConsentStore consentStore, IngestService ingestService,
+    InterviewApiController(ConsentService consentService, IngestService ingestService,
             TranscriptStore transcriptStore, AppProperties props) {
-        this.consentStore = consentStore;
+        this.consentService = consentService;
         this.ingestService = ingestService;
         this.transcriptStore = transcriptStore;
         this.maxUploadBytes = props.ingest().maxUploadBytes();
@@ -70,7 +70,8 @@ class InterviewApiController {
         RecordingPermission permission = new RecordingPermission(
                 tenant, new InterviewId(interviewId), body.subjectRef(), state,
                 Instant.now().toString());
-        Outcome<Void> out = consentStore.put(permission);
+        // state + WORM kanıtı birlikte (ConsentService; GRANTED=ledger-önce fail-closed)
+        Outcome<Void> out = consentService.record(permission);
         if (out instanceof Outcome.Fail<Void> fail) {
             return OutcomeHttp.fail(fail);
         }

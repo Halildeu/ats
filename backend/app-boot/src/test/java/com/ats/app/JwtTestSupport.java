@@ -65,9 +65,11 @@ final class JwtTestSupport {
         server.stop(0);
     }
 
-    /** Varsayılan geçerli token: iss+aud+exp + tenant + ats.user scope. */
+    static final String ALL_SCOPES = "ats.consent.write ats.recording.write ats.transcript.read";
+
+    /** Varsayılan geçerli token: iss+aud+exp + tenant + 3 endpoint-scope'u. */
     String token(String tenant, String subject) {
-        return token(Map.of("tenant", tenant, "scope", "ats.user"), ISSUER, List.of(AUDIENCE), subject);
+        return token(Map.of("tenant", tenant, "scope", ALL_SCOPES), ISSUER, List.of(AUDIENCE), subject);
     }
 
     String token(Map<String, Object> claims, String issuer, List<String> audience, String subject) {

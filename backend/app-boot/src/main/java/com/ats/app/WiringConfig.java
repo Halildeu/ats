@@ -1,6 +1,7 @@
 package com.ats.app;
 
 import com.ats.consent.ConsentGate;
+import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
@@ -144,6 +145,11 @@ class WiringConfig {
     @Bean
     ConsentGate consentGate(ConsentStore store, OperationalEventSink sink) {
         return new ConsentGate(store, sink);
+    }
+
+    @Bean
+    ConsentService consentService(ConsentStore store, EvidenceLedger ledger, OperationalEventSink sink) {
+        return new ConsentService(store, ledger, sink);
     }
 
     @Bean

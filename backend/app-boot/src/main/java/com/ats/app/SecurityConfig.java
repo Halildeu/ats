@@ -1,10 +1,12 @@
 package com.ats.app;
 
 import java.util.List;
+import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -27,9 +29,10 @@ import org.springframework.security.web.SecurityFilterChain;
  *  - JWT imzası JWKS'ten (ats.security.jwks-uri) doğrulanır; iss + aud + exp zorunlu.
  *  - IdP-nötr (herhangi OIDC sağlayıcı; ADR-0001 vendor-coupling yasağı) —
  *    gerçek IdP seçimi/deploy'u ayrı ADR/deploy-wiring işidir.
- *  - Yetki FAIL-CLOSED: ATS_USER authority'si YALNIZ token'da (a) non-blank
- *    `tenant` claim'i VE (b) `scope` içinde `ats.user` varsa verilir. İkisinden
- *    biri yoksa TÜM veri-endpoint'leri 403 (tenant'sız erişim yapısal imkânsız).
+ *  - Yetki FAIL-CLOSED + endpoint-bazlı scope ayrımı: authority'ler YALNIZ
+ *    non-blank `tenant` claim'i varken scope'lardan türetilir (ats.consent.write /
+ *    ats.recording.write / ats.transcript.read). Tek genel scope YOK; bilinmeyen
+ *    yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
  *  - Tenant DAİMA token'dan okunur (istek gövdesi/path'inden ASLA — ATS-0002).
  *  - /healthz açık kalır (veri taşımaz); onun dışında her şey kimlikli.
  *  - Stateless + CSRF kapalı (bearer-token API standardı).
@@ -42,7 +45,12 @@ import org.springframework.security.web.SecurityFilterChain;
 class SecurityConfig {
 
     static final String TENANT_CLAIM = "tenant";
-    static final String REQUIRED_SCOPE = "ats.user";
+
+    /** Endpoint-bazlı scope ayrımı (Codex #64 blocker-1): tek genel scope YOK. */
+    private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.of(
+            "ats.consent.write", "CONSENT_WRITE",
+            "ats.recording.write", "RECORDING_WRITE",
+            "ats.transcript.read", "TRANSCRIPT_READ");
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
@@ -50,7 +58,14 @@ class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/healthz").permitAll()
-                        .anyRequest().hasAuthority("ATS_USER"))
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
+                            .hasAuthority("CONSENT_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
+                            .hasAuthority("RECORDING_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/transcript")
+                            .hasAuthority("TRANSCRIPT_READ")
+                        // bilinmeyen yüzey: fail-closed (yeni endpoint = açık matcher + scope kararı)
+                        .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(j -> j
                         .decoder(decoder)
                         .jwtAuthenticationConverter(atsAuthenticationConverter())));
@@ -75,16 +90,24 @@ class SecurityConfig {
                 : OAuth2TokenValidatorResult.failure(err);
     }
 
-    /** ATS_USER yalnız tenant-claim + ats.user scope birlikteyken (fail-closed). */
+    /**
+     * Authority'ler YALNIZ tenant-claim non-blank iken scope'lardan türetilir
+     * (fail-closed: tenant'sız token hiçbir authority alamaz — tenant'sız veri
+     * erişimi yapısal imkânsız; ATS-0002).
+     */
     private static Converter<Jwt, AbstractAuthenticationToken> atsAuthenticationConverter() {
         return jwt -> {
             String tenant = jwt.getClaimAsString(TENANT_CLAIM);
-            String scope = jwt.getClaimAsString("scope");
-            boolean hasScope = scope != null && List.of(scope.split(" ")).contains(REQUIRED_SCOPE);
             boolean hasTenant = tenant != null && !tenant.isBlank();
-            List<SimpleGrantedAuthority> authorities = (hasTenant && hasScope)
-                    ? List.of(new SimpleGrantedAuthority("ATS_USER"))
-                    : List.of();
+            List<SimpleGrantedAuthority> authorities = List.of();
+            String scope = jwt.getClaimAsString("scope");
+            if (hasTenant && scope != null) {
+                authorities = List.of(scope.split(" ")).stream()
+                        .map(SCOPE_TO_AUTHORITY::get)
+                        .filter(a -> a != null)
+                        .map(SimpleGrantedAuthority::new)
+                        .toList();
+            }
             return new JwtAuthenticationToken(jwt, authorities);
         };
     }

@@ -53,7 +53,11 @@ public record OperationalEvent(
             Map.entry("privacy.erasure.executed",
                     new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))),
             Map.entry("privacy.retention.purged",
-                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))));
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            Map.entry("privacy.consent.recorded",
+                    new EventSpec("privacy", "info", PiiClass.ID_ONLY, java.util.Set.of("state"))),
+            Map.entry("privacy.consent.ledger_append_failed",
+                    new EventSpec("privacy", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))));
 
     /** Fail-closed kurucu: registry-dışı / spec-uyumsuz / loggable-olmayan zarf üretilemez. */
     public static Outcome<OperationalEvent> create(
