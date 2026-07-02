@@ -27,23 +27,31 @@ public record OperationalEvent(
     record EventSpec(String category, String severity, PiiClass piiClass, java.util.Set<String> requiredExtras) {}
 
     /** docs/observability/event-taxonomy.md §2 mirror'ı — slice'larda kullanılan event'ler eklendikçe genişler. */
-    private static final Map<String, EventSpec> REGISTRY = Map.of(
-            "evidence.recording.blocked_no_consent",
-                    new EventSpec("evidence", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code")),
-            "evidence.attachment.scan_rejected",
-                    new EventSpec("evidence", "error", PiiClass.NONE, java.util.Set.of("reason_code")),
-            "evidence.append.succeeded",
-                    new EventSpec("evidence", "info", PiiClass.ID_ONLY, java.util.Set.of("ledger_entry_ref")),
-            "evidence.append.failed",
-                    new EventSpec("evidence", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code")),
-            "ai_pipeline.provider.request_rejected",
-                    new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code")),
-            "ai_pipeline.citation.rejected",
-                    new EventSpec("ai_pipeline", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code")),
-            "evidence.human_decision.finalized",
-                    new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "ledger_entry_ref")),
-            "security.audit_export.generated",
-                    new EventSpec("security", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref")));
+    private static final Map<String, EventSpec> REGISTRY = Map.ofEntries(
+            Map.entry("evidence.recording.blocked_no_consent",
+                    new EventSpec("evidence", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            Map.entry("evidence.attachment.scan_rejected",
+                    new EventSpec("evidence", "error", PiiClass.NONE, java.util.Set.of("reason_code"))),
+            Map.entry("evidence.append.succeeded",
+                    new EventSpec("evidence", "info", PiiClass.ID_ONLY, java.util.Set.of("ledger_entry_ref"))),
+            Map.entry("evidence.append.failed",
+                    new EventSpec("evidence", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            Map.entry("ai_pipeline.provider.request_rejected",
+                    new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code"))),
+            Map.entry("ai_pipeline.citation.rejected",
+                    new EventSpec("ai_pipeline", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            Map.entry("evidence.human_decision.finalized",
+                    new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "ledger_entry_ref"))),
+            Map.entry("security.audit_export.generated",
+                    new EventSpec("security", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref"))),
+            Map.entry("evidence.tombstone.appended",
+                    new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))),
+            Map.entry("privacy.dsar.received",
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            Map.entry("privacy.dsar.fulfilled",
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref"))),
+            Map.entry("privacy.erasure.executed",
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))));
 
     /** Fail-closed kurucu: registry-dışı / spec-uyumsuz / loggable-olmayan zarf üretilemez. */
     public static Outcome<OperationalEvent> create(

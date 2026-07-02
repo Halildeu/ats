@@ -50,6 +50,23 @@ class OperationalEventTest {
     }
 
     @Test
+    void privacy_and_tombstone_specs_accepted_and_mismatch_fail_closed() {
+        assertTrue(OperationalEvent.create(T1, "privacy.dsar.received", "privacy", "notice",
+                PiiClass.ID_ONLY, Map.of("reason_code", "erasure_request")).isOk());
+        assertTrue(OperationalEvent.create(T1, "privacy.dsar.fulfilled", "privacy", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1")).isOk());
+        assertTrue(OperationalEvent.create(T1, "privacy.erasure.executed", "privacy", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "reason_code", "erasure_request")).isOk());
+        assertTrue(OperationalEvent.create(T1, "evidence.tombstone.appended", "evidence", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "reason_code", "erasure_request")).isOk());
+        assertFalse(OperationalEvent.create(T1, "privacy.erasure.executed", "privacy", "warning",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "reason_code", "x")).isOk(),
+                "yanlis severity reddedilmeli");
+        assertFalse(OperationalEvent.create(T1, "evidence.tombstone.appended", "evidence", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1")).isOk(), "reason_code zorunlu");
+    }
+
+    @Test
     void audit_export_generated_spec_accepted_and_mismatch_fail_closed() {
         // taxonomy §2: security.audit_export.generated = security / notice / id-only / actor_ref
         assertTrue(OperationalEvent.create(T1, "security.audit_export.generated", "security", "notice",

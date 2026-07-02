@@ -34,6 +34,7 @@
     <module>ai-orchestration</module>
     <module>human-review</module>
     <module>export-connector</module>
+    <module>retention-dsr</module>
     <!--
       Domain modülleri (ATS-0008 8 modül) slice sırasına göre wire edilir (ATS-0016; slice-1 port-only):
       identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,
