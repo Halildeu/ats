@@ -183,9 +183,10 @@ class DsrServiceTest {
     void exported_terminal_case_content_erased_but_state_unchanged() {
         // vakayı FINALIZED→EXPORTED terminale taşı
         humanReview.startReview(T1, I1, caseKey, "human-1", "role-1").asOptional();
-        humanReview.recordEdit(T1, I1, caseKey, "cs").asOptional();
-        humanReview.recordRationale(T1, I1, caseKey, "rat").asOptional();
-        humanReview.finalizeDecision(T1, OPERATOR, I1, caseKey, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
+        humanReview.recordEdit(T1, new com.ats.kernel.Ids.ActorId("human-1"), I1, caseKey, "cs").asOptional();
+        humanReview.recordRationale(T1, new com.ats.kernel.Ids.ActorId("human-1"), I1, caseKey, "rat").asOptional();
+        // finalize AYNI reviewer tarafından (aktör-accountability; slice-11)
+        humanReview.finalizeDecision(T1, new com.ats.kernel.Ids.ActorId("human-1"), I1, caseKey, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
         humanReview.markExported(T1, I1, caseKey, "pkt-ref").asOptional();
         ledger.entries.clear();
 

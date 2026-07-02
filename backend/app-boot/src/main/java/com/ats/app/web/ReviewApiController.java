@@ -78,13 +78,14 @@ class ReviewApiController {
         }
         TenantId tenant = TenantAccess.tenant(auth);
         InterviewId iv = new InterviewId(interviewId);
+        var actor = TenantAccess.actor(auth); // HER insan-adımı actor-aware (accountability zinciri)
         Outcome<Void> out = switch (action) {
             case START -> reviewService.startReview(tenant, iv, body.caseKey(),
-                    TenantAccess.actor(auth).value(), body.oversightRoleRef());
-            case EDIT -> reviewService.recordEdit(tenant, iv, body.caseKey(), body.ref());
-            case REVIEWED_NO_CHANGE -> reviewService.markReviewedNoChange(tenant, iv, body.caseKey());
-            case REJECT -> reviewService.rejectAiSuggestion(tenant, iv, body.caseKey(), body.ref());
-            case RATIONALE -> reviewService.recordRationale(tenant, iv, body.caseKey(), body.ref());
+                    actor.value(), body.oversightRoleRef());
+            case EDIT -> reviewService.recordEdit(tenant, actor, iv, body.caseKey(), body.ref());
+            case REVIEWED_NO_CHANGE -> reviewService.markReviewedNoChange(tenant, actor, iv, body.caseKey());
+            case REJECT -> reviewService.rejectAiSuggestion(tenant, actor, iv, body.caseKey(), body.ref());
+            case RATIONALE -> reviewService.recordRationale(tenant, actor, iv, body.caseKey(), body.ref());
         };
         if (out instanceof Outcome.Fail<Void> fail) {
             return OutcomeHttp.fail(fail);

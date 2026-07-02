@@ -148,9 +148,8 @@ class CitationReviewApiTest {
         assertEquals(201, resp.getStatusCode().value(), "body: " + resp.getBody());
         assertTrue(resp.getBody().contains("\"entailment\":\"SUPPORTED\""));
         assertTrue(resp.getBody().contains("citationKey"));
-        assertTrue(wormCount(TENANT, "citation.recorded") >= 1
-                || wormCount(TENANT, "ai.citation.recorded") >= 1
-                || wormCountLike(TENANT, "%citation%") >= 1, "citation WORM kanıtı olmalı");
+        assertTrue(wormCount(TENANT, "claim.citation.recorded") >= 1,
+                "citation WORM kanıtı exact event-type ile olmalı");
     }
 
     @Test
@@ -213,7 +212,8 @@ class CitationReviewApiTest {
         assertTrue(got.getBody().contains("\"state\":\"FINALIZED\""), "body: " + got.getBody());
         assertTrue(got.getBody().contains("reviewer-1"), "humanActorRef token-sub olmalı");
 
-        assertTrue(wormCountLike(TENANT, "%human_decision%") >= 1, "finalize WORM kanıtı olmalı");
+        assertTrue(wormCount(TENANT, "human_decision.finalized") >= 1,
+                "finalize WORM kanıtı exact event-type ile olmalı");
     }
 
     @Test
@@ -235,6 +235,38 @@ class CitationReviewApiTest {
     }
 
     @Test
+    void different_reviewer_cannot_continue_anothers_case() {
+        // Codex #65 blocker: A start eder, B (aynı tenant, geçerli REVIEW_WRITE) devam EDEMEZ
+        String tokenA = fullToken();
+        String tokenB = JWT.token(java.util.Map.of("tenant", TENANT, "scope",
+                        "ats.review.write ats.review.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "reviewer-2");
+        grantConsent(tokenA, "iv-actor");
+        ResponseEntity<String> open = rest.exchange("/api/v1/interviews/iv-actor/review-cases",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"sourceEvidenceRefs\":[\"ev-1\"],\"aiOutputVersionRef\":\"ai-v1\"}",
+                        jsonBearer(tokenA)), String.class);
+        String caseKey = open.getBody().replaceAll(".*\"caseKey\":\"([^\"]+)\".*", "$1");
+        assertEquals(204, rest.exchange("/api/v1/interviews/iv-actor/review-case/transition",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"caseKey\":\"" + caseKey + "\",\"action\":\"START\",\"oversightRoleRef\":\"role-1\"}",
+                        jsonBearer(tokenA)), String.class).getStatusCode().value());
+
+        ResponseEntity<String> bTry = rest.exchange("/api/v1/interviews/iv-actor/review-case/transition",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"caseKey\":\"" + caseKey + "\",\"action\":\"REVIEWED_NO_CHANGE\"}",
+                        jsonBearer(tokenB)), String.class);
+        assertEquals(403, bTry.getStatusCode().value(),
+                "başka reviewer devam edemez (accountability); body: " + bTry.getBody());
+
+        ResponseEntity<String> bFinal = rest.exchange("/api/v1/interviews/iv-actor/review-case/finalize",
+                HttpMethod.POST, new HttpEntity<>(
+                        "{\"caseKey\":\"" + caseKey + "\",\"decisionOutcomeRef\":\"karar-x\"}",
+                        jsonBearer(tokenB)), String.class);
+        assertEquals(403, bFinal.getStatusCode().value(), "body: " + bFinal.getBody());
+    }
+
+    @Test
     void scope_matrix_citation_scope_cannot_write_review() {
         String citationOnly = JWT.token(java.util.Map.of("tenant", TENANT, "scope", "ats.citation.write"),
                 JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-x");
@@ -248,11 +280,6 @@ class CitationReviewApiTest {
     private int wormCount(String tenant, String eventType) {
         return queryCount("SELECT count(*) FROM worm_ledger WHERE tenant_id = ? AND event_type = ?",
                 tenant, eventType);
-    }
-
-    private int wormCountLike(String tenant, String eventTypeLike) {
-        return queryCount("SELECT count(*) FROM worm_ledger WHERE tenant_id = ? AND event_type LIKE ?",
-                tenant, eventTypeLike);
     }
 
     private int queryCount(String sql, String p1, String p2) {

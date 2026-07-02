@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 
 class HumanReviewServiceTest {
 
+    private static final com.ats.kernel.Ids.ActorId ACT = new com.ats.kernel.Ids.ActorId("human-opaque-1");
+
     private static final TenantId T1 = new TenantId("t1");
     private static final TenantId T2 = new TenantId("t2");
     private static final ActorId HUMAN = new ActorId("human-opaque-1");
@@ -88,8 +90,8 @@ class HumanReviewServiceTest {
     private String caseAtRationaleRecorded() {
         String caseRef = openCase();
         assertTrue(service.startReview(T1, I1, caseRef, "human-opaque-1", "role-hiring-panel").isOk());
-        assertTrue(service.recordEdit(T1, I1, caseRef, "change-summary-ref-1").isOk());
-        assertTrue(service.recordRationale(T1, I1, caseRef, "rationale-ref-1").isOk());
+        assertTrue(service.recordEdit(T1, ACT, I1, caseRef, "change-summary-ref-1").isOk());
+        assertTrue(service.recordRationale(T1, ACT, I1, caseRef, "rationale-ref-1").isOk());
         return caseRef;
     }
 
@@ -116,14 +118,14 @@ class HumanReviewServiceTest {
     void no_change_and_reject_paths_reach_rationale() {
         String k1 = openCase();
         assertTrue(service.startReview(T1, I1, k1, "human-opaque-1", "role-1").isOk());
-        assertTrue(service.markReviewedNoChange(T1, I1, k1).isOk());
-        assertTrue(service.recordRationale(T1, I1, k1, "no-change-rationale-ref").isOk());
+        assertTrue(service.markReviewedNoChange(T1, ACT, I1, k1).isOk());
+        assertTrue(service.recordRationale(T1, ACT, I1, k1, "no-change-rationale-ref").isOk());
         assertEquals(ReviewState.HUMAN_RATIONALE_RECORDED, stateOf(k1));
 
         String k2 = openCase();
         assertTrue(service.startReview(T1, I1, k2, "human-opaque-1", "role-1").isOk());
-        assertTrue(service.rejectAiSuggestion(T1, I1, k2, "reject-rationale-ref").isOk());
-        assertTrue(service.recordRationale(T1, I1, k2, "reject-rationale-ref").isOk());
+        assertTrue(service.rejectAiSuggestion(T1, ACT, I1, k2, "reject-rationale-ref").isOk());
+        assertTrue(service.recordRationale(T1, ACT, I1, k2, "reject-rationale-ref").isOk());
         assertEquals(ReviewState.HUMAN_RATIONALE_RECORDED, stateOf(k2));
     }
 
@@ -142,9 +144,23 @@ class HumanReviewServiceTest {
         assertTrue(service.startReview(T1, I1, caseRef, "human-opaque-1", "role-1").isOk());
         assertFalse(service.finalizeDecision(T1, HUMAN, I1, caseRef, "karar-sonuc-a", "2026-07-02T13:00:00Z").isOk(),
                 "gerekçesiz finalize YOK (HUMAN_REVIEWING'den giriş yasak)");
-        assertTrue(service.recordEdit(T1, I1, caseRef, "cs-ref").isOk());
+        assertTrue(service.recordEdit(T1, ACT, I1, caseRef, "cs-ref").isOk());
         assertFalse(service.finalizeDecision(T1, HUMAN, I1, caseRef, "karar-sonuc-a", "2026-07-02T13:00:00Z").isOk(),
                 "HUMAN_EDITED'den de finalize yok — önce gerekçe");
+    }
+
+    @Test
+    void different_actor_cannot_continue_case_after_start() {
+        String caseRef = openCase();
+        assertTrue(service.startReview(T1, I1, caseRef, "human-opaque-1", "role-1").isOk());
+        com.ats.kernel.Ids.ActorId other = new com.ats.kernel.Ids.ActorId("baska-reviewer");
+        assertFalse(service.recordEdit(T1, other, I1, caseRef, "cs-x").isOk(),
+                "başka aktör devam edemez (accountability)");
+        assertFalse(service.markReviewedNoChange(T1, other, I1, caseRef).isOk());
+        assertTrue(service.recordEdit(T1, ACT, I1, caseRef, "cs-ref").isOk(), "atanan aktör devam eder");
+        assertTrue(service.recordRationale(T1, ACT, I1, caseRef, "rat-ref").isOk());
+        assertFalse(service.finalizeDecision(T1, other, I1, caseRef, "karar-1", "2026-07-02T13:00:00Z").isOk(),
+                "finalize de aktör-eşleşmeli");
     }
 
     @Test
@@ -154,12 +170,12 @@ class HumanReviewServiceTest {
         assertFalse(service.open(T1, I1, EVIDENCE_REFS, " ").isOk(), "blank ai_output_version_ref reddedilmeli");
         String caseRef = openCase();
         assertFalse(service.startReview(T1, I1, caseRef, " ", "role-1").isOk());
-        assertFalse(service.startReview(T1, I1, caseRef, "human-1", " ").isOk());
-        assertTrue(service.startReview(T1, I1, caseRef, "human-1", "role-1").isOk());
-        assertFalse(service.recordEdit(T1, I1, caseRef, " ").isOk());
-        assertTrue(service.recordEdit(T1, I1, caseRef, "cs-ref").isOk());
-        assertFalse(service.recordRationale(T1, I1, caseRef, " ").isOk());
-        assertTrue(service.recordRationale(T1, I1, caseRef, "rat-ref").isOk());
+        assertFalse(service.startReview(T1, I1, caseRef, "human-opaque-1", " ").isOk());
+        assertTrue(service.startReview(T1, I1, caseRef, "human-opaque-1", "role-1").isOk());
+        assertFalse(service.recordEdit(T1, ACT, I1, caseRef, " ").isOk());
+        assertTrue(service.recordEdit(T1, ACT, I1, caseRef, "cs-ref").isOk());
+        assertFalse(service.recordRationale(T1, ACT, I1, caseRef, " ").isOk());
+        assertTrue(service.recordRationale(T1, ACT, I1, caseRef, "rat-ref").isOk());
         assertFalse(service.finalizeDecision(T1, HUMAN, I1, caseRef, " ", "2026-07-02T13:00:00Z").isOk(),
                 "decision_outcome_ref zorunlu (6-alan)");
     }
@@ -170,7 +186,7 @@ class HumanReviewServiceTest {
         assertTrue(service.finalizeDecision(T1, HUMAN, I1, caseRef, "karar-sonuc-a", "2026-07-02T13:00:00Z").isOk());
         // locked FINALIZED: editable state'e dönüş YOK
         assertFalse(service.startReview(T1, I1, caseRef, "human-1", "role-1").isOk(), "FINALIZED re-open YASAK");
-        assertFalse(service.recordRationale(T1, I1, caseRef, "r2").isOk(), "FINALIZED'den rationale'e dönüş YASAK");
+        assertFalse(service.recordRationale(T1, ACT, I1, caseRef, "r2").isOk(), "FINALIZED'den rationale'e dönüş YASAK");
         assertTrue(service.markExported(T1, I1, caseRef, "export-ref").isOk());
         // terminal EXPORTED: çıkışsız
         assertFalse(service.withdraw(T1, I1, caseRef, "dsar").isOk(), "terminal EXPORTED çıkışsız");
@@ -241,10 +257,10 @@ class HumanReviewServiceTest {
     @Test
     void invalid_transitions_rejected() {
         String caseRef = openCase();
-        assertFalse(service.recordEdit(T1, I1, caseRef, "cs").isOk(), "AI_SUGGESTED→HUMAN_EDITED geçişi yok");
-        assertFalse(service.markReviewedNoChange(T1, I1, caseRef).isOk());
-        assertFalse(service.rejectAiSuggestion(T1, I1, caseRef, "r").isOk());
-        assertFalse(service.recordRationale(T1, I1, caseRef, "r").isOk(), "AI_SUGGESTED→RATIONALE geçişi yok");
+        assertFalse(service.recordEdit(T1, ACT, I1, caseRef, "cs").isOk(), "AI_SUGGESTED→HUMAN_EDITED geçişi yok");
+        assertFalse(service.markReviewedNoChange(T1, ACT, I1, caseRef).isOk());
+        assertFalse(service.rejectAiSuggestion(T1, ACT, I1, caseRef, "r").isOk());
+        assertFalse(service.recordRationale(T1, ACT, I1, caseRef, "r").isOk(), "AI_SUGGESTED→RATIONALE geçişi yok");
         assertFalse(service.markExported(T1, I1, caseRef, "e").isOk(), "yalnız FINALIZED→EXPORTED");
     }
 }
