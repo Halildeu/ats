@@ -280,6 +280,37 @@ class CitationServiceTest {
     }
 
     @Test
+    void rollback_failure_not_swallowed() {
+        grant();
+        ledger.failAppend = true;
+        CitationStore failingDelete = new CitationStore() {
+            @Override
+            public Outcome<String> put(Citation c) {
+                return citationStore.put(c);
+            }
+
+            @Override
+            public Outcome<Citation> find(TenantId t, InterviewId i, String key) {
+                return citationStore.find(t, i, key);
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String key) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
+            }
+        };
+        CitationService svc = new CitationService(new ConsentGate(consentStore, sink),
+                providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)),
+                transcriptStore, failingDelete, ledger, sink);
+        Outcome<CitationReceipt> out = svc.citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                e.eventTypeId().equals(CitationService.APPEND_FAILED_EVENT)
+                        && "ledger_unavailable_rollback_failed".equals(e.extras().get("reason_code"))),
+                "telafi silmesi de başarısızsa yutulmamalı (operasyonel müdahale sinyali)");
+    }
+
+    @Test
     void ledger_failure_rolls_back_citation() {
         grant();
         ledger.failAppend = true;
