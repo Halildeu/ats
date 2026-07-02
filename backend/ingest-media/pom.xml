@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>ingest-media</artifactId>
+
+  <!-- PRD-P1 F1 ingest domain (ATS-0008 modül #3). Slice-1 (ATS-0016): consent-gate →
+       scan → object-store → WORM-append orchestration; TÜM dış bağımlılık port
+       (in-memory/local adapter); JPA/Flyway/vendor SDK YOK (ArchUnit zorlar). -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ops-events</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>consent</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
