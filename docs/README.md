@@ -19,6 +19,7 @@
 | [ATS-0014](./adr/ATS-0014-voice-enrollment-optin-internal-only.md) | voice-enrollment opt-in (YALNIZ iç-kullanıcı; aday kategorik-dışlanmış + eleme-yoluyla tespit) | Accepted — owner beyanı 2026-07-02 (runtime P1 + imzalı-DPIA/VERBIS çift kilit) |
 | [ATS-0015](./adr/ATS-0015-process-perspective-coverage-six-hats.md) | process_perspective_coverage (Altı-Şapka lensli süreç-perspektif kapsaması; kişi-profilleme dışlanmış) | Önerildi |
 | [ATS-0016](./adr/ATS-0016-p1-build-unlock-g0-release-gate.md) | P1 build unlock — G0 build-gate→RELEASE-gate (owner kararı; slice-1 sınırlı) | Accepted — owner 2026-07-02 |
+| [ATS-0017](./adr/ATS-0017-p1-stt-provider-faz24-selfhost.md) | P1 STT/diarization sağlayıcısı: Faz 24 self-host motoru (AIProvider portu; cloud=owner-gated fallback) | Önerildi — owner onayı bekliyor |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
@@ -51,7 +52,7 @@
 ## Mahremiyet / veri-yaşam-döngüsü (public, living)
 - [privacy/data-lifecycle-register.md](./privacy/data-lifecycle-register.md) — ATS-0003 operationalized: veri-sınıfı × retention/erasure/transfer kanonik matrisi (drift-guard `data-lifecycle-guard`). WORM-içerik-yasağı + crypto-erase/unlinkable invariantları makine-zorlanır (DPO/procurement yüzeyi).
 - [privacy/consent-texts-voice-enrollment.md](./privacy/consent-texts-voice-enrollment.md) — ATS-0014 rıza-metni TASLAKLARI: iç-kullanıcı enrollment açık-rızası + aday kayıt-rızası geçici-işleme ek-cümlesi (tenant adaptasyonu owner/DPO; hukuki görüş değildir).
-- [privacy/dpia-voice-enrollment.md](./privacy/dpia-voice-enrollment.md) — ATS-0014 DPIA + ölçülülük/alternatif-analizi TASLAĞI (owner/DPO sign-off PENDING; imzalı hali = runtime-enable kanıtı).
+- [privacy/dpia-voice-enrollment.md](./privacy/dpia-voice-enrollment.md) — ATS-0014 DPIA + ölçülülük/alternatif-analizi — **OWNER-APPROVED 2026-07-02** (kayıtlı beyan; DPO pre-G0 atanmadı) + **VERBIS kopyala-yapıştır paketi (§6)**. Runtime-enable hâlâ kapalı: VERBIS + fiili rıza + P1.
 
 ## Frontend standardı (public, living)
 - [frontend/a11y-i18n-standard.md](./frontend/a11y-i18n-standard.md) — ATS-0011 WCAG 2.2 AA + Türkçe-first i18n kanonik kriter registry'si (drift-guard `a11y-standard-guard`). Enforcement (axe/eslint/i18n-extract) P1 UI ile aktif.

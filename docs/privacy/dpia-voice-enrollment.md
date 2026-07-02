@@ -1,6 +1,8 @@
-# DPIA + Ölçülülük Dosyası (Taslak) — Voice-Enrollment (ATS-0014)
+# DPIA + Ölçülülük Dosyası — Voice-Enrollment (ATS-0014)
 
-> **Durum: DRAFT — owner/DPO sign-off PENDING.** Bu belge [[ATS-0014]] aktivasyon önkoşulu-3'ün ajan-hazırladığı taslağıdır; **imzalı hali runtime-enable kanıtıdır** (imzasız hâlde modül runtime'ı açılamaz — P1 gate ile birlikte çift kilit). Hukuki görüş değildir.
+> **Durum: OWNER-APPROVED (2026-07-02, kayıtlı beyan)** — owner, kalan-madde listesi kendisine açıkça sunulduktan sonra "**onaylıyorum / tam otonom devam**" beyanı verdi (session c9445b2a; bu repo'nun ADR-kabul governance kalıbıyla aynı: kayıtlı chat beyanı = owner onayı). **DPO eş-imzası: pre-G0'da atanmış DPO yok** (KVKK'da DPO zorunlu organ değildir; veri sorumlusu yetkilisi = owner) — DPO/irtibat kişisi atanırsa eş-imza eklenir; tenant-onboarding'de kurumsal imza süreci tekrarlanabilir.
+> **Bu kayıt ıslak/e-imza veya tenant kurumsal onayı DEĞİLDİR; repo-owner risk/onay kaydıdır** (tenant-onboarding'de kurumsal imza süreci ayrıca yürütülür). VERBIS irtibat kişisi ≠ DPO (ayrı kavramlar).
+> **Runtime-enable hâlâ KAPALI** — kalan önkoşullar: **VERBIS güncellemesi (§6 kopyala-yapıştır paketi hazır) + fiili açık-rıza toplama (runtime'da) + P1 gate**. Hukuki görüş değildir.
 
 ## 1. Kapsam ve işleme tanımı
 
@@ -38,11 +40,26 @@
 - **EU:** GDPR Art.35 DPIA bu dosyanın imzalı hali; Art.9(2)(a) explicit consent.
 - **US (varsa):** Illinois BIPA vb. için **yazılı release** ([[consent-texts-voice-enrollment]] §A karşılar) + **yayımlı retention/destruction policy** (bu dosya §1 saklama/silme satırı politika metnine dönüştürülür).
 
-## 5. Sign-off (runtime-enable kanıtı — İMZA PENDING)
+## 5. Sign-off (runtime-enable kanıtı)
 
-| Rol | Ad | Tarih | İmza |
+| Rol | Ad | Tarih | Onay |
 |---|---|---|---|
-| Owner (risk-kabul beyanı 2026-07-02 kayıtlı — [[ATS-0014]]) | [DOLDURULACAK] | | |
-| DPO / veri-koruma sorumlusu | [DOLDURULACAK] | | |
+| Owner (veri sorumlusu yetkilisi; risk-kabul [[ATS-0014]]) | Halil Koçoğlu | 2026-07-02 | **KAYITLI BEYAN** — kalan-madde listesi sunulduktan sonra "onaylıyorum / tam otonom devam" (session c9445b2a) |
+| DPO / irtibat kişisi | pre-G0'da atanmadı | — | atanırsa eş-imza; tenant-onboarding'de kurumsal imza tekrarlanabilir |
 
-> İmza tamamlanmadan: registry `active-internal-consented` **design-plane** kalır; modül runtime'ı **açılamaz** (P1 gate + bu dosya çift kilit).
+> Owner onayı kayıtlı; ancak modül runtime'ı **hâlâ açılamaz** — kalan: VERBIS (§6) + fiili açık-rıza toplama + P1 gate. Registry `active-internal-consented` **design-plane** kalır.
+
+## 6. VERBIS güncelleme paketi (owner için kopyala-yapıştır — TR tenant)
+
+> VERBIS kayıt/güncelleme ekranındaki alanlara birebir taşınacak içerik. Yürütme = owner (VERBIS girişi şirket yetkilisi kimliğiyle yapılır; ajan yapamaz).
+
+| VERBIS alanı | Girilecek değer |
+|---|---|
+| Veri kategorisi | **Biyometrik veri** (ses tanıma profili / ses şablonu) |
+| İlgili kişi grubu | **Çalışanlar / iç-kullanıcılar** (YALNIZ açık rızayla opt-in olanlar) — **aday/stajyer DEĞİL** (aday için şablon üretilmez) |
+| İşleme amacı | Toplantı/mülakat kayıtlarında konuşmacı-eşleme ÖNERİSİ üretimi (iş faaliyetlerinin yürütülmesi; İK karar amacı DEĞİL — öneri insan onaylıdır) |
+| Hukuki sebep | Açık rıza (KVKK m.6) |
+| Saklama süresi | Opt-in süresince; rıza geri çekildiğinde **derhal kriptografik silme** (self-service) |
+| Alıcı / alıcı grupları | Yok (tenant dışına aktarım yok; üçüncü tarafla paylaşım yok; model eğitiminde kullanılmaz) |
+| Yabancı ülkeye aktarım | Yok |
+| Güvenlik tedbirleri | Şifreleme (at-rest/in-transit), erişim yetkilendirme + denetim logu (`evidence.speaker.attributed`), amaç-sınırı makine-zorlanır (CI guard), kriptografik silme, tenant izolasyonu ([[ATS-0002]]/[[ATS-0007]]) |
