@@ -29,7 +29,7 @@
     <module>shared-kernel</module>
     <module>contracts-java</module>
     <!--
-      Domain modülleri (ATS-0008 8 modül) G0 sonrası iş mantığıyla wire edilecek:
+      Domain modülleri (ATS-0008 8 modül) slice sırasına göre wire edilir (ATS-0016; slice-1 port-only):
       identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,
       ai-orchestration, export-connector, retention-dsr. Pre-G0 placeholder: backend/domains/.
     -->
