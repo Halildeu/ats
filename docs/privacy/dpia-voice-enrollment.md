@@ -1,6 +1,7 @@
 # DPIA + Ölçülülük Dosyası — Voice-Enrollment (ATS-0014)
 
 > **Durum: OWNER-APPROVED (2026-07-02, kayıtlı beyan)** — owner, kalan-madde listesi kendisine açıkça sunulduktan sonra "**onaylıyorum / tam otonom devam**" beyanı verdi (session c9445b2a; bu repo'nun ADR-kabul governance kalıbıyla aynı: kayıtlı chat beyanı = owner onayı). **DPO eş-imzası: pre-G0'da atanmış DPO yok** (KVKK'da DPO zorunlu organ değildir; veri sorumlusu yetkilisi = owner) — DPO/irtibat kişisi atanırsa eş-imza eklenir; tenant-onboarding'de kurumsal imza süreci tekrarlanabilir.
+> **Bu kayıt ıslak/e-imza veya tenant kurumsal onayı DEĞİLDİR; repo-owner risk/onay kaydıdır** (tenant-onboarding'de kurumsal imza süreci ayrıca yürütülür). VERBIS irtibat kişisi ≠ DPO (ayrı kavramlar).
 > **Runtime-enable hâlâ KAPALI** — kalan önkoşullar: **VERBIS güncellemesi (§6 kopyala-yapıştır paketi hazır) + fiili açık-rıza toplama (runtime'da) + P1 gate**. Hukuki görüş değildir.
 
 ## 1. Kapsam ve işleme tanımı
