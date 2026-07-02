@@ -6,9 +6,10 @@
 
   <!--
     Faz 25 ATS — ats-core (modular monolith) parent POM.
-    GATE-SAFE skeleton (ATS-0008): yalnız sözleşme/kernel/guard iskeleti.
-    P1 fonksiyonel (JPA entity / Flyway domain migration / ürün controller /
-    gerçek KC-OpenFGA-PG-S3-STT-LLM bağlantısı) G0=GO'ya KİLİTLİ — bu ağaçta YOK.
+    P1 BUILD AKTIF (ATS-0016, owner karari 2026-07-02); release/gercek-veri G0-kilitli.
+    Slice-1 siniri: persistence PORT-ONLY (JPA/Flyway/Spring Data/vendor SDK YOK —
+    ArchUnit yasagi korunur; persistence ayri "architecture unlock" slice + ADR).
+    Gercek KC-OpenFGA-PG-S3-STT-LLM baglantisi sonraki slice'larda ADR'li acilir.
     Toolchain: ATS-0008 "Gradle" → repo-gerçeği (Maven kurulu, Gradle yok) + local-verify
     edilebilirlik nedeniyle Maven (bkz. backend/README.md).
   -->
@@ -28,7 +29,7 @@
     <module>shared-kernel</module>
     <module>contracts-java</module>
     <!--
-      Domain modülleri (ATS-0008 8 modül) G0 sonrası iş mantığıyla wire edilecek:
+      Domain modülleri (ATS-0008 8 modül) slice sırasına göre wire edilir (ATS-0016; slice-1 port-only):
       identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,
       ai-orchestration, export-connector, retention-dsr. Pre-G0 placeholder: backend/domains/.
     -->
