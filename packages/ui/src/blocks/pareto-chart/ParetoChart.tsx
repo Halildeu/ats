@@ -12,7 +12,6 @@ import {
 
 /** A single item in the Pareto chart.
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/pareto-chart)
  */
 export interface ParetoItem {
   /** Unique identifier */

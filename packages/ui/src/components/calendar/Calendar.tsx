@@ -241,7 +241,6 @@ const SIZE_MAP: Record<
  * <Calendar />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/calendar)
  */
 export const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(function Calendar(
   {

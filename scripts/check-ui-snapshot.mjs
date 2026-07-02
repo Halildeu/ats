@@ -65,8 +65,12 @@ export function runChecks(files, pkg) {
     // import taraması yorum-soyulmuş metinde (JSDoc/migration-notu prose'u sahte-import üretmesin);
     // YASAK-token taraması yukarıda TAM metinde koşuyor (yorumda bile geçemez — bilinçli sıkılık).
     const codeOnly = content.replace(/\/\*[^]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    for (const im of codeOnly.matchAll(/(?:^|\n)\s*(?:import|export)[^;]*?from\s+['"]([^'"]+)['"]/g)) {
-      const spec = im[1];
+    const specs = [];
+    for (const im of codeOnly.matchAll(/(?:^|\n)\s*(?:import|export)[^;]*?from\s+['"]([^'"]+)['"]/g)) specs.push(im[1]);
+    // require("...") + dynamic import("...") + side-effect import "..." da closure'a tabidir (Codex #67 blocker-1)
+    for (const im of codeOnly.matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g)) specs.push(im[1]);
+    for (const im of codeOnly.matchAll(/(?:^|\n)\s*import\s+['"]([^'"]+)['"]/g)) specs.push(im[1]);
+    for (const spec of specs) {
       if (spec.startsWith(".")) {
         const base = resolve(dirname(join(SRC, rel)), spec);
         if (!base.startsWith(SRC)) {
@@ -117,6 +121,9 @@ function selfTest(realFiles, realPkg) {
     ["forbidden-path", [{ path: "components/charts/BarChart.tsx", content: "export {};" }], realPkg],
     ["escape-import", [{ path: "a/b.ts", content: 'export * from "../../../outside";' }], realPkg],
     ["unresolved-bare", [{ path: "x.ts", content: 'import q from "left-pad";' }], realPkg],
+    ["require-escape", [{ path: "a/b.ts", content: 'const j = require("../../../outside.json");' }], realPkg],
+    ["dynamic-import-escape", [{ path: "a/b.ts", content: 'const m = import("../../../outside");' }], realPkg],
+    ["sideeffect-import-escape", [{ path: "a/b.ts", content: 'import "../../../outside.css";' }], realPkg],
     ["unused-dep", realFiles, { ...realPkg, dependencies: { ...realPkg.dependencies, "kullanilmayan-paket": "1.0.0" } }],
   ];
   for (const [name, files, pkg] of cases) {
@@ -136,4 +143,4 @@ if (errors.length > 0) {
   process.exit(1);
 }
 console.log(`ui-snapshot OK — ${files.length} dosya: yasak token/path yok, import-closure kapalı, `
-    + `dependency-surface birebir (unused/unresolved yok); self-test 7 negatif vektör fail ediyor.`);
+    + `dependency-surface birebir (unused/unresolved yok); self-test 10 negatif vektör fail ediyor.`);

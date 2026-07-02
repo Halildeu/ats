@@ -33,7 +33,6 @@ export type DrawerSize = 'sm' | 'md' | 'lg' | 'full';
  * <Drawer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/drawer)
  */
 export interface DrawerProps {
   /** Controlled open state */

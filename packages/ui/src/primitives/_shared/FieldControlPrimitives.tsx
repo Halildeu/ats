@@ -144,7 +144,6 @@ export interface FieldControlShellProps {
    * <FieldControlPrimitives />
    * ```
    * @since 1.0.0
-   * @see [Docs](https://design.mfe.dev/components/field-control-primitives)
    */
 export const FieldControlShell = React.forwardRef<HTMLDivElement, FieldControlShellProps>(({
   inputId,

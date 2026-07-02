@@ -11,7 +11,6 @@ import type { AccessLevel } from '../../internal/access-controller';
  * <ConnectedSelect />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/connected-select)
  */
 export interface ConnectedSelectProps
   extends Omit<SelectProps, 'value' | 'onChange' | 'onBlur' | 'error'> {

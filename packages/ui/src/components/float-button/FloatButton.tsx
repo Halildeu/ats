@@ -148,20 +148,19 @@ const Badge: React.FC<{ badge?: number | boolean; size: FloatButtonSize }> = ({
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
-/* ------------------------------------------------------------------ 
+/* ------------------------------------------------------------------
  * @example
  * ```tsx
  * <FloatButton />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/float-button)
  */
 export const FloatButton = React.forwardRef<HTMLDivElement, FloatButtonProps>(
   function FloatButton(
     {
       icon,
       label,
-       
+
       tooltip,
       shape = "circle",
       size = "md",

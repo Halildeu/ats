@@ -30,7 +30,6 @@ export interface ApprovalStep {
  * <ApprovalWorkflow />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/approval-workflow)
  */
 export interface ApprovalWorkflowProps {
   /** Ordered list of approval steps to render */

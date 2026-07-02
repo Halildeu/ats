@@ -14,7 +14,6 @@ import type { Direction } from "./LocaleProvider";
  * <DirectionProvider />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/direction-provider)
  */
 export interface DirectionProviderProps {
   /** Text direction to apply to the subtree. */

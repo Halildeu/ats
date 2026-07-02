@@ -21,7 +21,6 @@ import {
  * <AILayoutBuilder />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/a-i-layout-builder)
  */
 export type LayoutBlock = {
   /** Unique identifier for this block. */

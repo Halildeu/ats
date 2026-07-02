@@ -13,7 +13,6 @@ import { resolveAccessState, type AccessControlledProps } from "../../internal/a
  * <Watermark />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/watermark)
 
  */
 export interface WatermarkProps extends AccessControlledProps {

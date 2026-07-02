@@ -36,7 +36,6 @@ type NotificationPanelSection = {
  * <NotificationPanel />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/notification-panel)
 
  */
 export interface NotificationPanelProps extends AccessControlledProps {

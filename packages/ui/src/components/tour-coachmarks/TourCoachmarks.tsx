@@ -23,7 +23,6 @@ export type TourCoachmarkStep = {
  * <TourCoachmarks />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/tour-coachmarks)
  */
 export interface TourCoachmarksProps extends AccessControlledProps {
   /** Ordered list of tour steps. */

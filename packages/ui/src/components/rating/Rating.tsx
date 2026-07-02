@@ -145,7 +145,6 @@ function clamp(val: number, min: number, max: number) {
  * <Rating />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/rating)
  */
 export const Rating = React.forwardRef<HTMLDivElement, RatingProps>(function Rating(
   {

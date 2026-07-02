@@ -152,8 +152,7 @@ function getDescriptionVisibilityClassName(
    * <SectionTabs />
    * ```
    * @since 1.0.0
-   * @see [Docs](https://design.mfe.dev/components/section-tabs)
-  
+
  */
 export const SectionTabs = React.forwardRef<HTMLDivElement, SectionTabsProps>(function SectionTabs(
   {

@@ -13,7 +13,6 @@ import {
 /**
  * A single data point in the control chart.
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/control-chart)
  */
 export interface ControlChartPoint {
   /** X-axis value (index, timestamp, or label) */

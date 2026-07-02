@@ -12,7 +12,6 @@ import type { AccessLevel } from '../../internal/access-controller';
  * <ConnectedRadio />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/connected-radio)
  */
 export interface ConnectedRadioProps
   extends Omit<RadioProps, 'checked' | 'onChange' | 'onBlur'> {

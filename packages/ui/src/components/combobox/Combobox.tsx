@@ -202,7 +202,6 @@ const getInitialInputValue = ({
  * <Combobox />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/combobox)
  */
 export interface ComboboxProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size' | 'value' | 'defaultValue' | 'onChange' | 'children' | 'onSelect'>,

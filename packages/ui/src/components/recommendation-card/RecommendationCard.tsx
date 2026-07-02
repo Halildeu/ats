@@ -23,7 +23,6 @@ export type RecommendationCardTone = "info" | "success" | "warning";
  * <RecommendationCard />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/recommendation-card)
 
  */
 export interface RecommendationCardProps extends AccessControlledProps {

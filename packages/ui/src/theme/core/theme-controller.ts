@@ -53,53 +53,12 @@ interface OverlayConfig {
  * Falls back to safe defaults when tokens aren't available.
  */
 const loadOverlayConfig = (): OverlayConfig => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic JSON load with graceful fallback
-    const tokens = require("../../../../../design-tokens/figma.tokens.json") as {
-      semantic?: {
-        color?: {
-          overlay?: {
-            intensity?: { min?: ModeToken; max?: ModeToken; default?: ModeToken };
-            opacity?: { default?: ModeToken };
-          };
-        };
-      };
-    };
-
-    const contract = getThemeContract();
-    const preferredMode = contract.defaultMode;
-
-    const pickValue = (node: ModeToken | undefined, fallback: number): number => {
-      const modes = node?.modes;
-      if (modes && Object.keys(modes).length > 0) {
-        const candidate =
-          (preferredMode ? modes[preferredMode] : undefined) ??
-          Object.values(modes)[0];
-        const raw = candidate?.value;
-        const num =
-          typeof raw === "number" ? raw : Number.parseFloat(String(raw ?? ""));
-        if (Number.isFinite(num)) return num;
-      }
-      return fallback;
-    };
-
-    const intensityNode = tokens.semantic?.color?.overlay?.intensity;
-    const opacityNode = tokens.semantic?.color?.overlay?.opacity;
-
-    return {
-      intensity: {
-        min: pickValue(intensityNode?.min, 0),
-        max: pickValue(intensityNode?.max, 60),
-        default: pickValue(intensityNode?.default, 10),
-      },
-      opacity: { default: pickValue(opacityNode?.default, 10) },
-    };
-  } catch {
-    return {
-      intensity: { min: 0, max: 60, default: 10 },
-      opacity: { default: 10 },
-    };
-  }
+  // snapshot-local: upstream'in dis design-tokens agacina dynamic-require fallback'i
+  // KALDIRILDI (curated closure disina cikiyordu); guvenli default'lar kullanilir.
+  return {
+    intensity: { min: 0, max: 60, default: 10 },
+    opacity: { default: 10 },
+  };
 };
 
 const overlayConfig = loadOverlayConfig();

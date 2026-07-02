@@ -255,13 +255,12 @@ const SortDropdown: React.FC<{
   );
 };
 
-/* ---- Main Component ---- 
+/* ---- Main Component ----
  * @example
  * ```tsx
  * <SearchFilterListing />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/search-filter-listing)
  */
 export const SearchFilterListing = React.forwardRef<HTMLElement, SearchFilterListingProps>(({
   eyebrow,

@@ -28,7 +28,6 @@ export type DropdownPlacement = "bottom-start" | "bottom-end" | "top-start" | "t
  * <Dropdown />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/dropdown)
  */
 export interface DropdownProps {
   /** Trigger element that toggles the dropdown on click. */

@@ -33,7 +33,6 @@ export interface AIActionAuditTimelineItem {
  * <AIActionAuditTimeline />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/a-i-action-audit-timeline)
  */
 export interface AIActionAuditTimelineProps extends AccessControlledProps {
   /** Timeline entries to render. */

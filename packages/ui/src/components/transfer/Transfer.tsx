@@ -407,13 +407,12 @@ const TransferPanel: React.FC<TransferPanelProps> = ({
 
 /* ------------------------------------------------------------------ */
 /*  Transfer                                                           */
-/* ------------------------------------------------------------------ 
+/* ------------------------------------------------------------------
  * @example
  * ```tsx
  * <Transfer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/transfer)
  */
 export const Transfer = React.forwardRef<HTMLDivElement, TransferProps>(({
   dataSource,

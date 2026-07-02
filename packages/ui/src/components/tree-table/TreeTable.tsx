@@ -53,7 +53,6 @@ export interface TreeTableLocaleText {
  * <TreeTable />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/tree-table)
  */
 export interface TreeTableProps<RowData extends Record<string, unknown> = Record<string, unknown>>
   extends AccessControlledProps {

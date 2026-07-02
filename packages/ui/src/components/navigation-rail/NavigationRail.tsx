@@ -75,7 +75,6 @@ export interface NavigationRailClasses {
  * <NavigationRail />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/navigation-rail)
  */
 export interface NavigationRailProps extends AccessControlledProps {
   /** Navigation items to render in the rail. */

@@ -33,7 +33,6 @@ export interface KPIMetric {
  * <ExecutiveKPIStrip />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/executive-k-p-i-strip)
  */
 export interface ExecutiveKPIStripProps {
   metrics: KPIMetric[];

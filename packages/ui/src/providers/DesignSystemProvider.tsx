@@ -16,7 +16,6 @@ import type { Direction } from "./LocaleProvider";
  * <DesignSystemProvider />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/design-system-provider)
  */
 export interface DesignSystemProviderProps {
   /** Override default theme axes. */

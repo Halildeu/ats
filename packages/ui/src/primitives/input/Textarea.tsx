@@ -32,7 +32,6 @@ export type TextAreaResize = "vertical" | "none" | "auto";
  * <Textarea />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/textarea)
  */
 export interface TextareaProps
   extends Omit<

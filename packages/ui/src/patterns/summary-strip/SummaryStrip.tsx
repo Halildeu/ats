@@ -25,7 +25,6 @@ export interface SummaryStripItem {
  * <SummaryStrip />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/summary-strip)
  */
 export interface SummaryStripProps extends AccessControlledProps {
   /** KPI / metric items to display in the strip. */

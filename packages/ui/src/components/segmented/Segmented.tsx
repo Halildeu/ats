@@ -79,13 +79,12 @@ export interface SegmentedProps extends AccessControlledProps {
 }
 
 /* ---- Helper: next-value resolution -------------------------------
-   
+
  * @example
  * ```tsx
  * <Segmented />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/segmented)
  */
 export function resolveSegmentedNextValue(
   currentValue: string | string[],

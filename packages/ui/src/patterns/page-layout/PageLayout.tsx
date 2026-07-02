@@ -56,7 +56,6 @@ export interface PageLayoutClasses {
  * <PageLayout />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/page-layout)
  */
 export interface PageLayoutProps extends AccessControlledProps {
   /** Page heading text. */

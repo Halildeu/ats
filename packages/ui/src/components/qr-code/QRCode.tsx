@@ -19,7 +19,6 @@ export type QRErrorLevel = "L" | "M" | "Q" | "H";
  * <QRCode />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/q-r-code)
 
  */
 export interface QRCodeProps extends AccessControlledProps {

@@ -10,7 +10,6 @@ import type { AccessLevel } from '../../internal/access-controller';
  * <ConnectedTextarea />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/connected-textarea)
  */
 export interface ConnectedTextareaProps
   extends Omit<

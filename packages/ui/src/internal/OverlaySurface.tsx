@@ -52,7 +52,6 @@ interface OverlaySurfaceProps {
  * <OverlaySurface />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/overlay-surface)
  */
 export const OverlaySurface: React.FC<OverlaySurfaceProps> = ({
   open,

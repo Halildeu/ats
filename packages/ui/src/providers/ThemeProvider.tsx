@@ -65,7 +65,6 @@ function applyAxesToDom(axes: ThemeAxes) {
  * <ThemeProvider />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/theme-provider)
  */
 export interface ThemeContextValue {
   /** Current resolved theme axes. */

@@ -19,7 +19,6 @@ type JsonExpandable = Record<string, unknown> | unknown[];
  * <JsonViewer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/json-viewer)
  */
 export interface JsonViewerProps extends AccessControlledProps {
   /** JSON data to display in the tree. */

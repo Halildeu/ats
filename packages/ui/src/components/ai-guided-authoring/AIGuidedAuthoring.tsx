@@ -40,7 +40,6 @@ export interface AIGuidedAuthoringRecommendation
  * <AIGuidedAuthoring />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/a-i-guided-authoring)
 
  */
 export interface AIGuidedAuthoringProps extends AccessControlledProps {

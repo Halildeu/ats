@@ -20,7 +20,6 @@ export type PromptComposerTone = "neutral" | "strict" | "exploratory";
  * <PromptComposer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/prompt-composer)
 
  */
 export interface PromptComposerProps extends AccessControlledProps {

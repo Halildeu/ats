@@ -13,7 +13,6 @@ import {
 /**
  * Represents a single activity entry in the feed.
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/activity-feed)
  */
 export interface ActivityItem {
   /** Unique identifier */

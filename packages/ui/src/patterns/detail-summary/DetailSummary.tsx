@@ -29,7 +29,6 @@ import {
  * <DetailSummary />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/detail-summary)
  */
 export interface DetailSummaryProps extends AccessControlledProps {
   /** Breadcrumb or eyebrow text above the title */

@@ -22,7 +22,6 @@ export type CascaderOption = {
  * <Cascader />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/cascader)
  */
 export interface CascaderProps extends AccessControlledProps {
   /** Hierarchical option data for the cascade panels. */

@@ -191,7 +191,6 @@ function hexToHsv(hex: string): { h: number; s: number; v: number } {
  * <ColorPicker />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/color-picker)
  */
 export const ColorPicker = React.forwardRef<HTMLDivElement, ColorPickerProps>(function ColorPicker(
   {

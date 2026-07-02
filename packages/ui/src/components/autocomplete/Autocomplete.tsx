@@ -78,7 +78,6 @@ const matchesQuery = (option: AutocompleteOption, query: string): boolean => {
    * <Autocomplete />
    * ```
    * @since 1.0.0
-   * @see [Docs](https://design.mfe.dev/components/autocomplete)
    */
 export const Autocomplete = React.forwardRef<HTMLInputElement, AutocompleteProps>(
   function Autocomplete(

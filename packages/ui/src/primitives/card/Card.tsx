@@ -62,7 +62,6 @@ const paddingStyles: Record<CardPadding, string> = {
  * </Card>
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/card)
  */
 export const Card = forwardRef<HTMLDivElement, CardProps>(
   (

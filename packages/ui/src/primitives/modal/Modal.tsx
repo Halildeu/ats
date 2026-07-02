@@ -33,7 +33,6 @@ export type ModalSlot = "root" | "overlay" | "content" | "header" | "body" | "fo
  * <Modal />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/modal)
  */
 export interface ModalProps {
   /** Whether the modal is open and visible. */

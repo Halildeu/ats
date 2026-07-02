@@ -23,7 +23,6 @@ export interface TimePickerMessages {
  * <TimePicker />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/time-picker)
  */
 export interface TimePickerProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size" | "type" | "children">,

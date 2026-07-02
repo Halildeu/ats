@@ -34,7 +34,6 @@ export type ListItem = {
  * <List />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/list)
  */
 export interface ListProps extends AccessControlledProps {
   /** Data items to render in the list. */

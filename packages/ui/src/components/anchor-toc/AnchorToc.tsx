@@ -28,7 +28,6 @@ export interface AnchorTocItem {
  * <AnchorToc />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/anchor-toc)
  */
 export interface AnchorTocProps extends AccessControlledProps {
   /** Ordered list of table-of-contents entries. */

@@ -40,7 +40,6 @@ export interface DataExportDialogLocaleText {
  * <DataExportDialog />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/data-export-dialog)
  */
 export interface DataExportDialogProps extends AccessControlledProps {
   /** Whether the dialog is currently visible */

@@ -69,7 +69,6 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
  * @since 1.0.0
 
- * @see [Docs](https://design.mfe.dev/components/toast)
 
  */
 

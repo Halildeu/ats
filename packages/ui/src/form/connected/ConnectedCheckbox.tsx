@@ -12,7 +12,6 @@ import type { AccessLevel } from '../../internal/access-controller';
  * <ConnectedCheckbox />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/connected-checkbox)
  */
 export interface ConnectedCheckboxProps
   extends Omit<CheckboxProps, 'checked' | 'onChange' | 'onBlur'> {

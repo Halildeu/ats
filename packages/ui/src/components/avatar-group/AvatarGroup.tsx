@@ -64,13 +64,12 @@ function getInitials(name?: string): string | undefined {
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
-/* ------------------------------------------------------------------ 
+/* ------------------------------------------------------------------
  * @example
  * ```tsx
  * <AvatarGroup />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/avatar-group)
  */
 export const AvatarGroup = React.forwardRef<HTMLDivElement, AvatarGroupProps>(
   function AvatarGroup(

@@ -16,7 +16,6 @@ export type MicroChartType = 'sparkline' | 'bar' | 'bullet' | 'progress' | 'waff
  * <MicroChart />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/micro-chart)
  */
 export interface MicroChartProps extends AccessControlledProps {
   /** Visualization type */

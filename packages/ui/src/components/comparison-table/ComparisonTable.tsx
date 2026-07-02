@@ -38,7 +38,6 @@ export interface ComparisonColumnLabels {
  * <ComparisonTable />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/comparison-table)
  */
 export interface ComparisonTableProps extends AccessControlledProps {
   /** Data rows to display, supports nested children for hierarchical grouping */

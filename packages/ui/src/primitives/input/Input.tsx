@@ -83,7 +83,6 @@ const getInitialValue = (
  * />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/input)
  */
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   function Input(

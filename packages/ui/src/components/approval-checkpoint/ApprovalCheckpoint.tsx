@@ -30,7 +30,6 @@ export interface ApprovalCheckpointItem {
  * <ApprovalCheckpoint />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/approval-checkpoint)
  */
 export interface ApprovalCheckpointProps extends AccessControlledProps {
   /** Heading text for the checkpoint card. */

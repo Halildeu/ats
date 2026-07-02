@@ -33,7 +33,6 @@ export interface DetailDrawerSection {
  * <DetailDrawer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/detail-drawer)
  */
 export interface DetailDrawerProps extends AccessControlledProps {
   /** Controlled open state */

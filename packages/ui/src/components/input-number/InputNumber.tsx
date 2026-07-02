@@ -24,7 +24,6 @@ import { resolveAccessState, type AccessControlledProps } from "../../internal/a
  * <InputNumber />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/input-number)
  */
 export interface InputNumberProps
   extends Omit<

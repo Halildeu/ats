@@ -21,7 +21,6 @@ export type RiskMatrixSize = 'sm' | 'md' | 'lg';
  * <RiskMatrix />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/risk-matrix)
  */
 export interface RiskMatrixProps {
   /** Risk items to plot on the 5x5 matrix grid */

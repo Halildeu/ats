@@ -24,7 +24,6 @@ export interface StatusTimelineEvent {
  * <StatusTimeline />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/status-timeline)
  */
 export interface StatusTimelineProps extends AccessControlledProps {
   /** Ordered list of status events to display */

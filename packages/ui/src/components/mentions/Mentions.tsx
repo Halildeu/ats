@@ -63,13 +63,12 @@ const SIZE_CLASSES: Record<"sm" | "md" | "lg", string> = {
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
-/* ------------------------------------------------------------------ 
+/* ------------------------------------------------------------------
  * @example
  * ```tsx
  * <Mentions />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/mentions)
  */
 export const Mentions = React.forwardRef<HTMLDivElement, MentionsProps>(function Mentions(
   {

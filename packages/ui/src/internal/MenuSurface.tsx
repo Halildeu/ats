@@ -16,7 +16,6 @@ export type MenuSurfaceItemType = 'action' | 'checkbox' | 'radio';
  * <MenuSurface />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/menu-surface)
  */
 export interface MenuSurfaceDismissOptions {
   /** Whether focus should be restored to the trigger element. */

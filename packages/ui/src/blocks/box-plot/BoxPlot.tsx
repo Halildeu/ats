@@ -13,7 +13,6 @@ import {
 /**
  * Data for a single box in the box plot.
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/box-plot)
  */
 export interface BoxPlotData {
   /** Display label for this box */

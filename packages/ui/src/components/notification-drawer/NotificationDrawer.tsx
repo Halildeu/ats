@@ -22,7 +22,6 @@ import { NotificationPanel, type NotificationPanelProps } from './NotificationPa
  * <NotificationDrawer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/notification-drawer)
  */
 export interface NotificationDrawerProps
   extends

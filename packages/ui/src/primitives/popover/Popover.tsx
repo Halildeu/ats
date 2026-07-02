@@ -48,7 +48,6 @@ type PopoverPosition = OverlayPosition;
  * <Popover />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/popover)
 
  */
 export interface PopoverProps extends AccessControlledProps {

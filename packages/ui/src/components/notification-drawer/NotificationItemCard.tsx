@@ -40,7 +40,6 @@ export type NotificationSurfaceItem = {
  * <NotificationItemCard />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/notification-item-card)
  */
 export interface NotificationItemCardProps extends AccessControlledProps {
   /** Notification data to render. */

@@ -21,7 +21,6 @@ export type DialogSlot = 'root' | 'backdrop' | 'panel' | 'title' | 'description'
  * <Dialog />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/dialog)
  */
 export interface DialogProps {
   open: boolean;

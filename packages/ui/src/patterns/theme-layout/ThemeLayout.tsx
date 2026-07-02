@@ -24,7 +24,6 @@ export interface ThemeLayoutSlots {
  * <ThemeLayout />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/theme-layout)
  */
 export interface ThemeLayoutProps extends AccessControlledProps {
   /** Layout theme controlling grid arrangement and density. */

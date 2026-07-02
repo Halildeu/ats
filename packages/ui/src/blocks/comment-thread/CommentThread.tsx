@@ -13,7 +13,6 @@ import {
 /**
  * Represents a single comment in a discussion thread.
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/comment-thread)
  */
 export interface Comment {
   /** Unique identifier */

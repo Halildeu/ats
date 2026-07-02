@@ -15,7 +15,6 @@ export type MasterDetailRatio = "1:2" | "1:3" | "2:3" | "1:1";
  * <MasterDetail />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/master-detail)
  */
 export interface MasterDetailProps extends AccessControlledProps {
   /** Master (list) panel content */

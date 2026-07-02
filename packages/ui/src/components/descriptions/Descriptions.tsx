@@ -12,7 +12,6 @@ import { resolveAccessState, type AccessControlledProps } from "../../internal/a
  * <Descriptions />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/descriptions)
  */
 export interface DescriptionsItem {
   /** Unique identifier for the item. */

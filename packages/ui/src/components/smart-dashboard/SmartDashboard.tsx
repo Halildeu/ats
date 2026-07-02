@@ -63,7 +63,6 @@ export type DashboardDensity = "comfortable" | "compact";
  * <SmartDashboard />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/smart-dashboard)
  */
 export interface SmartDashboardProps extends AccessControlledProps {
   /** Widget definitions to display in the dashboard grid. */

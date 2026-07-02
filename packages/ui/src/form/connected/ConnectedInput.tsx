@@ -11,7 +11,6 @@ import type { AccessLevel } from '../../internal/access-controller';
  * <ConnectedInput />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/connected-input)
  */
 export interface ConnectedInputProps
   extends Omit<InputProps, 'value' | 'onChange' | 'onValueChange' | 'onBlur' | 'error'> {

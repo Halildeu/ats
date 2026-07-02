@@ -63,7 +63,6 @@ export type FormSize = "sm" | "md" | "lg";
  * <AdaptiveForm />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/adaptive-form)
  */
 export interface AdaptiveFormProps extends AccessControlledProps {
   /** Field definitions describing the form schema. */

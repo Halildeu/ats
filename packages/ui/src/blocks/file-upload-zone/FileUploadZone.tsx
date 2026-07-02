@@ -26,7 +26,6 @@ export interface UploadedFile {
  * <FileUploadZone files={[]} onFilesAdd={fn} />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/file-upload-zone)
  */
 export interface FileUploadZoneProps extends AccessControlledProps {
   /** Uploaded / uploading file entries */

@@ -34,7 +34,6 @@ export type GovernanceGroupBy = 'domain' | 'status' | 'severity';
  * <GovernanceBoard />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/governance-board)
  */
 export interface GovernanceBoardProps extends AccessControlledProps {
   /** Governance control items to display */

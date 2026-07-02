@@ -14,7 +14,6 @@ export type ConfidenceLevel = "low" | "medium" | "high" | "very-high";
  * <ConfidenceBadge />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/confidence-badge)
  */
 export interface ConfidenceBadgeProps extends AccessControlledProps {
   /** Confidence tier determining the badge tone. */

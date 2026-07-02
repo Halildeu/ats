@@ -16,7 +16,6 @@ import {
  * <ReportFilterPanel />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/report-filter-panel)
  */
 export interface ReportFilterPanelProps extends AccessControlledProps {
   /** Whether a filter request is in progress (disables submit/reset). */

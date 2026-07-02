@@ -43,14 +43,9 @@ let _contract: ThemeContract | null = null;
 
 function loadContract(): ThemeContract {
   if (_contract) return _contract;
-  try {
-    /* eslint-disable @typescript-eslint/no-require-imports */
-    // Dynamic require so we don't break builds that don't have the generated file
-    const json = require("../../../../../design-tokens/generated/theme-contract.json");
-    _contract = json as ThemeContract;
-  } catch {
-    _contract = fallbackContract;
-  }
+  // snapshot-local: upstream'in dis design-tokens agacina dynamic-require fallback'i
+  // KALDIRILDI (curated closure disina cikiyordu); kontrat local fallback'ten gelir.
+  _contract = fallbackContract;
   return _contract;
 }
 

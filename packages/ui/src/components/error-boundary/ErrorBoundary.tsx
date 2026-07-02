@@ -83,7 +83,6 @@ const DefaultFallback: React.FC<{ error: Error; onReset: () => void }> = ({
  * </ErrorBoundary>
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/error-boundary)
  */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   static displayName = 'ErrorBoundary';
@@ -158,4 +157,3 @@ export { ErrorBoundaryWithRef };
 export type ErrorBoundaryComponentProps = ErrorBoundaryProps;
 /** Alias for ErrorBoundaryFallback for external consumers. */
 export type ErrorBoundaryFallbackType = ErrorBoundaryFallback;
-

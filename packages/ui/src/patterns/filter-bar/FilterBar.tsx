@@ -13,7 +13,6 @@ import { resolveAccessState, type AccessControlledProps } from "../../internal/a
  * <FilterBar />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/filter-bar)
  */
 export interface FilterBarProps extends AccessControlledProps {
   /** Primary filter controls (always visible) */

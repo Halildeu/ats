@@ -25,7 +25,6 @@ import {
  * <ApprovalReview />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/approval-review)
 
  */
 export interface ApprovalReviewProps extends AccessControlledProps {

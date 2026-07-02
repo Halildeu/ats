@@ -116,7 +116,6 @@ export interface MenuBarPreset {
  * <MenuBar />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/menu-bar)
  */
 export interface MenuBarProps extends AccessControlledProps {
   /** Navigation items to render in the bar. */

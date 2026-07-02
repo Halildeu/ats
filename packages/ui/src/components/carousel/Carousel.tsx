@@ -89,13 +89,12 @@ const ChevronRight: React.FC = () => (
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
-/* ------------------------------------------------------------------ 
+/* ------------------------------------------------------------------
  * @example
  * ```tsx
  * <Carousel />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/carousel)
  */
 export const Carousel = React.forwardRef<HTMLDivElement, CarouselProps>(function Carousel(
   {

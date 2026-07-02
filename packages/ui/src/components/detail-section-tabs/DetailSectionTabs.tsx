@@ -49,7 +49,6 @@ export interface DetailSectionTabsProps extends AccessControlledProps {
    * <DetailSectionTabs />
    * ```
    * @since 1.0.0
-   * @see [Docs](https://design.mfe.dev/components/detail-section-tabs)
    */
 export const DetailSectionTabs = React.forwardRef<HTMLDivElement, DetailSectionTabsProps>(({
   tabs,

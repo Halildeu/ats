@@ -35,7 +35,6 @@ export type FormDrawerPlacement = 'right' | 'left';
  * <FormDrawer />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/form-drawer)
  */
 export interface FormDrawerProps extends AccessControlledProps {
   /** Controlled open state */

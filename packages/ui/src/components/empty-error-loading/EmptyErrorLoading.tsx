@@ -24,7 +24,6 @@ export type EmptyErrorLoadingMode = "empty" | "error" | "loading";
  * <EmptyErrorLoading />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/empty-error-loading)
  */
 export interface EmptyErrorLoadingProps extends AccessControlledProps {
   /** Current display mode: empty, error, or loading. */

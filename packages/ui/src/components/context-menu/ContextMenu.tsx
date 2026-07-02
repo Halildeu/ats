@@ -63,7 +63,6 @@ function isItem(entry: ContextMenuEntry): entry is ContextMenuItem {
 
  * @since 1.0.0
 
- * @see [Docs](https://design.mfe.dev/components/context-menu)
 
  */
 

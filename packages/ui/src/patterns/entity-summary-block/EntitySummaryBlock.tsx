@@ -21,7 +21,6 @@ import { Text } from "../../primitives/text/Text";
  * <EntitySummaryBlock />
  * ```
  * @since 1.0.0
- * @see [Docs](https://design.mfe.dev/components/entity-summary-block)
  */
 export interface EntitySummaryBlockProps extends AccessControlledProps {
   /** Primary heading for the entity. */
