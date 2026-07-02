@@ -74,13 +74,20 @@ function runChecks(tokens, i18n, contracts) {
   return errors;
 }
 
-// 4. web/ PATH-scan (dosya-sistemi; çalışan UI yok iddiası)
+// 4. web/ PATH-scan (dosya-sistemi).
+// EVRİM (2026-07-03, ATS-0016 + MFE START GATE): P1 build unlock sonrası web/mfe-*
+// dizinlerinde ÇALIŞAN UI'a İZİN VAR (runtime yasağı P1-öncesi dönemin kuralıydı;
+// gate-locked kalan şey RELEASE/gerçek-aday-verisi — ATS-0016). mfe-dışı web/
+// yüzeyleri (tokens/i18n/contracts) için no-runtime iddiası AYNEN sürer.
+const RUNTIME_ALLOWED = /^mfe-[a-z0-9-]+\//;
 function pathScan() {
   const errors = [];
   let files;
   try { files = readdirSync(WEB, { recursive: true }); } catch { return ["web/ okunamadı"]; }
   for (const f of files) {
     const rel = String(f);
+    if (/(^|\/)(node_modules|dist)\//.test(rel)) continue; // vendor/derleme çıktısı taranmaz (commit'e de girmez)
+    if (RUNTIME_ALLOWED.test(rel)) continue; // P1 MFE runtime'ı (ATS-0016; mfe-start-gate KARŞILANDI)
     if (/\.(tsx|jsx)$/.test(rel)) errors.push(`web/${rel}: .tsx/.jsx YASAK (çalışan-UI; runtime gate-locked)`);
     if (/\.stories\./.test(rel)) errors.push(`web/${rel}: story dosyası YASAK (runtime gate-locked)`);
     if (/\.(ts|js|mjs|cjs|mts|cts)$/.test(rel)) {
