@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>ai-provider-faz24</artifactId>
+
+  <!-- ATS-0017 (Accepted) STT/diarization sağlayıcı adaptörü: Faz 24 self-host motoru
+       (ats-ai FastAPI) ile AIProvider portu arasındaki WIRE-CONTRACT katmanı.
+       JDK-native (java.net.http + no-dep JSON parse) — vendor SDK YOK (slice-1 sınırı korunur).
+       DÜRÜST SINIR: bu modül wire-contract davranışını STUB-sunucu testleriyle kanıtlar;
+       CANLI GPU-host bağlantısı/deploy + mTLS/secret yönetimi AYRI deployment işidir —
+       "canlı çalışıyor" iddiası YOKTUR. Kalite iddiası yok (Gate C golden-fixture şartı sürer). -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
