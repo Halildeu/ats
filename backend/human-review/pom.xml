@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>human-review</artifactId>
+
+  <!-- PRD-P1 F5 human-approve state-machine (ATS-0016 slice-4, port-only).
+       docs/governance/human-oversight-standard.md 9-state makinesinin runtime karşılığı:
+       "AI karar VERMEZ; insan onaylar, gerekçe yazar, hesap verir" — tek FINALIZED girişi
+       (HUMAN_RATIONALE_RECORDED) + 6 zorunlu ref + terminal çıkışsız + re-open YASAK. -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ops-events</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>consent</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

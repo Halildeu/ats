@@ -38,6 +38,18 @@ class OperationalEventTest {
     }
 
     @Test
+    void human_decision_finalized_spec_accepted_and_mismatch_fail_closed() {
+        // taxonomy §2: evidence.human_decision.finalized = evidence / notice / id-only / actor_ref+ledger_entry_ref
+        assertTrue(OperationalEvent.create(T1, "evidence.human_decision.finalized", "evidence", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "ledger_entry_ref", "ev-1")).isOk());
+        assertFalse(OperationalEvent.create(T1, "evidence.human_decision.finalized", "evidence", "info",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "ledger_entry_ref", "ev-1")).isOk(),
+                "yanlış severity reddedilmeli");
+        assertFalse(OperationalEvent.create(T1, "evidence.human_decision.finalized", "evidence", "notice",
+                PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1")).isOk(), "ledger_entry_ref zorunlu (two-plane pointer)");
+    }
+
+    @Test
     void unknown_event_type_fail_closed() {
         Outcome<OperationalEvent> out = OperationalEvent.create(
                 T1, "evidence.made.up_event", "evidence", "info", PiiClass.NONE, Map.of());
