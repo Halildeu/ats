@@ -55,6 +55,11 @@ class AppBootSmokeTest {
         registry.add("ats.db.password", PG::getPassword);
         // stub uç: boot canlılık iddia etmez; çağrı anında fail-closed (slice-7).
         registry.add("ats.ai.base-url", () -> "http://127.0.0.1:9");
+        // security konfig'i fail-closed zorunlu (slice-10) — smoke, JWKS'i ÇEKMEZ
+        // (decoder lazy); token'lı akışlar RestApiSecurityTest'te gerçek imzayla.
+        registry.add("ats.security.jwks-uri", () -> "http://127.0.0.1:9/jwks.json");
+        registry.add("ats.security.issuer", () -> "https://issuer.test");
+        registry.add("ats.security.audience", () -> "ats-api");
     }
 
     @Autowired private ApplicationContext ctx;

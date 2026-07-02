@@ -25,6 +25,11 @@
       <version>0.0.0</version>
     </dependency>
     <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
