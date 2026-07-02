@@ -74,6 +74,11 @@ class InterviewApiController {
         // state + WORM kanıtı birlikte (ConsentService; GRANTED=ledger-önce fail-closed).
         // requestKey: retry-güvenliği isteyen çağıran header verir; yoksa her çağrı yeni beyan
         // (GRANTED→WITHDRAWN→GRANTED yeni kanıt üretir — Codex iter-2 blocker-1).
+        // WORM idempotency_key kolonuna girer: safe-token + uzunluk sınırı (Codex iter-3 önerisi)
+        if (idempotencyKey != null && !idempotencyKey.isBlank()
+                && !idempotencyKey.matches("[A-Za-z0-9._:-]{1,128}")) {
+            return badRequest("X-ATS-Idempotency-Key [A-Za-z0-9._:-]{1,128} olmalı");
+        }
         String requestKey = (idempotencyKey == null || idempotencyKey.isBlank())
                 ? java.util.UUID.randomUUID().toString()
                 : idempotencyKey;

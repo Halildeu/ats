@@ -195,6 +195,18 @@ class RestApiSecurityTest {
     }
 
     @Test
+    void unsafe_idempotency_key_is_400() {
+        String token = JWT.token("api-tenant-a", "recruiter-1");
+        HttpHeaders h = bearer(token);
+        h.setContentType(MediaType.APPLICATION_JSON);
+        h.set("X-ATS-Idempotency-Key", "kötü anahtar/../{}");
+        ResponseEntity<String> resp = rest.exchange("/api/v1/interviews/iv-k/recording-consent",
+                HttpMethod.PUT,
+                new HttpEntity<>("{\"subjectRef\":\"s-1\",\"state\":\"GRANTED\"}", h), String.class);
+        assertEquals(400, resp.getStatusCode().value(), "body: " + resp.getBody());
+    }
+
+    @Test
     void invalid_consent_state_is_400() {
         String token = JWT.token("api-tenant-a", "recruiter-1");
         assertEquals(400, putConsent(token, "iv-x", "MAYBE").getStatusCode().value());
