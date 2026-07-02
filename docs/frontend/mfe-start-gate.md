@@ -27,6 +27,17 @@
 P1 segment/evidence tabloları design-system'in kendi tablo bileşeniyle karşılanır; enterprise-grid
 ihtiyacı DOĞARSA ayrı karar (§4 lisans deseniyle) alınır — şimdi taşınmaz (over-engineering guard).
 
+**AMENDMENT (2026-07-03, kopya sırasında ölçülen gerçeklik):** vendor KÖK `package.json`
+ag-grid/ag-charts/x-charts/axios/react-query'ye bağımlı çıktı → **paket-düzeyi snapshot ALINMADI;
+bileşen-düzeyi curated subset alındı** (temiz dizinler: a11y/form/hooks/icons/headless/
+components−charts/lib−grid-variants/primitives/providers/internal−access-controller-orijinali/
+motion/tokens/blocks/theme/types/utils/patterns; index'ler curated; vendor kök index kopyalanmadı).
+`shared-types` PAKETİ alınmadı — yalnız 82-satırlık saf access-sözlüğü tek dosyaya inline edildi.
+Kopyalanan yüzeyin makine-zorlaması: `scripts/check-ui-snapshot.mjs` (yasak token/path +
+import-closure + dependency-surface; CI `ui-snapshot-guard`). Dürüst ifade: "design-system
+snapshot'ı alındı" DEĞİL — "pinli SHA'dan bileşen-düzeyi curated subset alındı; kök paket
+kopyalanmadı; kontamine yüzey dışlandı".
+
 ## 3. Namespace + ownership
 
 - Hedef: **`ats/packages/ui`**, npm namespace **`@ats/ui`** (blocks alt-seti `@ats/ui/blocks`).
@@ -37,7 +48,11 @@ ihtiyacı DOĞARSA ayrı karar (§4 lisans deseniyle) alınır — şimdi taşı
 
 - Kopyalanan kod **kendi yazılımımızdır** (platform-web, aynı owner'ın private reposu) — üçüncü-taraf
   lisans yükümlülüğü doğurmaz; kopya, dosya başlıklarını/atıfları korur.
-- **AG Grid Enterprise: bu snapshot'ta YOK** (x-data-grid dışlandı) → lisans anahtarı şartı **şimdilik n/a**.
+- **AG Grid Enterprise: bu snapshot'ta YOK** (x-data-grid dışlandı; amendment — vendor kökünün
+  grid/chart bağımlılıkları bileşen-düzeyi curation ile dışarıda) → lisans anahtarı şartı **şimdilik n/a**;
+  bu iddia YALNIZ curated output için geçerlidir (gelecekte grid/chart alınırsa ayrı owner/lisans PR'ı).
+  Provenance: kopyalanan kod aynı owner'ın private reposundan owner-authored'dır; public ATS repo'ya
+  taşınması owner yayın-yetkisine dayanır; üçüncü-taraf proprietary kod TAŞINMADI.
   İleride gerekirse desen HAZIR ve değişmez: build-time GitHub secret `AG_GRID_LICENSE_KEY`
   (Vault DEĞİL; platform kalıbı) + immutable-tag rebuild — o gün ayrı karar/PR.
 - OSS transitive bağımlılıklar: mevcut `dependency-review` CI'ı **vuln kapısıdır** (fail-on-severity: high);
