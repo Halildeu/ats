@@ -3,7 +3,7 @@
  * Interview analysis-dimensions drift guard (ATS-0012 · Codex 019f19ce REVISE absorb).
  *
  * docs/ai-governance/interview-analysis-dimensions.md:
- *  §1 aktif: YALNIZ izinli 5 boyut (allowlist); input ⊆ izinli-lexical (yasaklı audio/video/biometric YOK);
+ *  §1 aktif: YALNIZ izinli 6 boyut (allowlist; +process_perspective_coverage ATS-0015); input ⊆ izinli-lexical (yasaklı audio/video/biometric YOK);
  *     output ⊆ izinli (score/ranking/affect/personality YOK); satırda YASAK KAVRAM-ALIAS yok
  *     (truthfulness/deception/voice/affect/personality/demographic + TR varyant).
  *  §2 excluded: equivalence∈{partial,none}; partial→safe_alternative bir aktif boyut; none→muadil-aranmaz;
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FILE = join(REPO, "docs/ai-governance/interview-analysis-dimensions.md");
 
-const ACTIVE_ALLOWED = new Set(["content_consistency", "internal_contradiction", "answer_quality", "topic_coverage", "claim_citation"]);
+const ACTIVE_ALLOWED = new Set(["content_consistency", "internal_contradiction", "answer_quality", "topic_coverage", "claim_citation", "process_perspective_coverage"]);
 const ALLOWED_INPUT = new Set(["transcript_text", "cv_text", "rubric", "claim"]);
 const FORBIDDEN_INPUT = new Set(["audio_waveform", "voice_tone", "video_pixel", "facial", "biometric_signal"]);
 const ALLOWED_OUTPUT = new Set(["evidence", "citation", "finding", "coverage", "consistency_flag"]);
@@ -103,4 +103,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`analysis-dimensions OK — aktif boyut allowlist(5) içerik-tabanlı (yasaklı input/output/kavram-alias yok), yasaklı boyutlar equivalence-eşli+aktif-değil, sentinel korunuyor; self-test 8 negatif vektör fail ediyor.`);
+console.log(`analysis-dimensions OK — aktif boyut allowlist(6) içerik-tabanlı (yasaklı input/output/kavram-alias yok), yasaklı boyutlar equivalence-eşli+aktif-değil, sentinel korunuyor; self-test 8 negatif vektör fail ediyor.`);
