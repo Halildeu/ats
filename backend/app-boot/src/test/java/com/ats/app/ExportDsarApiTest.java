@@ -96,7 +96,7 @@ class ExportDsarApiTest {
 
     private static final String TENANT = "ed-tenant";
     private static final String ALL = "ats.consent.write ats.citation.write ats.review.write "
-            + "ats.review.read ats.transcript.read ats.export.write ats.dsar.write";
+            + "ats.review.read ats.transcript.read ats.export.write ats.dsar.write ats.erasure.execute";
 
     private String token(String scopes, String sub) {
         return JWT.token(java.util.Map.of("tenant", TENANT, "scope", scopes),
@@ -204,13 +204,41 @@ class ExportDsarApiTest {
     }
 
     @Test
-    void scope_matrix_export_cannot_dsar_and_vice_versa() {
+    void scope_matrix_export_dsar_and_erasure_are_separate_authorities() {
         String exportOnly = token("ats.export.write", "user-a");
         assertEquals(403, post(exportOnly, "/api/v1/interviews/iv-s/dsar",
                 "{\"subjectRef\":\"s\",\"reasonCode\":\"r\"}").getStatusCode().value());
         String dsarOnly = token("ats.dsar.write", "user-b");
         assertEquals(403, post(dsarOnly, "/api/v1/interviews/iv-s/export",
                 "{\"caseKey\":\"k\",\"citationKeys\":[],\"context\":{}}").getStatusCode().value());
+        // Codex #66 blocker-1: intake ≠ execute — dsar-only ERASURE ÇAĞIRAMAZ
+        assertEquals(403, post(dsarOnly, "/api/v1/interviews/iv-s/dsar/erasure",
+                "{\"dsarKey\":\"k\",\"scope\":{\"transcriptKeys\":[\"t\"]}}").getStatusCode().value());
+        // erasure-only da intake AÇAMAZ
+        String erasureOnly = token("ats.erasure.execute", "user-c");
+        assertEquals(403, post(erasureOnly, "/api/v1/interviews/iv-s/dsar",
+                "{\"subjectRef\":\"s\",\"reasonCode\":\"r\"}").getStatusCode().value());
+    }
+
+    @Test
+    void null_elements_in_lists_are_400_not_500() {
+        String tok = token(ALL, "reviewer-1");
+        // export: criteria[null] + consentRefs[null] + citationCriterion null-value
+        ResponseEntity<String> e1 = post(tok, "/api/v1/interviews/iv-n/export",
+                "{\"caseKey\":\"k\",\"citationKeys\":[\"c\"],\"context\":{\"criteria\":[null]}}");
+        assertEquals(400, e1.getStatusCode().value(), "body: " + e1.getBody());
+        ResponseEntity<String> e2 = post(tok, "/api/v1/interviews/iv-n/export",
+                "{\"caseKey\":\"k\",\"citationKeys\":[\"c\"],\"context\":{\"consentRefs\":[null]}}");
+        assertEquals(400, e2.getStatusCode().value(), "body: " + e2.getBody());
+        ResponseEntity<String> e3 = post(tok, "/api/v1/interviews/iv-n/export",
+                "{\"caseKey\":\"k\",\"citationKeys\":[\"c\"],\"context\":{\"citationCriterion\":{\"c\":null}}}");
+        assertEquals(400, e3.getStatusCode().value(), "body: " + e3.getBody());
+        // erasure: scope listelerinde null
+        ResponseEntity<String> e4 = post(tok, "/api/v1/interviews/iv-n/dsar/erasure",
+                "{\"dsarKey\":\"iv-n/dsar-x\",\"scope\":{\"transcriptKeys\":[null]}}");
+        assertEquals(400, e4.getStatusCode().value(), "body: " + e4.getBody());
+        // side-effect yok: iv-n tenant'ında hiç WORM satırı oluşmamalı (fail-closed erken çıkış)
+        assertEquals(0, wormTotal("iv-n-tenant-yok"));
     }
 
     @Test
@@ -224,6 +252,20 @@ class ExportDsarApiTest {
         assertEquals(404, post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
                 "{\"dsarKey\":\"iv-e/dsar-YOK\",\"scope\":{\"transcriptKeys\":[\"iv-e/tr-x\"]}}")
                 .getStatusCode().value());
+    }
+
+    private int wormTotal(String tenant) {
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT count(*) FROM worm_ledger WHERE tenant_id = ?")) {
+            ps.setString(1, tenant);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private int wormCount(String tenant, String eventType) {

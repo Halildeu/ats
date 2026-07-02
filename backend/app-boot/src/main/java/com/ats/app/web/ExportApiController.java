@@ -33,6 +33,15 @@ class ExportApiController {
         this.exportService = exportService;
     }
 
+    private static boolean hasNullElement(List<?> list) {
+        return list != null && list.stream().anyMatch(java.util.Objects::isNull);
+    }
+
+    private static boolean hasNullEntry(Map<String, String> map) {
+        return map != null && map.entrySet().stream()
+                .anyMatch(e -> e.getKey() == null || e.getValue() == null);
+    }
+
     record CriterionDto(String criterionId, String jobRelatednessRationaleRef) {}
 
     record ContextDto(String generatorVersionRef, String locale, String timezone,
@@ -51,6 +60,13 @@ class ExportApiController {
                     .body(Map.of("error", "INVALID", "reason", "caseKey + context zorunlu"));
         }
         ContextDto c = body.context();
+        // fail-closed doğrulama (Codex #66 blocker-2): null eleman NPE→500 yerine 400
+        if (hasNullElement(body.citationKeys()) || hasNullElement(c.consentRefs())
+                || hasNullElement(c.wormChainRefs()) || hasNullElement(c.criteria())
+                || hasNullEntry(c.citationCriterion())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID",
+                    "reason", "listelerde/map'te null eleman olamaz (fail-closed)"));
+        }
         ExportContext ctx = new ExportContext(
                 c.generatorVersionRef(), c.locale(), c.timezone(), c.aiAssistanceDisclosureRef(),
                 c.consentRefs() == null ? List.of() : c.consentRefs(),

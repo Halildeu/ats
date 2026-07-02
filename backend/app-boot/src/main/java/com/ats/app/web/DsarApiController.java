@@ -62,6 +62,12 @@ class DsarApiController {
             return badRequest("dsarKey + scope zorunlu");
         }
         ScopeDto s = body.scope();
+        // fail-closed doğrulama (Codex #66 blocker-2): null eleman NPE→500 yerine 400
+        if (hasNullElement(s.transcriptKeys()) || hasNullElement(s.citationKeys())
+                || hasNullElement(s.exportArtifactKeys()) || hasNullElement(s.reviewCaseKeys())
+                || hasNullElement(s.tombstoneTargetEvidenceIds())) {
+            return badRequest("scope listelerinde null eleman olamaz (fail-closed)");
+        }
         ErasureScope scope = new ErasureScope(
                 orEmpty(s.transcriptKeys()), orEmpty(s.citationKeys()),
                 orEmpty(s.exportArtifactKeys()), orEmpty(s.reviewCaseKeys()),
@@ -81,6 +87,10 @@ class DsarApiController {
 
     private static List<String> orEmpty(List<String> v) {
         return v == null ? List.of() : v;
+    }
+
+    private static boolean hasNullElement(List<String> list) {
+        return list != null && list.stream().anyMatch(java.util.Objects::isNull);
     }
 
     private static ResponseEntity<Map<String, String>> badRequest(String reason) {
