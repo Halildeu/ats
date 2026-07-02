@@ -32,6 +32,33 @@
       <artifactId>contracts-java</artifactId>
       <version>0.0.0</version>
     </dependency>
+    <!-- slice-8b: store PORT'ları bu modüllerde yaşar; adapter'lar onları implemente eder
+         (yön: persistence → domain-portu; domain persistence'ı GÖRMEZ — ATS-0018 katmanlama) -->
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ai-orchestration</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>human-review</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>retention-dsr</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>export-connector</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>consent</artifactId>
+      <version>0.0.0</version>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
