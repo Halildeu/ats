@@ -18,6 +18,7 @@
 | [ATS-0013](./adr/ATS-0013-speaker-attribution-diarization-vs-voice-id.md) | speaker attribution (diarization + biyometrisiz eşleme; sesten-kimlik default-dışlanmış) | Önerildi |
 | [ATS-0014](./adr/ATS-0014-voice-enrollment-optin-internal-only.md) | voice-enrollment opt-in (YALNIZ iç-kullanıcı; aday kategorik-dışlanmış + eleme-yoluyla tespit) | Accepted — owner beyanı 2026-07-02 (runtime P1 + imzalı-DPIA/VERBIS çift kilit) |
 | [ATS-0015](./adr/ATS-0015-process-perspective-coverage-six-hats.md) | process_perspective_coverage (Altı-Şapka lensli süreç-perspektif kapsaması; kişi-profilleme dışlanmış) | Önerildi |
+| [ATS-0016](./adr/ATS-0016-p1-build-unlock-g0-release-gate.md) | P1 build unlock — G0 build-gate→RELEASE-gate (owner kararı; slice-1 sınırlı) | Accepted — owner 2026-07-02 |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 

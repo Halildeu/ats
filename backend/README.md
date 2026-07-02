@@ -1,6 +1,6 @@
 # backend/ — ats-core (modular monolith)
 
-ATS-0008: `ats-core` = Java 21 + Spring Boot 3 **modular monolith** + `ats-ai` ayrı (Python). **P1 fonksiyonel build G0=GO'ya KİLİTLİ** (gate disiplini). Bu ağaç yalnız **gate-safe skeleton**: sözleşme + kernel + boundary guard.
+ATS-0008: `ats-core` = Java 21 + Spring Boot 3 **modular monolith** + `ats-ai` ayrı (Python). **P1 build AKTİF** ([ATS-0016](../docs/adr/ATS-0016-p1-build-unlock-g0-release-gate.md), owner kararı 2026-07-02); **release/gerçek-veri/kalibrasyon-iddiası G0-kilitli**. Slice-1 sınırı: persistence **port-only/in-memory** (JPA/Flyway/Spring Data YOK — ArchUnit yasağı korunur; persistence = ayrı "architecture unlock" slice + ADR).
 
 > **Toolchain (repo-gerçeği):** ATS-0008 stack-lock "Gradle" diyordu; ortamda **Gradle yok, Maven 3.9 + JDK kurulu** → local-verify edilebilirlik + Spring Boot parity için **Maven** kullanıldı. (ATS-0008 toolchain satırı bu PR'da Maven'a güncellendi.)
 
@@ -10,10 +10,11 @@ ATS-0008: `ats-core` = Java 21 + Spring Boot 3 **modular monolith** + `ats-ai` a
 | `shared-kernel` | `Outcome` (fail-closed), `OutcomeCode`, `Ids` (tenant-scoped) | ✅ |
 | `contracts-java` | ATS-0001 4 sözleşmenin Java mirror'ı (TS `contracts/` kanonik) + reference stub + contract-test + **ArchUnit** boundary | ✅ |
 
-## Gate-locked (G0=GO sonrası — bu ağaçta YOK; Codex WS-3 gate-check)
-- Domain modülleri **iş mantığı** (ATS-0008 8 modül: identity-tenant/consent/ingest-media/interview-workspace/evidence-ledger/ai-orchestration/export-connector/retention-dsr).
-- JPA entity/repository, **Flyway domain migration**, ürün controller (actuator-health hariç), gerçek Keycloak/OpenFGA/PG/MinIO/STT/LLM/ATS bağlantısı.
-- scoring/affect/auto-reject/candidate-write (ADR-0005 — **kalıcı yasak**, forbidden-surface testi zorlar).
+## Slice-sınırları (ATS-0016 sonrası)
+- 🟢 Slice-1 (build aktif): consent-gated upload-ingest dikey dilimi — interview/session/recording domain + tenant-scope + fail-closed consent-gate + operasyonel audit-event emisyonu + **port-only** persistence/object-store/ledger (in-memory + local/test adapter; vendor SDK YOK).
+- 🔒 Sonraki slice / ayrı ADR: JPA entity/repository + **Flyway migration** (ArchUnit modül-matrisi revizyonuyla), gerçek Keycloak/OpenFGA/PG/MinIO/STT/LLM/ATS bağlantısı, WORM ledger gerçek implementasyonu.
+- 🔒 Release-locked (G0): gerçek aday verisi/pilot/demo-dogfood; build'de yalnız sentetik/açık-rızalı fixture.
+- ⛔ scoring/affect/auto-reject/candidate-write (ADR-0005 — **kalıcı yasak**, forbidden-surface testi zorlar).
 
 ## Boundary (ATS-0008 D-F)
 ArchUnit: sözleşme/kernel pre-G0 **persistence/JPA/Flyway/Hibernate** + **platform iç-paket / vendor SDK**'ya bağlanamaz; `shared-kernel` sözleşmelere bağlı olamaz. Domain modülleri wire edilince `api`/`internal` ayrımı + modüller-arası import matrisi ADR ile açılır (split ucuz).

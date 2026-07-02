@@ -1,12 +1,12 @@
 # ai/ — Faz 25 ATS AI plane (Python)
 
-`ats-ai` servisi (ATS-0008): Faz 24 motoru (Türkçe STT faster-whisper + diarization pyannote + self-host LLM ollama + entailment-citation ADR-0043) `AIProvider` sözleşmesi (ATS-0001) ardında. **P1 fonksiyonel build G0=GO'ya kilitli** (gate disiplini).
+`ats-ai` servisi (ATS-0008): Faz 24 motoru (Türkçe STT faster-whisper + diarization pyannote + self-host LLM ollama + entailment-citation ADR-0043) `AIProvider` sözleşmesi (ATS-0001) ardında. **P1 build AKTİF (ATS-0016, owner kararı 2026-07-02)**; STT/diarization provider bağlantısı kendi slice sırasında (provider seçimi = ayrı cross-AI karar); release/gerçek-veri G0-kilitli.
 
 ## Şu an (gate-safe)
 | Dizin | İçerik | Durum |
 |---|---|---|
 | `eval-harness/` | ADR-0004 **Gate C** ölçüm rig'i (WER/DER/citation/fail-closed) | ✅ rig hazır; eşikler G0-locked |
-| `ats-ai/` (sonra) | FastAPI servis (AIProvider impl) | 🔒 P1 (G0 sonrası) |
+| `ats-ai/` (sonra) | FastAPI servis (AIProvider impl) | 🔒 sonraki slice (ATS-0016; provider seçimi ayrı cross-AI karar) |
 
 ## Eval-harness (Gate C)
 ```bash
