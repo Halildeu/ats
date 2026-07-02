@@ -35,7 +35,9 @@ public record OperationalEvent(
             "evidence.append.succeeded",
                     new EventSpec("evidence", "info", PiiClass.ID_ONLY, java.util.Set.of("ledger_entry_ref")),
             "evidence.append.failed",
-                    new EventSpec("evidence", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code")));
+                    new EventSpec("evidence", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code")),
+            "ai_pipeline.provider.request_rejected",
+                    new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code")));
 
     /** Fail-closed kurucu: registry-dışı / spec-uyumsuz / loggable-olmayan zarf üretilemez. */
     public static Outcome<OperationalEvent> create(
