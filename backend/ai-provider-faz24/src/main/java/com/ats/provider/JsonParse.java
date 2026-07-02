@@ -134,7 +134,16 @@ final class JsonParse {
                         if (i + 4 > s.length()) {
                             throw new JsonParseException("kısa \\u escape");
                         }
-                        sb.append((char) Integer.parseInt(s.substring(i, i + 4), 16));
+                        String hex = s.substring(i, i + 4);
+                        for (int h = 0; h < 4; h++) {
+                            char hc = hex.charAt(h);
+                            boolean okHex = (hc >= '0' && hc <= '9') || (hc >= 'a' && hc <= 'f') || (hc >= 'A' && hc <= 'F');
+                            if (!okHex) {
+                                // Codex blocker-1: NumberFormatException SIZAMAZ — her bozukluk JsonParseException
+                                throw new JsonParseException("geçersiz \\u hex: " + hex);
+                            }
+                        }
+                        sb.append((char) Integer.parseInt(hex, 16));
                         i += 4;
                     }
                     default -> throw new JsonParseException("geçersiz escape: \\" + e);
@@ -147,6 +156,10 @@ final class JsonParse {
         }
     }
 
+    // RFC 8259 sayı grameri (Codex blocker-1: Double.parseDouble gevşekliği — "+1"/"01"/".5"/"1." YASAK)
+    private static final java.util.regex.Pattern NUMBER_GRAMMAR =
+            java.util.regex.Pattern.compile("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?");
+
     private JsonValue number() {
         int start = i;
         if (peek() == '-') {
@@ -156,6 +169,9 @@ final class JsonParse {
             i++;
         }
         String raw = s.substring(start, i);
+        if (!NUMBER_GRAMMAR.matcher(raw).matches()) {
+            throw new JsonParseException("RFC 8259 dışı sayı: " + raw);
+        }
         double d;
         try {
             d = Double.parseDouble(raw);

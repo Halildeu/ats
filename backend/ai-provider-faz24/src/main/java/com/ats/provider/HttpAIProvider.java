@@ -72,11 +72,14 @@ public final class HttpAIProvider implements AIProvider {
             List<TranscriptSegment> segments = new ArrayList<>();
             for (JsonValue item : asArray(root, "segments").items()) {
                 JsonValue.JsonObject seg = asObject(item, "segments[]");
+                long startMs = asLong(seg, "start_ms");
+                long endMs = asLong(seg, "end_ms");
+                // Codex blocker-2: ters zaman aralığı bozuk kaynak-aralığı üretir — fail-closed
+                if (endMs < startMs) {
+                    throw new WireContractException("end_ms < start_ms (ters segment aralığı)");
+                }
                 segments.add(new TranscriptSegment(
-                        asString(seg, "speaker"),
-                        asLong(seg, "start_ms"),
-                        asLong(seg, "end_ms"),
-                        asString(seg, "text")));
+                        asString(seg, "speaker"), startMs, endMs, asString(seg, "text")));
             }
             return Outcome.ok(new TranscriptResult(language, segments));
         } catch (WireContractException e) {
@@ -174,10 +177,14 @@ public final class HttpAIProvider implements AIProvider {
         return s.value();
     }
 
+    /** double tamsayı-hassasiyet sınırı (2^53-1) — Codex blocker-2: 1e20 gibi long-dışı değerler fail. */
+    private static final double MAX_SAFE_INTEGER = 9_007_199_254_740_991.0;
+
     private static long asLong(JsonValue.JsonObject o, String field) {
         JsonValue v = o.values().get(field);
-        if (!(v instanceof JsonValue.JsonNumber n) || n.value() < 0 || n.value() != Math.rint(n.value())) {
-            throw new WireContractException(field + " negatif-olmayan tamsayı olmalı");
+        if (!(v instanceof JsonValue.JsonNumber n) || n.value() < 0 || n.value() != Math.rint(n.value())
+                || n.value() > MAX_SAFE_INTEGER) {
+            throw new WireContractException(field + " 0..2^53-1 aralığında tamsayı olmalı");
         }
         return (long) n.value();
     }

@@ -33,7 +33,12 @@ class JsonParseTest {
                 "[1,2",
                 "\"kapanmayan",
                 "{\"a\":tru}",
-                "{'tek':1}"}) {
+                "{'tek':1}",
+                "{\"a\":\"\\uZZZZ\"}",
+                "{\"a\":+1}",
+                "{\"a\":01}",
+                "{\"a\":.5}",
+                "{\"a\":1.}"}) {
             assertThrows(JsonParse.JsonParseException.class, () -> JsonParse.parse(bad),
                     "fail-closed reddedilmeliydi: " + bad);
         }

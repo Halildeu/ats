@@ -125,6 +125,19 @@ class HttpAIProviderTest {
         nextBody.set("""
                 {"claim":"x","source_segment_refs":[0],"entailment":"supported"}""");
         assertFalse(provider().cite("x", "t").isOk(), "ref array'inde string-dışı eleman → fail-closed");
+        // Codex blocker-1: bozuk \\u escape RuntimeException DEĞİL Outcome.fail üretmeli
+        nextBody.set("{\"language\":\"tr\",\"segments\":[{\"speaker\":\"s\",\"start_ms\":0,\"end_ms\":1,\"text\":\"\\\\uZZZZ\"}]}");
+        assertFalse(provider().transcribe("ref").isOk(), "bozuk unicode-escape fail-closed Outcome olmalı");
+    }
+
+    @Test
+    void reversed_or_overflowing_segment_range_fail_closed() {
+        nextBody.set("""
+                {"language":"tr","segments":[{"speaker":"s","start_ms":900,"end_ms":100,"text":"x"}]}""");
+        assertFalse(provider().transcribe("ref").isOk(), "end_ms < start_ms ters aralık fail-closed (Codex blocker-2)");
+        nextBody.set("""
+                {"language":"tr","segments":[{"speaker":"s","start_ms":1e20,"end_ms":1e20,"text":"x"}]}""");
+        assertFalse(provider().transcribe("ref").isOk(), "2^53-1 üstü long-dışı değer fail-closed");
     }
 
     @Test
