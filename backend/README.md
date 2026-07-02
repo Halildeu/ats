@@ -12,7 +12,7 @@ ATS-0008: `ats-core` = Java 21 + Spring Boot 3 **modular monolith** + `ats-ai` a
 
 ## Slice-sınırları (ATS-0016 sonrası)
 - 🟢 Slice-1 (build aktif): consent-gated upload-ingest dikey dilimi — interview/session/recording domain + tenant-scope + fail-closed consent-gate + operasyonel audit-event emisyonu + **port-only** persistence/object-store/ledger (in-memory + local/test adapter; vendor SDK YOK).
-- 🔓 Persistence unlock KARARI: [ATS-0018](../docs/adr/ATS-0018-persistence-unlock-postgres-jdbc.md) — **PG16 + Flyway + plain-JDBC tek-adapter-modülü (`com.ats.persistence`); JPA/Hibernate/Spring-Data KULLANILMAZ** (ArchUnit daralma-evrimi ADR'de); dilimler: 8a worm_ledger → 8b 6 store adapter → 8c retention-timer. Implementasyon henüz YOK.
+- 🔓 Persistence unlock: [ATS-0018](../docs/adr/ATS-0018-persistence-unlock-postgres-jdbc.md) — **PG16 + Flyway + plain-JDBC tek-adapter-modülü (`persistence-postgres`); JPA/Hibernate/Spring-Data KULLANILMAZ**. Durum: **8a worm_ledger durable adapter LANDED** (hash-chain + append-only trigger + tenant-scoped idempotency-conflict + Testcontainers-PG16 kanıtı); **8b 6 store adapter + 8c retention-timer PENDING**; prod deploy/DSN/Vault wiring YOK.
 - 🔒 Sonraki ayrı ADR'ler: gerçek Keycloak/OpenFGA/MinIO(object-store, ATS-0008 D-D G0'a ertelendi)/ATS-connector bağlantıları; STT wire-contract adapter'ı LANDED (`ai-provider-faz24`, ATS-0017) — canlı GPU-host bağlantısı deploy işi.
 - 🔒 Release-locked (G0): gerçek aday verisi/pilot/demo-dogfood; build'de yalnız sentetik/açık-rızalı fixture.
 - ⛔ scoring/affect/auto-reject/candidate-write (ADR-0005 — **kalıcı yasak**, forbidden-surface testi zorlar).

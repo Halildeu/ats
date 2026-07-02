@@ -97,6 +97,36 @@ class PostgresEvidenceLedgerTest {
     }
 
     @Test
+    void idempotency_conflict_with_different_content_fail_closed() {
+        String key = nextIdem();
+        ledger.append(event(T1, key)).asOptional().orElseThrow();
+        // aynı (tenant,key) + FARKLI payload/contentHash → eski satır "OK" diye DÖNEMEZ (Codex blocker-1)
+        EvidenceEvent different = new EvidenceEvent(T1, A1, I1, "transcript.created", "2026-07-02T15:00:00Z",
+                key, "d".repeat(64), JsonValue.object(Map.of("baska", JsonValue.of("icerik"))));
+        Outcome<LedgerEntry> out = ledger.append(different);
+        assertFalse(out.isOk(), "idempotency conflict fail-closed olmalı");
+        EvidenceEvent differentType = new EvidenceEvent(T1, A1, I1, "claim.citation.recorded", "2026-07-02T15:00:00Z",
+                key, "c".repeat(64), JsonValue.object(Map.of(
+                        "transcript_key", JsonValue.of("i1.tr-1"),
+                        "segment_count", JsonValue.of(3.0))));
+        assertFalse(ledger.append(differentType).isOk(), "farklı event_type da conflict");
+    }
+
+    @Test
+    void tombstone_same_reason_replay_ok_different_reason_conflict() {
+        LedgerEntry target = ledger.append(event(T1, nextIdem())).asOptional().orElseThrow();
+        LedgerEntry first = ledger.appendTombstoneEvent(T1, A1, I1, target.evidenceId(), "erasure_request")
+                .asOptional().orElseThrow();
+        LedgerEntry replay = ledger.appendTombstoneEvent(T1, A1, I1, target.evidenceId(), "erasure_request")
+                .asOptional().orElseThrow();
+        assertEquals(first.evidenceId().value(), replay.evidenceId().value(),
+                "aynı reason replay idempotent (occurred_at kimlik dışı — belgelendi)");
+        Outcome<LedgerEntry> conflicting = ledger.appendTombstoneEvent(T1, A1, I1, target.evidenceId(), "baska_sebep");
+        assertFalse(conflicting.isOk(),
+                "hedef başına TEK tombstone: farklı reason sessiz-OK DEĞİL, conflict fail (Codex blocker-2)");
+    }
+
+    @Test
     void idempotency_is_tenant_scoped_not_global() {
         String shared = "shared-" + nextIdem();
         LedgerEntry t1 = ledger.append(event(T1, shared)).asOptional().orElseThrow();

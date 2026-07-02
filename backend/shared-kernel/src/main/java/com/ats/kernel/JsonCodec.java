@@ -69,7 +69,11 @@ public final class JsonCodec {
             case JsonValue.JsonString str -> writeString(str.value(), sb);
             case JsonValue.JsonNumber n -> {
                 double d = n.value();
-                if (d == Math.rint(d) && !Double.isInfinite(d)) {
+                if (Double.isNaN(d) || Double.isInfinite(d)) {
+                    // programatik NaN/Infinity JSON'a serileştirilemez (fail-fast; Codex 8a notu)
+                    throw new JsonCodecException("non-finite sayı serileştirilemez");
+                }
+                if (d == Math.rint(d)) {
                     sb.append((long) d);
                 } else {
                     sb.append(d);

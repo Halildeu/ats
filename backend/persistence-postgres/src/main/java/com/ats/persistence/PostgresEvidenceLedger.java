@@ -105,8 +105,25 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
                 c.rollback();
                 if ("23505".equals(inner.getSQLState())
                         && String.valueOf(inner.getMessage()).contains("worm_ledger_tenant_idempotency_uq")) {
-                    // idempotent yeniden-koşu: AYNI entry döner (yeni satır yazılmaz)
-                    return findByIdempotency(e.tenantId(), e.idempotencyKey());
+                    // Codex 8a blocker-1: replay YALNIZ içerik birebir aynıysa idempotent sayılır.
+                    // Kimlik = eventType+actor+interview+content_hash+canonical(payload)
+                    // (occurred_at HARİÇ — meşru retry zamanı yeniden damgalayabilir; belgelendi).
+                    // İçerik farklıysa bu bir ÇAKIŞMADIR: eski satır "OK" diye dönmez, fail-closed.
+                    Outcome<LedgerEntry> existing = findByIdempotency(e.tenantId(), e.idempotencyKey());
+                    if (!(existing instanceof Outcome.Ok<LedgerEntry> exOk)) {
+                        return existing;
+                    }
+                    LedgerEntry prior = exOk.value();
+                    boolean identical = prior.eventType().equals(e.eventType())
+                            && prior.actorId().value().equals(e.actorId().value())
+                            && prior.interviewId().value().equals(e.interviewId().value())
+                            && prior.contentHash().equals(e.contentHash())
+                            && JsonCodec.canonical(prior.payload()).equals(JsonCodec.canonical(e.payload()));
+                    if (!identical) {
+                        return Outcome.fail(OutcomeCode.INVALID,
+                                "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
+                    }
+                    return existing;
                 }
                 return sqlFail(inner);
             }
@@ -125,6 +142,10 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
         if (!(target instanceof Outcome.Ok<LedgerEntry>)) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "tombstone hedefi tenant-scope'ta yok: " + targetEvidenceId.value());
         }
+        // Codex 8a blocker-2 — SEMANTİK NET: hedef başına TEK tombstone satırı.
+        // Aynı reason ile replay → idempotent (blocker-1 içerik-eşleşmesi occurred_at'ı dışladığı
+        // için güvenli). FARKLI reason ile ikinci tombstone → idempotency-conflict FAIL (sessiz
+        // "OK" yok); ayrı denetim olayı gerekiyorsa yeni event-type ile ayrı append tasarlanır.
         JsonValue.JsonObject payload = JsonValue.object(Map.of(
                 "target_evidence_id", JsonValue.of(targetEvidenceId.value()),
                 "reason_code", JsonValue.of(reason)));
