@@ -28,6 +28,18 @@ class AppPropertiesTest {
     }
 
     @Test
+    void retention_enabled_requires_cron_days_tenants() {
+        assertThrows(IllegalStateException.class,
+                () -> new AppProperties.Retention(true, " ", 30, java.util.List.of("t")));
+        assertThrows(IllegalStateException.class,
+                () -> new AppProperties.Retention(true, "0 0 3 * * ?", 0, java.util.List.of("t")));
+        assertThrows(IllegalStateException.class,
+                () -> new AppProperties.Retention(true, "0 0 3 * * ?", 30, java.util.List.of()));
+        // kapalıyken hiçbir alan zorunlu değil
+        assertEquals(0, new AppProperties.Retention(false, null, 0, null).tenants().size());
+    }
+
+    @Test
     void blank_bearer_normalizes_to_null_and_timeout_defaults() {
         AppProperties.Ai ai = new AppProperties.Ai("http://ai.local", "  ", null);
         assertNull(ai.bearer());

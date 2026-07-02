@@ -65,6 +65,9 @@ class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/healthz").permitAll()
+                        // OpenAPI metadata (yalnız şema; KİŞİSEL/İŞ VERİSİ DEĞİL — buyer-trust yüzeyi).
+                        // Swagger-UI bilinçle yok; prod'da edge katmanında ayrıca kısıtlanabilir.
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")

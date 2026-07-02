@@ -10,7 +10,30 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * parola log'a/hataya yazılmaz.
  */
 @ConfigurationProperties(prefix = "ats")
-public record AppProperties(Db db, Ai ai, Security security, Ingest ingest) {
+public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+
+    /**
+     * Retention-purge zamanlayıcısı — DEFAULT KAPALI (ATS-0018: zamanlayıcı-tetikleyici
+     * composition işi; cutoff politikası config/owner düzlemi). enabled=true iken
+     * days/tenants/cron fail-closed zorunlu.
+     */
+    public record Retention(boolean enabled, String cron, int days, java.util.List<String> tenants) {
+        public Retention {
+            if (enabled) {
+                require(cron, "ats.retention.cron (env ATS_RETENTION_CRON)");
+                if (days <= 0) {
+                    throw new IllegalStateException("ats.retention.days > 0 olmalı (fail-closed)");
+                }
+                if (tenants == null || tenants.isEmpty()
+                        || tenants.stream().anyMatch(t -> t == null || t.isBlank())) {
+                    throw new IllegalStateException(
+                            "ats.retention.tenants boş/null-elemanlı olamaz (fail-closed)");
+                }
+            }
+            tenants = tenants == null ? java.util.List.of() : java.util.List.copyOf(tenants);
+        }
+    }
+
 
     /**
      * JWT resource-server konfig'i — üçü de ZORUNLU (fail-closed): jwksUri

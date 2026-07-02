@@ -98,6 +98,21 @@ class AppBootSmokeTest {
     }
 
     @Test
+    void openapi_metadata_is_public_and_describes_api() {
+        org.springframework.http.ResponseEntity<String> resp =
+                rest.getForEntity("/v3/api-docs", String.class);
+        assertEquals(200, resp.getStatusCode().value());
+        assertTrue(resp.getBody().contains("/api/v1/interviews/{interviewId}/transcript"),
+                "spec veri-endpoint'lerini tarif etmeli; body: kırpıldı");
+    }
+
+    @Test
+    void retention_scheduler_is_absent_by_default() {
+        assertTrue(ctx.getBeansOfType(RetentionScheduler.RetentionJob.class).isEmpty(),
+                "default-off: enabled=true verilmeden scheduler bean'i KURULMAZ");
+    }
+
+    @Test
     void consent_gate_is_deny_by_default_on_real_pg() {
         ConsentGate gate = ctx.getBean(ConsentGate.class);
         Outcome<Void> out = gate.requireRecordingAllowed(
