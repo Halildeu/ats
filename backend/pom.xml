@@ -28,6 +28,9 @@
   <modules>
     <module>shared-kernel</module>
     <module>contracts-java</module>
+    <module>ops-events</module>
+    <module>consent</module>
+    <module>ingest-media</module>
     <!--
       Domain modülleri (ATS-0008 8 modül) slice sırasına göre wire edilir (ATS-0016; slice-1 port-only):
       identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,
