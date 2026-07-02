@@ -39,7 +39,9 @@ public record OperationalEvent(
             "ai_pipeline.provider.request_rejected",
                     new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code")),
             "ai_pipeline.citation.rejected",
-                    new EventSpec("ai_pipeline", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code")));
+                    new EventSpec("ai_pipeline", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code")),
+            "evidence.human_decision.finalized",
+                    new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "ledger_entry_ref")));
 
     /** Fail-closed kurucu: registry-dışı / spec-uyumsuz / loggable-olmayan zarf üretilemez. */
     public static Outcome<OperationalEvent> create(
