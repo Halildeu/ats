@@ -86,7 +86,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **privacy.dsar.fulfilled** | privacy | notice | id-only | actor_ref | gate-locked |
 | **privacy.erasure.executed** | privacy | notice | id-only | actor_ref, reason_code | gate-locked |
 | **privacy.retention.purged** | privacy | notice | id-only | reason_code | gate-locked |
-| **privacy.consent.recorded** | privacy | info | id-only | state | enforced (repo-test) |
+| **privacy.consent.recorded** | privacy | info | id-only | state, actor_ref | enforced (repo-test) |
 | **privacy.consent.ledger_append_failed** | privacy | error | id-only | reason_code | enforced (repo-test) |
 | **privacy.correction.requested** | privacy | notice | id-only | reason_code | gate-locked |
 | **privacy.correction.fulfilled** | privacy | notice | id-only | actor_ref | gate-locked |

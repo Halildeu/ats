@@ -55,7 +55,8 @@ class InterviewApiController {
 
     @PutMapping("/api/v1/interviews/{interviewId}/recording-consent")
     ResponseEntity<?> putRecordingConsent(Authentication auth,
-            @PathVariable("interviewId") String interviewId, @RequestBody ConsentBody body) {
+            @PathVariable("interviewId") String interviewId, @RequestBody ConsentBody body,
+            @RequestHeader(value = "X-ATS-Idempotency-Key", required = false) String idempotencyKey) {
         TenantId tenant = TenantAccess.tenant(auth);
         if (body == null || body.subjectRef() == null || body.subjectRef().isBlank()
                 || body.state() == null) {
@@ -70,8 +71,13 @@ class InterviewApiController {
         RecordingPermission permission = new RecordingPermission(
                 tenant, new InterviewId(interviewId), body.subjectRef(), state,
                 Instant.now().toString());
-        // state + WORM kanıtı birlikte (ConsentService; GRANTED=ledger-önce fail-closed)
-        Outcome<Void> out = consentService.record(permission);
+        // state + WORM kanıtı birlikte (ConsentService; GRANTED=ledger-önce fail-closed).
+        // requestKey: retry-güvenliği isteyen çağıran header verir; yoksa her çağrı yeni beyan
+        // (GRANTED→WITHDRAWN→GRANTED yeni kanıt üretir — Codex iter-2 blocker-1).
+        String requestKey = (idempotencyKey == null || idempotencyKey.isBlank())
+                ? java.util.UUID.randomUUID().toString()
+                : idempotencyKey;
+        Outcome<Void> out = consentService.record(permission, TenantAccess.actor(auth), requestKey);
         if (out instanceof Outcome.Fail<Void> fail) {
             return OutcomeHttp.fail(fail);
         }

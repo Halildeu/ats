@@ -55,7 +55,7 @@ public record OperationalEvent(
             Map.entry("privacy.retention.purged",
                     new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
             Map.entry("privacy.consent.recorded",
-                    new EventSpec("privacy", "info", PiiClass.ID_ONLY, java.util.Set.of("state"))),
+                    new EventSpec("privacy", "info", PiiClass.ID_ONLY, java.util.Set.of("state", "actor_ref"))),
             Map.entry("privacy.consent.ledger_append_failed",
                     new EventSpec("privacy", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))));
 
