@@ -16,6 +16,7 @@
 2. `active-compliant` boyut: input ⊆ izinli-lexical; **yasaklı input YOK**. output ⊆ izinli; **yasaklı output (score/ranking/affect/personality) YOK**.
 3. Aktif satırlarda **yasaklı kavram** (truthfulness/lie/deception/credibility/honesty/stress/prosody/voice/tone/facial/microexpression/gaze/eye-contact/body-language/emotion/affect/personality/temperament/demographic/age/gender/accent/native-language/health/pregnancy + TR varyant) **geçemez** (dim adı/input/output/not).
 4. `excluded-legal` boyut: `equivalence∈{partial,none}`; partial → `safe_alternative` bir aktif boyuta işaret eder; none → muadil aranmaz. Sentinel yasaklılar (affect_emotion/voice_stress/facial_microexpression/deception_detection/personality_inference/demographic_inference) registry'de durmalı + **aktif edilemez**.
+5. `process_perspective_coverage` ([[ATS-0015]]) not-hücresi **LITERAL-PİNLİ** + sınır-token seti zorunlu (süreç-düzeyi/İÇERİK/beyan-edilen/kişi-profil-yok/YAPILMAZ/cross-session-yok/aleyhe-tek-başına-yok) — kişi-profilleme veya lexical sentiment-proxy'ye kayma CI'da fail; input/output `transcript_text, rubric` → `coverage, citation` pinli.
 
 ## 1. Aktif boyutlar (içerik-tabanlı)
 
@@ -26,7 +27,7 @@
 | **answer_quality** | transcript_text, rubric | finding, citation | active-compliant | cevap tamlık/ilgililik/yapı (içerik; iş-ilişkili) |
 | **topic_coverage** | transcript_text, rubric | coverage, citation | active-compliant | rubric kriter kapsama (içerik; iş-ilişkili) |
 | **claim_citation** | transcript_text, claim | citation, evidence | active-compliant | iddia↔kaynak alıntı + entailment (ATS-0004) |
-| **process_perspective_coverage** | transcript_text, rubric | coverage, citation | active-compliant | oturum/süreç-düzeyi perspektif-kapsama (Altı-Şapka lensi, ATS-0015: veri/olgu, beyan edilen çekince-itiraz, risk, fayda, yaratıcı öneri, süreç-yönetimi katkılarının İÇERİK sınıflaması); toplantı/mülakat İLERLEYİŞİ bulgusu — kişi-düzeyi kalıcı etiket/profil üretmez (§2 dışlaması korunur) |
+| **process_perspective_coverage** | transcript_text, rubric | coverage, citation | active-compliant | oturum/süreç-düzeyi perspektif-kapsama (Altı-Şapka lensi, ATS-0015: veri/olgu, beyan edilen çekince-itiraz, risk, fayda, yaratıcı öneri, süreç-yönetimi katkılarının İÇERİK sınıflaması); toplantı/mülakat İLERLEYİŞİ bulgusu — kişi-düzeyi kalıcı etiket/profil üretmez (§2 dışlaması korunur); lexical sentiment/polarity/valence/mood/ima-edilen-endişe çıkarımı YAPILMAZ (yalnız AÇIKÇA beyan edilen çekince/itiraz; üsluptan çıkarım yasak); çıktı etiketi jenerik (şapka-adı etiketi yok); cross-session kişi trend/trait YOK; tek-aday oturumda çıktı yalnız o oturumun cevap/rubric kapsaması; tek başına aday aleyhine kullanılamaz (insan-inceleme + citation) |
 
 ## 2. Dışlanan yetenekler (excluded → safe-alternative / no-equivalent)
 
@@ -42,7 +43,7 @@
 > **deception/truthfulness sınırı (net):** Ürün **doğruluk/yalan/güvenilirlik VERDICT'i ÜRETMEZ**. `internal_contradiction`/`content_consistency` yalnız **kaynaklı içerik-çelişkisi** veya **desteklenmeyen iddia** bulgusu sunar; insan takip-incelemesi içindir; aday aleyhine **tek başına** kullanılamaz.
 
 ## 3. Doğrulama (`scripts/check-analysis-dimensions.mjs`)
-§0 sözlük + invariant 1–4: aktif boyut allowlist (sadece 6); aktif satırda yasaklı input/output **ve yasaklı kavram-alias** yok; excluded equivalence partial→active-substitute / none→muadil-aranmaz; sentinel yasaklılar korunur + aktif-değil; gömülü self-test.
+§0 sözlük + invariant 1–5: aktif boyut allowlist (sadece 6); aktif satırda yasaklı input/output **ve yasaklı kavram-alias** yok; process_perspective_coverage not-hücresi literal-pin + sınır-tokenları + input/output pin; excluded equivalence partial→active-substitute / none→muadil-aranmaz; sentinel yasaklılar korunur + aktif-değil; gömülü self-test (11 negatif vektör).
 
 ## 4. Bağlantı
 - [[ATS-0012]] kararı · [[ATS-0005]] (affect yasağı/assist/no-scoring) · [[ATS-0004]] (citation/fail-closed) · [[ATS-0003]] (biyometrik/özel-nitelikli) · rubric-standard (iş-ilişkili/protected-attr) · eu-ai-act-index (Art.5 banned / readiness≠conformity) · [[speaker-attribution-standard]] (ATS-0013: diarization takma-ad S1..Sn; sesten-kimlik default-dışlanmış).

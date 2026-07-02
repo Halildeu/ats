@@ -31,6 +31,11 @@ const FORBIDDEN_CONCEPT = [
   /truthful|\blie\b|deception|credibilit|honesty|\bstress\b|prosod|\bvoice\b|\btone\b|facial|microexpress|\bgaze\b|eye.?contact|body.?language|emotion|affect|personalit|temperament|demographic|\bage\b|gender|accent|native.?language|\bhealth\b|pregnan/i,
   /yalan|doğruluk|güvenilir|dürüst|duygu|ses.?ton|mimik|\bjest\b|bakış|beden.?dil|kişilik|mizaç|demografik|\byaş\b|cinsiyet|aksan|ana.?dil|sağlık|hamile/i,
 ];
+// ATS-0015 process_perspective_coverage sınırı (Codex 019f1fd2 REVISE absorb): not-hücresi LITERAL-PİN —
+// kişi-profilleme / lexical sentiment-proxy / cross-session trait kayması CI'da fail (değişiklik = ADR+guard birlikte)
+const PROCESS_DIM = "process_perspective_coverage";
+const PROCESS_NOT_PIN = "oturum/süreç-düzeyi perspektif-kapsama (Altı-Şapka lensi, ATS-0015: veri/olgu, beyan edilen çekince-itiraz, risk, fayda, yaratıcı öneri, süreç-yönetimi katkılarının İÇERİK sınıflaması); toplantı/mülakat İLERLEYİŞİ bulgusu — kişi-düzeyi kalıcı etiket/profil üretmez (§2 dışlaması korunur); lexical sentiment/polarity/valence/mood/ima-edilen-endişe çıkarımı YAPILMAZ (yalnız AÇIKÇA beyan edilen çekince/itiraz; üsluptan çıkarım yasak); çıktı etiketi jenerik (şapka-adı etiketi yok); cross-session kişi trend/trait YOK; tek-aday oturumda çıktı yalnız o oturumun cevap/rubric kapsaması; tek başına aday aleyhine kullanılamaz (insan-inceleme + citation)";
+const PROCESS_REQUIRED = ["oturum/süreç-düzeyi", "İÇERİK sınıflaması", "beyan edilen çekince-itiraz", "kişi-düzeyi kalıcı etiket/profil üretmez", "§2 dışlaması korunur", "YAPILMAZ", "cross-session kişi trend/trait YOK", "tek başına aday aleyhine kullanılamaz"];
 
 function section(text, reHead) {
   const lines = text.split("\n"); let inSec = false; const out = [];
@@ -61,6 +66,13 @@ function runChecks(text) {
     // yasaklı kavram-alias taraması (tüm aktif satır)
     const joined = r.join(" ");
     for (const re of FORBIDDEN_CONCEPT) { const m = joined.match(re); if (m) errors.push(`${dim}: YASAK kavram-alias "${m[0]}" aktif satırda (excluded'a taşı)`); }
+    // ATS-0015 boyut-özel sınır: not-hücresi literal-pin + sınır-tokenları + input/output pin
+    if (dim === PROCESS_DIM) {
+      const not = r[4] || "";
+      if (not !== PROCESS_NOT_PIN) errors.push(`${dim}: not-hücresi LITERAL-PİN dışı (kişi-profilleme/sentiment-proxy kayması dahil her delta fail; bilinçli değişiklik = ADR + guard birlikte)`);
+      for (const t of PROCESS_REQUIRED) if (!not.includes(t)) errors.push(`${dim}: sınır-tokeni eksik: "${t}"`);
+      if (input !== "transcript_text, rubric" || output !== "coverage, citation") errors.push(`${dim}: input/output pin dışı ("${input}" → "${output}")`);
+    }
   }
   for (const id of ACTIVE_ALLOWED) if (!activeIds.has(id)) errors.push(`eksik aktif boyut: ${id}`);
 
@@ -89,6 +101,9 @@ function selfTest() {
     ["equivalence-invalid", mut("| **personality_inference** | yüksek-risk profilleme | topic_coverage | partial |", "| **personality_inference** | yüksek-risk profilleme | topic_coverage | maybe |")],
     ["sentinel-deleted", base.replace(/\| \*\*deception_detection\*\* .*\n/, "")],
     ["forbidden-activated", mut("| **claim_citation** | transcript_text, claim | citation, evidence | active-compliant |", "| **affect_emotion** | transcript_text | finding | active-compliant | x |\n| **claim_citation** | transcript_text, claim | citation, evidence | active-compliant |")],
+    ["process-person-profile-shift", mut("oturum/süreç-düzeyi perspektif-kapsama (Altı-Şapka lensi, ATS-0015:", "aday bazlı şapka profili (her aday için kalıcı davranış etiketi;")],
+    ["process-boundary-removed", mut("kişi-düzeyi kalıcı etiket/profil üretmez (§2 dışlaması korunur); ", "")],
+    ["process-sentiment-proxy-shift", mut("lexical sentiment/polarity/valence/mood/ima-edilen-endişe çıkarımı YAPILMAZ (yalnız AÇIKÇA beyan edilen çekince/itiraz; üsluptan çıkarım yasak)", "katkıların olumlu/olumsuz tutumu da sınıflanır")],
   ];
   const failed = [];
   for (const [name, txt] of cases) if (runChecks(txt).length === 0) failed.push(name);
@@ -103,4 +118,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`analysis-dimensions OK — aktif boyut allowlist(6) içerik-tabanlı (yasaklı input/output/kavram-alias yok), yasaklı boyutlar equivalence-eşli+aktif-değil, sentinel korunuyor; self-test 8 negatif vektör fail ediyor.`);
+console.log(`analysis-dimensions OK — aktif boyut allowlist(6) içerik-tabanlı (yasaklı input/output/kavram-alias yok), process_perspective_coverage not-hücresi literal-pin+sınır-tokenlı (kişi-profil/sentiment-proxy kayması fail), yasaklı boyutlar equivalence-eşli+aktif-değil, sentinel korunuyor; self-test 11 negatif vektör fail ediyor.`);
