@@ -27,7 +27,7 @@ export function runChecks(text, pathExists) {
       "## 2. Bilinen açık kalemler", "## 3. Standart-hizalama bağlantıları"]) {
     if (!text.includes(h)) errors.push(`zorunlu bölüm eksik: "${h}"`);
   }
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 11; i++) {
     if (!new RegExp(`\\| K${i} \\|`).test(text)) errors.push(`zorunlu satır eksik: K${i}`);
   }
   // matris satırlarındaki durum sözlüğü kapalı
@@ -35,6 +35,16 @@ export function runChecks(text, pathExists) {
     const status = row[1].trim();
     if (!STATUS_ALLOWED.has(status)) {
       errors.push(`kapalı durum-sözlüğü dışı iddia: "${status}" (yalnız enforced (CI)|enforced (repo-test))`);
+    }
+  }
+  // Kanıt-TUTARLILIK (Codex #70 blocker-3): repo-test satırı TEST path'i, CI satırı guard path'i içermeli
+  for (const row of text.matchAll(/\| K\d+ \|[^\n]*\| ([^|\n]+) \|\n/g)) {
+    const status = row[1].trim();
+    if (status === "enforced (repo-test)" && !/src\/test\/[^`]*Test\.java/.test(row[0])) {
+      errors.push(`repo-test satırında TEST kanıtı yok: ${row[0].slice(0, 40)}...`);
+    }
+    if (status === "enforced (CI)" && !/scripts\/check-[a-z-]+\.mjs/.test(row[0])) {
+      errors.push(`CI satırında guard kanıtı yok: ${row[0].slice(0, 40)}...`);
     }
   }
   // Kanıt path'leri gerçek mi — matris satırlarındaki backtick'li repo-path'ler
@@ -58,6 +68,8 @@ function selfTest(base) {
     ["open-items-removed", mut("## 2. Bilinen açık kalemler", "## 2. Kapanmış"), yes],
     ["overclaim-status", mut("enforced (repo-test) |\n| K3", "KVKK-sertifikalı |\n| K3"), yes],
     ["missing-evidence-path", base, (p) => !p.includes("DsrService")],
+    ["k11-transfer-removed", mut("| K11 |", "| X11 |"), yes],
+    ["repo-test-without-test", mut("`backend/app-boot/src/test/java/com/ats/app/ExportDsarApiTest.java` | enforced (repo-test)", "| enforced (repo-test)"), yes],
   ];
   for (const [name, txt, pe] of cases) {
     if (runChecks(txt, pe).length === 0) failed.push(name);
@@ -74,4 +86,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log("kvkk-crosswalk OK — K1..K10 tam, disclaimer + açık-kalemler mevcut, durum-sözlüğü kapalı, TÜM kanıt-path'leri gerçekten var; self-test 5 negatif vektör fail ediyor.");
+console.log("kvkk-crosswalk OK — K1..K11 tam, disclaimer + açık-kalemler mevcut, durum-sözlüğü kapalı, TÜM kanıt-path'leri gerçekten var; self-test 7 negatif vektör fail ediyor.");
