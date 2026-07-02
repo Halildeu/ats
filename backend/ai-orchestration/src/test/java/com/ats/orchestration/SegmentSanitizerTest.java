@@ -72,6 +72,51 @@ class SegmentSanitizerTest {
     }
 
     @Test
+    void metadata_style_paralinguistic_residuals_dropped_fail_closed() {
+        List<Transcript.Segment> out = sanitize(
+                "diarization_confidence=0.91",
+                "prosody: tense",
+                "tone=angry merhaba",
+                "voice-stress: high",
+                "pause_duration_ms=1200",
+                "duraklama: 3sn",
+                "stres=yüksek devam",
+                "normal cümle devam ediyor");
+        assertEquals(1, out.size(), "metadata-biçimli paralinguistik kalıntılar düşmeli (fail-closed)");
+        assertEquals("normal cümle devam ediyor", out.get(0).text());
+    }
+
+    @Test
+    void metadata_scan_does_not_false_positive_on_normal_lexical_speech() {
+        List<Transcript.Segment> out = sanitize(
+                "stres yönetimi konusunda deneyimliyim",
+                "projede güven ilişkisi kurduk",
+                "duraklama olmadan devam ettik");
+        assertEquals(3, out.size(), "normal lexical konuşma (key[:=]value şekli olmadan) düşmemeli");
+    }
+
+    @Test
+    void wide_unicode_annotation_wrappers_stripped() {
+        List<Transcript.Segment> out = sanitize(
+                "「gülüş」 merhaba",
+                "《duraklama》 devam edelim",
+                "«aside» konuya dönelim",
+                "『笑』 rapor hazır");
+        assertEquals(4, out.size());
+        assertEquals("merhaba", out.get(0).text());
+        assertEquals("devam edelim", out.get(1).text());
+        assertEquals("konuya dönelim", out.get(2).text());
+        assertEquals("rapor hazır", out.get(3).text());
+    }
+
+    @Test
+    void chained_inline_prefixes_fully_removed() {
+        List<Transcript.Segment> out = sanitize("laughs: sighs: hello there");
+        assertEquals(1, out.size());
+        assertEquals("hello there", out.get(0).text());
+    }
+
+    @Test
     void speaker_keys_pseudonymized_in_first_seen_order() {
         var raw = List.of(
                 new TranscriptSegment("SPEAKER_B", 0, 100, "birinci"),

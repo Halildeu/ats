@@ -171,12 +171,38 @@ class TranscriptionServiceTest {
     @Test
     void free_form_source_key_rejected_before_worm() {
         grant();
-        for (String bad : new String[] {"i1/aday-cv-ahmet.wav", "i1/rec-KISA", "baska/rec-" + "a".repeat(64), null}) {
+        String hex64 = "a".repeat(64);
+        for (String bad : new String[] {
+                "i1/aday-cv-ahmet.wav",
+                "i1/rec-KISA",
+                "baska/rec-" + hex64,
+                null,
+                // Codex retro-review blocker-1: TAM-eşleşme negatifleri (ara path / ikinci rec / suffix / case / uzunluk / traversal)
+                "i1/rec-" + hex64 + "/aday-ahmet/rec-" + hex64,
+                "i1/rec-" + "A".repeat(64),
+                "i1/rec-" + "a".repeat(63),
+                "i1/rec-" + hex64 + "x",
+                "i1/rec-" + hex64 + "/",
+                "i1/rec-" + "a".repeat(62) + "/x",
+                "i1/rec-%2e%2e/" + hex64.substring(0, 50)}) {
             Outcome<TranscriptionReceipt> out =
                     service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, bad, "2026-07-02T11:00:00Z");
             assertFalse(out.isOk(), "serbest/yanlış-scope key WORM öncesi reddedilmeli: " + bad);
         }
         assertTrue(ledger.entries.isEmpty());
+    }
+
+    @Test
+    void ledger_payload_has_no_paralinguistic_proxy_fields() {
+        grant();
+        service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertEquals(1, ledger.entries.size());
+        var keys = ledger.entries.get(0).payload().values().keySet();
+        for (String forbidden : new String[] {
+                "stripped_annotation_count", "annotation", "prosody", "confidence", "stress", "tone", "affect", "pause"}) {
+            assertTrue(keys.stream().noneMatch(k -> k.toLowerCase(java.util.Locale.ROOT).contains(forbidden)),
+                    "WORM payload paralinguistik/affect proxy alanı taşıyamaz (Codex retro blocker-3): " + forbidden);
+        }
     }
 
     @Test

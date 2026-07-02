@@ -59,18 +59,38 @@ public final class TranscriptionService {
         this.sink = sink;
     }
 
-    /** Slice-1'in content-addressed opak anahtar formatı — WORM'a giren key fail-closed doğrulanır. */
-    private static final java.util.regex.Pattern CONTENT_ADDRESSED_SUFFIX =
-            java.util.regex.Pattern.compile("/rec-[0-9a-f]{64}$");
+    /**
+     * Slice-1'in content-addressed opak anahtar formatı — TAM-EŞLEŞME (Codex retro-review blocker-1):
+     * yalnız {@code <interviewId>/rec-<sha256-lowercase-hex>}; ara path segmenti, ikinci "/rec-",
+     * traversal veya suffix kabul edilmez (startsWith+suffix-find kombinasyonu ara-path kaçırıyordu).
+     */
+    static boolean isContentAddressedKey(InterviewId interviewId, String key) {
+        if (key == null) {
+            return false;
+        }
+        String prefix = interviewId.value() + "/rec-";
+        if (!key.startsWith(prefix)) {
+            return false;
+        }
+        String hash = key.substring(prefix.length());
+        if (hash.length() != 64) {
+            return false;
+        }
+        for (int i = 0; i < hash.length(); i++) {
+            char c = hash.charAt(i);
+            if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     public Outcome<TranscriptionReceipt> transcribeStored(
             TenantId tenantId, ActorId actorId, InterviewId interviewId, String sourceObjectKey, String occurredAtIso) {
-        // Codex #49 blocker: serbest string WORM payload'a giremez — slice-1 opak formatı zorunlu
-        if (sourceObjectKey == null
-                || !sourceObjectKey.startsWith(interviewId.value() + "/rec-")
-                || !CONTENT_ADDRESSED_SUFFIX.matcher(sourceObjectKey).find()) {
+        // serbest string WORM payload'a giremez — slice-1 opak formatına TAM-eşleşme zorunlu
+        if (!isContentAddressedKey(interviewId, sourceObjectKey)) {
             return Outcome.fail(OutcomeCode.INVALID,
-                    "sourceObjectKey content-addressed opak formatta değil (interview/rec-<sha256>)");
+                    "sourceObjectKey content-addressed opak formatta değil (tam-eşleşme: interview/rec-<sha256>)");
         }
         Outcome<Void> consent = consentGate.requireRecordingAllowed(tenantId, interviewId);
         if (consent instanceof Outcome.Fail<Void> denied) {
@@ -103,12 +123,14 @@ public final class TranscriptionService {
                 tenantId, actorId, interviewId, LEDGER_EVENT_TYPE, occurredAtIso,
                 tenantId.value() + ":" + interviewId.value() + ":" + contentHash,
                 contentHash,
-                // two-plane: transkript METNİ ledger'a girmez — yalnız opak key + hash + meta
+                // two-plane: transkript METNİ ledger'a girmez — yalnız opak key + hash + meta.
+                // stripped_annotation_count BİLİNÇLİ YOK (Codex retro-review blocker-3): "kaç
+                // paralinguistik işaret vardı" bilgisi interview'e bağlı immutable kanıtta
+                // affect/prosody PROXY'sidir; WORM'a yazılmaz.
                 JsonValue.object(Map.of(
                         "transcript_key", JsonValue.of(transcriptKey),
                         "source_object_key", JsonValue.of(sourceObjectKey),
                         "segment_count", JsonValue.of((double) sanitized.segments().size()),
-                        "stripped_annotation_count", JsonValue.of((double) sanitized.strippedAnnotationCount()),
                         "language", JsonValue.of(transcript.language())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
             Outcome<Void> rolledBack = transcriptStore.delete(tenantId, transcriptKey);
