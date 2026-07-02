@@ -37,6 +37,7 @@
     <module>retention-dsr</module>
     <module>ai-provider-faz24</module>
     <module>persistence-postgres</module>
+    <module>app-boot</module>
     <!--
       Domain modülleri (ATS-0008 8 modül) slice sırasına göre wire edilir (ATS-0016; slice-1 port-only):
       identity-tenant, consent, ingest-media, interview-workspace, evidence-ledger,

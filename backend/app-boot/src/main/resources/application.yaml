@@ -1,0 +1,18 @@
+# app-boot konfig — fail-closed: DB/AI değerlerinin default'u YOK (AppProperties
+# eksikte startup'ı düşürür). Tüm değerler env'den; parola yalnız env.
+server:
+  port: ${ATS_PORT:8080}
+
+spring:
+  main:
+    banner-mode: off
+
+ats:
+  db:
+    url: ${ATS_DB_URL:}
+    username: ${ATS_DB_USERNAME:}
+    password: ${ATS_DB_PASSWORD:}
+  ai:
+    base-url: ${ATS_AI_BASE_URL:}
+    bearer: ${ATS_AI_BEARER:}
+    timeout: ${ATS_AI_TIMEOUT:30s}
