@@ -38,8 +38,11 @@ public final class DsrService {
     static final String DSAR_FULFILLED_EVENT = "privacy.dsar.fulfilled";
     static final String ERASURE_EXECUTED_EVENT = "privacy.erasure.executed";
     static final String TOMBSTONE_APPENDED_EVENT = "evidence.tombstone.appended";
+    static final String RETENTION_PURGED_EVENT = "privacy.retention.purged";
 
     public record ErasureReceipt(String dsarKey, int tombstoneCount, int deletedContentCount, boolean caseTransitioned) {}
+
+    public record PurgeReceipt(int interviewCount, int deletedContentCount) {}
 
     private final DsarStore dsarStore;
     private final TranscriptStore transcriptStore;
@@ -157,6 +160,61 @@ public final class DsrService {
         emit(tenantId, DSAR_FULFILLED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
                 Map.of("actor_ref", actorId.value()));
         return Outcome.ok(new ErasureReceipt(dsarKey, tombstones, deleted, transitioned));
+    }
+
+    /**
+     * ATS-0018 slice-8c — retention purge (F10 kalanı): cutoff'tan eski CONTENT-plane verisi silinir.
+     * DSAR'sız ve TOMBSTONE'suz: bu bir veri-sahibi talebi değil politika-temizliğidir; WORM zaten
+     * pointer-only ve kendi retention'ına tabidir (worm_metadata — bu metodun kapsamı DEĞİL, dürüst
+     * sınır). State tabloları (vaka/dsar/rıza) SİLİNMEZ. Cutoff'u çağıran verir (tenant politikası
+     * config/owner düzlemi; zamanlayıcı tetikleyicisi composition/scheduler işi — burada saat yok).
+     * Idempotent: silinmişin delete'i no-op; hata yutulmaz (partial-purge açıkça döner).
+     */
+    public Outcome<PurgeReceipt> purgeExpired(TenantId tenantId, ActorId actorId,
+            RetentionScanner scanner, String cutoffIso) {
+        if (scanner == null || isBlank(cutoffIso) || actorId == null || isBlank(actorId.value())) {
+            return Outcome.fail(OutcomeCode.INVALID, "scanner + cutoffIso + actor zorunlu");
+        }
+        Outcome<java.util.List<RetentionScanner.ExpiredContent>> scanned = scanner.scanExpired(tenantId, cutoffIso);
+        if (!(scanned instanceof Outcome.Ok<java.util.List<RetentionScanner.ExpiredContent>> ok)) {
+            return Outcome.fail(((Outcome.Fail<java.util.List<RetentionScanner.ExpiredContent>>) scanned).code(),
+                    ((Outcome.Fail<java.util.List<RetentionScanner.ExpiredContent>>) scanned).reason());
+        }
+        int interviews = 0;
+        int deleted = 0;
+        for (RetentionScanner.ExpiredContent expired : ok.value()) {
+            if (expired.empty()) {
+                continue;
+            }
+            for (String key : expired.transcriptKeys()) {
+                Outcome<Void> del = transcriptStore.delete(tenantId, key);
+                if (!del.isOk()) {
+                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: transcript silme başarısız (yutulmadı): " + key);
+                }
+                deleted++;
+            }
+            for (String key : expired.citationKeys()) {
+                Outcome<Void> del = citationStore.delete(tenantId, key);
+                if (!del.isOk()) {
+                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: citation silme başarısız (yutulmadı): " + key);
+                }
+                deleted++;
+            }
+            for (String key : expired.exportArtifactKeys()) {
+                Outcome<Void> del = artifactStore.delete(tenantId, key);
+                if (!del.isOk()) {
+                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: artifact silme başarısız (yutulmadı): " + key);
+                }
+                deleted++;
+            }
+            interviews++;
+            // actor_ref: taxonomy required-extra'sı reason_code; actor_ref denetim için EK taşınır
+            // (registry required = minimum; scheduler/operatör kimliği purge audit'inde değerli)
+            emit(tenantId, RETENTION_PURGED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
+                    Map.of("reason_code", "retention_expired", "actor_ref", actorId.value()));
+        }
+        // boş tarama = meşru no-op (timer periyodik koşar); "silindi" iddiası receipt sayılarıyla dürüst
+        return Outcome.ok(new PurgeReceipt(interviews, deleted));
     }
 
     private void emit(TenantId tenantId, String eventTypeId, String category, String severity,

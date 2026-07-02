@@ -51,7 +51,9 @@ public record OperationalEvent(
             Map.entry("privacy.dsar.fulfilled",
                     new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref"))),
             Map.entry("privacy.erasure.executed",
-                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))));
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))),
+            Map.entry("privacy.retention.purged",
+                    new EventSpec("privacy", "notice", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))));
 
     /** Fail-closed kurucu: registry-dışı / spec-uyumsuz / loggable-olmayan zarf üretilemez. */
     public static Outcome<OperationalEvent> create(
