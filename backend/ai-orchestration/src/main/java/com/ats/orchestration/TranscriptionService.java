@@ -59,8 +59,19 @@ public final class TranscriptionService {
         this.sink = sink;
     }
 
+    /** Slice-1'in content-addressed opak anahtar formatı — WORM'a giren key fail-closed doğrulanır. */
+    private static final java.util.regex.Pattern CONTENT_ADDRESSED_SUFFIX =
+            java.util.regex.Pattern.compile("/rec-[0-9a-f]{64}$");
+
     public Outcome<TranscriptionReceipt> transcribeStored(
             TenantId tenantId, ActorId actorId, InterviewId interviewId, String sourceObjectKey, String occurredAtIso) {
+        // Codex #49 blocker: serbest string WORM payload'a giremez — slice-1 opak formatı zorunlu
+        if (sourceObjectKey == null
+                || !sourceObjectKey.startsWith(interviewId.value() + "/rec-")
+                || !CONTENT_ADDRESSED_SUFFIX.matcher(sourceObjectKey).find()) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "sourceObjectKey content-addressed opak formatta değil (interview/rec-<sha256>)");
+        }
         Outcome<Void> consent = consentGate.requireRecordingAllowed(tenantId, interviewId);
         if (consent instanceof Outcome.Fail<Void> denied) {
             return Outcome.fail(denied.code(), denied.reason());
@@ -79,7 +90,8 @@ public final class TranscriptionService {
         }
 
         Transcript transcript = new Transcript(
-                tenantId, interviewId, sourceObjectKey, providerOk.value().language(), sanitized.segments());
+                tenantId, interviewId, sourceObjectKey,
+                normalizeLanguage(providerOk.value().language()), sanitized.segments());
         Outcome<String> stored = transcriptStore.put(transcript);
         if (!(stored instanceof Outcome.Ok<String> keyOk)) {
             return Outcome.fail(OutcomeCode.INVALID, "transkript deposuna yazılamadı");
@@ -97,7 +109,7 @@ public final class TranscriptionService {
                         "source_object_key", JsonValue.of(sourceObjectKey),
                         "segment_count", JsonValue.of((double) sanitized.segments().size()),
                         "stripped_annotation_count", JsonValue.of((double) sanitized.strippedAnnotationCount()),
-                        "language", JsonValue.of(transcript.language() == null ? "unknown" : transcript.language())))));
+                        "language", JsonValue.of(transcript.language())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
             Outcome<Void> rolledBack = transcriptStore.delete(tenantId, transcriptKey);
             if (rolledBack.isOk()) {
@@ -124,6 +136,15 @@ public final class TranscriptionService {
         OperationalEvent.create(tenantId, eventTypeId, category, severity, pii, extras)
                 .asOptional()
                 .ifPresent(sink::emit);
+    }
+
+    /** Sağlayıcı serbest-string dili WORM'a girmeden normalize edilir (ISO primary-subtag ya da "unknown"). */
+    static String normalizeLanguage(String raw) {
+        if (raw == null) {
+            return "unknown";
+        }
+        String primary = raw.strip().toLowerCase(java.util.Locale.ROOT).split("[-_]", 2)[0];
+        return primary.matches("[a-z]{2,3}") ? primary : "unknown";
     }
 
     private static String lexicalConcat(Transcript t) {

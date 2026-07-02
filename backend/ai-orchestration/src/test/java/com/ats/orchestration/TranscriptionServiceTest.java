@@ -29,7 +29,7 @@ class TranscriptionServiceTest {
     private static final TenantId T1 = new TenantId("t1");
     private static final ActorId A1 = new ActorId("actor-opaque-1");
     private static final InterviewId I1 = new InterviewId("i1");
-    private static final String SRC = "i1/rec-abc";
+    private static final String SRC = "i1/rec-" + "a".repeat(64); // slice-1 content-addressed format
 
     private InMemoryConsentStore consentStore;
     private InMemoryEventSink sink;
@@ -40,7 +40,8 @@ class TranscriptionServiceTest {
     static final class FakeProvider implements AIProvider {
         @Override
         public Outcome<TranscriptResult> transcribe(String audioRef) {
-            return Outcome.ok(new TranscriptResult("tr", List.of(
+            // dil bilinçli olarak serbest-string ("TR-TR"): servis normalize etmek zorunda
+            return Outcome.ok(new TranscriptResult("TR-TR", List.of(
                     new TranscriptSegment("spk_a", 0, 900, "Merhaba, hoş geldiniz [gülüşme]"),
                     new TranscriptSegment("spk_b", 900, 2000, "(iç çeker) Teşekkür ederim, memnun oldum"),
                     new TranscriptSegment("spk_a", 2000, 2400, "[alkış]"),
@@ -163,6 +164,19 @@ class TranscriptionServiceTest {
         assertFalse(flat.contains("Merhaba"), "two-plane: transkript METNİ ledger'a giremez");
         assertTrue(payload.values().containsKey("transcript_key"));
         assertTrue(payload.values().containsKey("segment_count"));
+        assertEquals(new JsonValue.JsonString("tr"), payload.values().get("language"),
+                "sağlayıcı serbest-string dili WORM'a girmeden normalize edilmeli");
+    }
+
+    @Test
+    void free_form_source_key_rejected_before_worm() {
+        grant();
+        for (String bad : new String[] {"i1/aday-cv-ahmet.wav", "i1/rec-KISA", "baska/rec-" + "a".repeat(64), null}) {
+            Outcome<TranscriptionReceipt> out =
+                    service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, bad, "2026-07-02T11:00:00Z");
+            assertFalse(out.isOk(), "serbest/yanlış-scope key WORM öncesi reddedilmeli: " + bad);
+        }
+        assertTrue(ledger.entries.isEmpty());
     }
 
     @Test

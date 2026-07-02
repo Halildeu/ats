@@ -12,7 +12,7 @@ Slice-2 transkripsiyon orkestrasyonu `AIProvider` portu arkasında sağlayıcı-
 
 **P1 STT+diarization = Faz 24 self-host motorunun yeniden kullanımı** — Türkçe STT (faster-whisper) + diarization (pyannote), `ats-ai` FastAPI servisi olarak `AIProvider` sözleşmesi arkasında (kopya değil, provider-entegrasyon; ADR-0008).
 
-**Gerekçe:** (1) niş vaadiyle bire-bir: Türkçe + on-prem/TR-residency + aday verisi tenant dışına çıkmaz (subprocessor/DPA rejimi tetiklenmez — [[data-lifecycle-register]] `ai_provider_payload` transfer=none kalır); (2) Faz 24'te ÇALIŞIR durumda (canlı meeting-transcript hattı + GPU host mevcut); (3) maliyet: mevcut varlık, yeni sözleşme/harcama yok; (4) eval-rig (Gate C WER/DER) zaten bu motor için tasarlandı.
+**Gerekçe:** (1) niş vaadiyle bire-bir: Türkçe + on-prem/TR-residency + **üçüncü-taraf subprocessor'a çıkış YOK** — [[data-lifecycle-register]] `ai_provider_payload` canonical `transfer=self-host-only` düzlemi korunur; (2) Faz 24'te ÇALIŞIR durumda (canlı meeting-transcript hattı + GPU host mevcut); (3) maliyet: mevcut varlık, yeni sözleşme/harcama yok; (4) eval-rig (Gate C WER/DER) zaten bu motor için tasarlandı.
 
 **Sınırlar (dürüst):** kalite iddiası YOK — golden Türkçe fixture + Gate C kalibrasyonu olmadan WER/DER "yeterli" DENMEZ (eşikler `uncalibrated`); GPU kapasite/ölçek planı pilot-open öncesi ayrı iş; **pilot-cloud fallback** (B) yalnız owner kararı + subprocessor-register güncellemesi + aday-verisi-cloud-yasak kuralı ([[ATS-0006]]) korunarak açılabilir.
 
