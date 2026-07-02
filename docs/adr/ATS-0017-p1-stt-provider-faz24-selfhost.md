@@ -1,6 +1,6 @@
 # ATS-0017 — P1 STT/diarization sağlayıcısı: Faz 24 self-host motoru (AIProvider portu arkasında)
 
-- **Durum:** Önerildi — cross-AI review (Codex, bu PR) + **OWNER ONAYI bekliyor** (model/ürün-seçimi kuralı: cross-AI mutabakat + kullanıcıya sunum; owner reddederse port sayesinde değişim ucuz)
+- **Durum:** **Accepted — standing-autonomy kaydı (2026-07-02, Codex 019f23a6 AGREE):** provider seçimi owner'a İKİ KEZ açıkça sunuldu; owner genel "onaylıyorum / tam otonom devam" beyanı + kalıcı "Codex MCP mutabakatı kullanıcı kararı sayılır, beklemeden uygula" çalışma kuralı kapsamında ilerleme yetkisi verdi. **Kabul kapsamı DAR:** mevcut Faz 24 self-host motoru; yeni harcama/vendor/subprocessor YOK; `transfer=self-host-only`; port-reversible. **Kalite/pilot-ready iddiası DEĞİL** — Gate C golden-fixture + kalibrasyon şartı ve owner veto hakkı sürer. **Standing-autonomy SINIRI:** cloud fallback / yeni ücret / yeni subprocessor / gerçek aday verisi / pilot-open / "WER-DER yeterli" iddiası çıkarsa isim-özel owner onayı ŞART.
 - **Tarih:** 2026-07-02
 - **Bağlam kaynağı:** PRD-P1 F2 (Türkçe STT + diarization) · [[ATS-0004]] (eval-gate; provider açık-sorusu) · ai/README (Faz 24 motoru varsayımı) · ADR-0002/[[ATS-0006]] (TR-residency/on-prem kabiliyeti)
 
