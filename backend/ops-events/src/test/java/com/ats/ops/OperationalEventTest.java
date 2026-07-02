@@ -57,6 +57,8 @@ class OperationalEventTest {
                 PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1")).isOk());
         assertTrue(OperationalEvent.create(T1, "privacy.erasure.executed", "privacy", "notice",
                 PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "reason_code", "erasure_request")).isOk());
+        assertTrue(OperationalEvent.create(T1, "privacy.retention.purged", "privacy", "notice",
+                PiiClass.ID_ONLY, Map.of("reason_code", "retention_expired")).isOk());
         assertTrue(OperationalEvent.create(T1, "evidence.tombstone.appended", "evidence", "notice",
                 PiiClass.ID_ONLY, Map.of("actor_ref", "actor-1", "reason_code", "erasure_request")).isOk());
         assertFalse(OperationalEvent.create(T1, "privacy.erasure.executed", "privacy", "warning",

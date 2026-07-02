@@ -1,6 +1,6 @@
 # ATS-0018 — Persistence unlock: PostgreSQL 16 + Flyway + plain-JDBC adapter modülü (JPA'sız)
 
-- **Durum:** **Accepted** (cross-AI Codex AGREE, 2026-07-02) — architecture-unlock KARARI. **İmplementasyon durumu (ayrı satır — audit netliği):** 8a worm_ledger + 8b 6-store adapter **LANDED** (Testcontainers-PG16 profili; PG-smoke dahil); 8c retention-timer **PENDING**; prod deploy/DSN/Vault wiring YOK — "prod'da çalışıyor" iddiası YOK.
+- **Durum:** **Accepted** (cross-AI Codex AGREE, 2026-07-02) — architecture-unlock KARARI. **İmplementasyon durumu (ayrı satır — audit netliği):** 8a worm_ledger + 8b 6-store adapter **LANDED** (Testcontainers-PG16 profili; PG-smoke dahil); 8c retention-purge **LANDED** (zamanlayıcı-tetikleyici composition işi); prod deploy/DSN/Vault wiring YOK — "prod'da çalışıyor" iddiası YOK.
 - **Tarih:** 2026-07-02
 - **Bağlam kaynağı:** slice-1 sınırı (backend/pom.xml: "persistence PORT-ONLY; ayrı architecture-unlock slice + ADR") · ArchUnit `contracts_and_kernel_have_no_persistence_or_framework_deps` · ATS-0008 D-E stack-lock (PostgreSQL 16 + pgvector, Flyway, Java 21) · slice-6 dürüst sınırı (retention-TIMER persist timestamp ister) · [[ATS-0003]]/[[ATS-0007]]
 
