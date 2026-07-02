@@ -5,9 +5,13 @@ import { createCitation, finalizeCase, getCaseState, openCase, transition,
 import { t } from "./i18n";
 
 /**
- * F4/F5 inceleme çalışma-alanı (P1): claim → citation (entailment ROZETİ —
- * skor/karar DEĞİL) → vaka aç → İNSAN adımları (standart §2 sırası) → FINALIZE.
- * Karar DAİMA insanın: otomatik-finalize yok; gerekçe-ref zorunlu (servis zorlar).
+ * F4/F5 inceleme çalışma-alanı (P1 — İLK sürüm: NO_CHANGE happy-path'i;
+ * EDIT/REJECT yolları sonraki dilim). Karar DAİMA insanın: otomatik-finalize yok.
+ *
+ * KANIT-KAPISI (Codex #74 blocker): insan-karar yolu YALNIZ
+ * SUPPORTED + kaynaklı citation için açılır — NOT_SUPPORTED karar-kanıtı
+ * OLAMAZ ve INSUFFICIENT export'a GİREMEZ (F7 invariant'ları); UI bu
+ * durumda akışı açmaz ve nedenini açıkça söyler (dead-end üretmez).
  */
 export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
   token: string;
@@ -67,7 +71,13 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
           </div>
         )}
 
-        {citation && !caseKey && (
+        {citation && citation.entailment !== "SUPPORTED" && (
+          <Text as="p" variant="warning" data-testid="not-decision-evidence">
+            {t("review.notDecisionEvidence")}
+          </Text>
+        )}
+
+        {citation && citation.entailment === "SUPPORTED" && citation.resolvedRefCount > 0 && !caseKey && (
           <Button disabled={busy} data-testid="open-case-button"
               onClick={() => void run(async () => {
                 const opened = await openCase(token, interviewId, citation.citationKey);

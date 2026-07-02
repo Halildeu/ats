@@ -19,8 +19,19 @@ createServer(async (req, res) => {
       res.end();
       return;
     }
+    // dev dallari: claim icerigine gore entailment (UI'nin unsupported/insufficient
+    // yollarini lokalde dogrulayabilmek icin)
+    let entailment = "supported";
+    let refs = ["seg-0"];
+    if (claim.toLowerCase().includes("desteklenmeyen")) {
+      entailment = "unsupported";
+      refs = [];
+    } else if (claim.toLowerCase().includes("yetersiz")) {
+      entailment = "insufficient";
+      refs = [];
+    }
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ claim, source_segment_refs: ["seg-0"], entailment: "supported" }));
+    res.end(JSON.stringify({ claim, source_segment_refs: refs, entailment }));
     return;
   }
   res.writeHead(404);

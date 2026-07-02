@@ -43,6 +43,7 @@
     "review.decisionRefLabel": "Karar-sonuç referansı",
     "entailment.supported": "Destekleniyor (kaynaklı)",
     "entailment.notSupported": "Desteklenmiyor",
-    "entailment.insufficient": "Yetersiz kanıt"
+    "entailment.insufficient": "Yetersiz kanıt",
+    "review.notDecisionEvidence": "Bu alıntı karar kanıtı olarak KULLANILAMAZ (desteklenmeyen/yetersiz iddia kanıt paketine giremez); inceleme akışı açılmadı."
   }
 }
