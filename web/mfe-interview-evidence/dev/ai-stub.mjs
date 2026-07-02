@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * DEV AI-stub (yalnız lokal; dep'siz): ATS-0017 wire-contract'ının /v1/cite şekli —
- * claim'i AYNEN yankılar, seg-0'ı kaynak verir, entailment=supported.
+ * claim'i AYNEN yankılar; VARSAYILAN supported+seg-0 — 'desteklenmeyen'/'yetersiz' token'lı claim'lerde unsupported/insufficient dalları (UI yollarını lokalde doğrulamak için).
  * PROD'da gerçek self-host ats-ai motoru (Faz 24) bağlanır.
  */
 import { createServer } from "node:http";
