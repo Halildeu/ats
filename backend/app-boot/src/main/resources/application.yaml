@@ -22,3 +22,8 @@ ats:
     audience: ${ATS_JWT_AUDIENCE:}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
+  retention:
+    enabled: ${ATS_RETENTION_ENABLED:false}
+    cron: ${ATS_RETENTION_CRON:}
+    days: ${ATS_RETENTION_DAYS:0}
+    tenants: ${ATS_RETENTION_TENANTS:}

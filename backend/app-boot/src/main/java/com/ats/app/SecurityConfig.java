@@ -34,7 +34,8 @@ import org.springframework.security.web.SecurityFilterChain;
  *    ats.recording.write / ats.transcript.read). Tek genel scope YOK; bilinmeyen
  *    yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
  *  - Tenant DAİMA token'dan okunur (istek gövdesi/path'inden ASLA — ATS-0002).
- *  - /healthz açık kalır (veri taşımaz); onun dışında her şey kimlikli.
+ *  - Açık yüzeyler YALNIZ /healthz + GET /v3/api-docs (ikisi de veri taşımaz —
+ *    liveness + şema metadata'sı); onların dışında her şey kimlikli.
  *  - Stateless + CSRF kapalı (bearer-token API standardı).
  *
  * İnce-taneli yetkilendirme (rol/ilişki bazlı; OpenFGA benzeri) AYRI ADR —
@@ -65,6 +66,9 @@ class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/healthz").permitAll()
+                        // OpenAPI metadata (yalnız şema; KİŞİSEL/İŞ VERİSİ DEĞİL — buyer-trust yüzeyi).
+                        // Swagger-UI bilinçle yok; prod'da edge katmanında ayrıca kısıtlanabilir.
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
