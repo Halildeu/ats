@@ -27,6 +27,17 @@ class OperationalEventTest {
     }
 
     @Test
+    void citation_rejected_spec_accepted_and_mismatch_fail_closed() {
+        // taxonomy §2: ai_pipeline.citation.rejected = ai_pipeline / warning / id-only / reason_code
+        assertTrue(OperationalEvent.create(T1, "ai_pipeline.citation.rejected", "ai_pipeline", "warning",
+                PiiClass.ID_ONLY, Map.of("reason_code", "fabricated_ref")).isOk());
+        assertFalse(OperationalEvent.create(T1, "ai_pipeline.citation.rejected", "ai_pipeline", "error",
+                PiiClass.ID_ONLY, Map.of("reason_code", "fabricated_ref")).isOk(), "yanlış severity reddedilmeli");
+        assertFalse(OperationalEvent.create(T1, "ai_pipeline.citation.rejected", "ai_pipeline", "warning",
+                PiiClass.ID_ONLY, Map.of()).isOk(), "reason_code zorunlu");
+    }
+
+    @Test
     void unknown_event_type_fail_closed() {
         Outcome<OperationalEvent> out = OperationalEvent.create(
                 T1, "evidence.made.up_event", "evidence", "info", PiiClass.NONE, Map.of());
