@@ -291,6 +291,13 @@ jobs:
       - name: "F3 bundle minimal-yuzey guard'i"
         run: node scripts/check-mfe-bundle.mjs
 
+  kvkk-crosswalk-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: KVKK crosswalk drift guard (kanit-path'leri gercekten var)
+        run: node scripts/check-kvkk-crosswalk.mjs
+
   mfe-start-gate-guard:
     # docs/frontend/mfe-start-gate.md drift guard (ATS-0008 D-C): snapshot SHA 40-hex dondurulmuş +
     # 5 şart bölümü/checklist + curated/dışlanan listeler + AG-Grid-dışlama tokeni (sessiz dahil yasak) +
