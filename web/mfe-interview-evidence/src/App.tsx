@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Input, Text } from "@ats/ui";
+import { Button, Input, Text } from "@ats/ui/f3";
 import { fetchTranscript, type TranscriptDto } from "./api";
 import { SegmentView } from "./SegmentView";
 import { t } from "./i18n";

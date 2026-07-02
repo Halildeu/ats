@@ -288,6 +288,8 @@ jobs:
           npm ci --no-audit --no-fund
           npx tsc -p tsconfig.json --noEmit
           npx vite build
+      - name: "F3 bundle minimal-yuzey guard'i"
+        run: node scripts/check-mfe-bundle.mjs
 
   mfe-start-gate-guard:
     # docs/frontend/mfe-start-gate.md drift guard (ATS-0008 D-C): snapshot SHA 40-hex dondurulmuş +

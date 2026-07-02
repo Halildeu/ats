@@ -1,4 +1,4 @@
-import { Badge, Text } from "@ats/ui";
+import { Badge, Text } from "@ats/ui/f3";
 import type { Segment } from "./api";
 import { t } from "./i18n";
 

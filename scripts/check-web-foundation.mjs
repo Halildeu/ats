@@ -79,18 +79,22 @@ function runChecks(tokens, i18n, contracts) {
 // dizinlerinde ÇALIŞAN UI'a İZİN VAR (runtime yasağı P1-öncesi dönemin kuralıydı;
 // gate-locked kalan şey RELEASE/gerçek-aday-verisi — ATS-0016). mfe-dışı web/
 // yüzeyleri (tokens/i18n/contracts) için no-runtime iddiası AYNEN sürer.
-const RUNTIME_ALLOWED = /^mfe-[a-z0-9-]+\//;
-function pathScan() {
+// UYGULAMA-ÖZEL allowlist (Codex #68 blocker-2): her yeni MFE buraya AÇIK eklenir
+// (otomatik mfe-* serbestliği YOK — görünür karar + kendi CI build job'u şart).
+const RUNTIME_ALLOWED = /^mfe-interview-evidence\//;
+function pathScan(fileList) {
   const errors = [];
-  let files;
-  try { files = readdirSync(WEB, { recursive: true }); } catch { return ["web/ okunamadı"]; }
+  let files = fileList;
+  if (!files) {
+    try { files = readdirSync(WEB, { recursive: true }); } catch { return ["web/ okunamadı"]; }
+  }
   for (const f of files) {
     const rel = String(f);
     if (/(^|\/)(node_modules|dist)\//.test(rel)) continue; // vendor/derleme çıktısı taranmaz (commit'e de girmez)
     if (RUNTIME_ALLOWED.test(rel)) continue; // P1 MFE runtime'ı (ATS-0016; mfe-start-gate KARŞILANDI)
     if (/\.(tsx|jsx)$/.test(rel)) errors.push(`web/${rel}: .tsx/.jsx YASAK (çalışan-UI; runtime gate-locked)`);
     if (/\.stories\./.test(rel)) errors.push(`web/${rel}: story dosyası YASAK (runtime gate-locked)`);
-    if (/\.(ts|js|mjs|cjs|mts|cts)$/.test(rel)) {
+    if (!fileList && /\.(ts|js|mjs|cjs|mts|cts)$/.test(rel)) {
       let body = ""; try { body = readFileSync(join(WEB, rel), "utf8"); } catch { continue; }
       const clean = body.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
       for (const re of RUNTIME_PAT) if (re.test(clean)) errors.push(`web/${rel}: runtime pattern ${re} YASAK`);
@@ -100,6 +104,12 @@ function pathScan() {
 }
 
 function selfTest() {
+  const psFailed = [];
+  if (pathScan(["foo/App.tsx"]).length === 0) psFailed.push("non-mfe-tsx-must-fail");
+  if (pathScan(["mfe-interview-evidence/src/App.tsx"]).length !== 0) psFailed.push("allowed-mfe-must-pass");
+  if (pathScan(["mfe-unknown/src/App.tsx"]).length === 0) psFailed.push("unlisted-mfe-must-fail");
+  if (psFailed.length > 0) return psFailed;
+
   const clone = (x) => JSON.parse(JSON.stringify(x));
   const cases = [
     ["low-contrast", () => { const t = clone(TOKENS); t.color_pairs[0] = { id: "bad", fg: "#AAAAAA", bg: "#FFFFFF", kind: "text", min_ratio: 4.5 }; return [t, I18N, CONTRACTS]; }],
@@ -128,4 +138,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`web-foundation OK — ${TOKENS.color_pairs.length} token (kontrast HESAPLANDI ≥WCAG), ${Object.keys(I18N.messages).length} tr-TR mesaj, contracts forbidden/free-text/runtime temiz, web/ path-scan çalışan-UI yok; self-test 12 negatif vektör fail ediyor.`);
+console.log(`web-foundation OK — ${TOKENS.color_pairs.length} token (kontrast HESAPLANDI ≥WCAG), ${Object.keys(I18N.messages).length} tr-TR mesaj, contracts forbidden/free-text/runtime temiz, web/ path-scan: mfe-interview-evidence runtime İZİNLİ (ATS-0016+gate), mfe-dışı yüzeyler no-runtime temiz; self-test 12 negatif vektör fail ediyor.`);
