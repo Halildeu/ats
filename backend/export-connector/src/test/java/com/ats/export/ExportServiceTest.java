@@ -284,6 +284,51 @@ class ExportServiceTest {
     }
 
     @Test
+    void not_supported_maps_to_schema_unsupported_enum() {
+        String notSupKey = citationStore.put(new Citation(T1, I1, "i1/tr-1", "desteklenmeyen ek iddia",
+                List.of(1), Entailment.NOT_SUPPORTED)).asOptional().orElseThrow();
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-1"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm", notSupKey, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        ExportReceipt receipt = service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey, notSupKey), c, "2026-07-02T14:00:00Z")
+                .asOptional().orElseThrow();
+        String packet = artifactStore.find(T1, I1, receipt.artifactKey()).asOptional().orElseThrow();
+        assertTrue(packet.contains("\"unsupported\""), "NOT_SUPPORTED → schema enum 'unsupported'");
+        assertFalse(packet.contains("not_supported"), "schema-dışı 'not_supported' üretimi yasak");
+    }
+
+    @Test
+    void insufficient_claim_not_exportable_fail_closed() {
+        String insKey = citationStore.put(new Citation(T1, I1, "i1/tr-1", "belirsiz iddia",
+                List.of(1), Entailment.INSUFFICIENT)).asOptional().orElseThrow();
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-1"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm", insKey, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        assertFalse(service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey, insKey), c, "2026-07-02T14:00:00Z").isOk(),
+                "INSUFFICIENT schema enum dışı — belirsiz iddia denetim paketine giremez (fail-closed)");
+    }
+
+    @Test
+    void any_exported_claim_without_sources_rejected_min_items() {
+        String emptyNotSup = citationStore.put(new Citation(T1, I1, "i1/tr-1", "kaynaksiz unsupported",
+                List.of(), Entailment.NOT_SUPPORTED)).asOptional().orElseThrow();
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-1"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm", emptyNotSup, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        assertFalse(service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey, emptyNotSup), c, "2026-07-02T14:00:00Z").isOk(),
+                "schema minItems:1 — HER exported claim kaynaklı olmalı");
+    }
+
+    @Test
     void supported_citation_without_sources_not_exportable() {
         String badCitation = citationStore.put(new Citation(T1, I1, "i1/tr-1", "kaynaksiz iddia", List.of(), Entailment.SUPPORTED))
                 .asOptional().orElseThrow();

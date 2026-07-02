@@ -27,7 +27,6 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -65,6 +64,20 @@ public final class ExportService {
 
     static String refSafe(String internalKey) {
         return internalKey == null ? null : internalKey.replace('/', '.');
+    }
+
+    /**
+     * Schema entailment enum eşlemesi (Codex iter-2 blocker): supported | unsupported.
+     * INSUFFICIENT schema'da YOK ve denetim paketine belirsiz iddia GİRMEZ (fail-closed reject;
+     * partially_supported'a otomatik map semantik olarak yanlış olurdu) — çağıran ya claim'i
+     * çözer (yeniden değerlendirme) ya export setinden çıkarır.
+     */
+    static String schemaEntailment(Entailment e) {
+        return switch (e) {
+            case SUPPORTED -> "supported";
+            case NOT_SUPPORTED -> "unsupported";
+            case INSUFFICIENT -> null;
+        };
     }
 
     public record ExportReceipt(String artifactKey, String evidenceId, String packetDigest, int claimCount) {}
@@ -126,8 +139,14 @@ public final class ExportService {
                 return Outcome.fail(OutcomeCode.INVALID,
                         "claim rubric kriterine bağlanamadı (iş-ilişkililik zinciri kopuk): " + citationKey);
             }
-            if (citation.entailment() == Entailment.SUPPORTED && citation.segmentIndexes().isEmpty()) {
-                return Outcome.fail(OutcomeCode.INVALID, "kaynaksız SUPPORTED export edilemez: " + citationKey);
+            String entailment = schemaEntailment(citation.entailment());
+            if (entailment == null) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "INSUFFICIENT claim export edilemez (schema enum dışı; belirsiz iddia denetim paketine girmez): " + citationKey);
+            }
+            // schema claims[].source_segment_refs minItems:1 — HER exported claim kaynaklı olmalı
+            if (citation.segmentIndexes().isEmpty()) {
+                return Outcome.fail(OutcomeCode.INVALID, "kaynaksız claim export edilemez (schema minItems 1): " + citationKey);
             }
             String claimId = refSafe(citationKey);
             List<JsonValue> segRefs = new ArrayList<>();
@@ -140,7 +159,7 @@ public final class ExportService {
                     "statement_ref", JsonValue.of(claimId),
                     "criterion_id", JsonValue.of(criterionId),
                     "source_segment_refs", new JsonValue.JsonArray(segRefs),
-                    "entailment", JsonValue.of(citation.entailment().name().toLowerCase(Locale.ROOT)),
+                    "entailment", JsonValue.of(entailment),
                     "human_reviewed", JsonValue.of(true))));
             claimTexts.add(citation.claim());
             citationByClaimId.put(claimId, citation);
