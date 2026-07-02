@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>retention-dsr</artifactId>
+
+  <!-- PRD-P1 F10 DSR/erasure orkestrasyonu (ATS-0016 slice-6, port-only; ATS-0008 modül adı).
+       ATS-0003 runtime karşılığı: content-plane silinir (transcript/citation/export-artifact),
+       WORM SİLİNMEZ — append-only tombstone; vaka non-terminal ise WITHDRAWN'a taşınır.
+       Retention-TIMER bilinçli DIŞARIDA: saklama-süresi hesabı persist timestamp gerektirir
+       (persistence-unlock slice'ı); bu modül "yapıldı" DEMEZ. Crypto-erase/HMAC-salt-destruction
+       key-mgmt düzlemi (ATS-0007) — burada port'lardan mantıksal silme + tombstone yapılır. -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ops-events</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ai-orchestration</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>human-review</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>export-connector</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>consent</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
