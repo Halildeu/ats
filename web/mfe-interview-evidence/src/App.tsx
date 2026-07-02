@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Text } from "@ats/ui/f3";
 import { fetchTranscript, type TranscriptDto } from "./api";
+import { ReviewWorkspace } from "./ReviewWorkspace";
 import { SegmentView } from "./SegmentView";
 import { t } from "./i18n";
 import { handleCallback, oidcConfigFromEnv, startLogin } from "./oidc";
@@ -111,6 +112,8 @@ export default function App() {
             {t("transcript.segmentsHeading", { count: transcript.segments.length })}
           </Text>
           <SegmentView segments={transcript.segments} />
+          <ReviewWorkspace token={token} interviewId={interviewId.trim()}
+              transcriptKey={transcriptKey.trim()} />
         </section>
       )}
     </main>
