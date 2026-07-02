@@ -125,8 +125,11 @@ class HttpAIProviderTest {
         nextBody.set("""
                 {"claim":"x","source_segment_refs":[0],"entailment":"supported"}""");
         assertFalse(provider().cite("x", "t").isOk(), "ref array'inde string-dışı eleman → fail-closed");
-        // Codex blocker-1: bozuk \\u escape RuntimeException DEĞİL Outcome.fail üretmeli
-        nextBody.set("{\"language\":\"tr\",\"segments\":[{\"speaker\":\"s\",\"start_ms\":0,\"end_ms\":1,\"text\":\"\\\\uZZZZ\"}]}");
+        // Codex blocker-1: bozuk u-escape RuntimeException DEĞİL Outcome.fail üretmeli.
+        // Wire'da TEK backslash + "uZZZZ" olmalı; Java kaynak-seviyesi u-escape işlediği için
+        // vektör birleştirmeyle kurulur (kaynakta ham backslash-u dizisi yazılamaz).
+        nextBody.set("{\"language\":\"tr\",\"segments\":[{\"speaker\":\"s\",\"start_ms\":0,\"end_ms\":1,\"text\":\""
+                + "\\" + "uZZZZ" + "\"}]}");
         assertFalse(provider().transcribe("ref").isOk(), "bozuk unicode-escape fail-closed Outcome olmalı");
     }
 
