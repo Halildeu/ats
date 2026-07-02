@@ -29,6 +29,8 @@
     "transcript.keyLabel": "Transkript anahtarı",
     "transcript.loadButton": "Transkripti getir",
     "transcript.segmentsHeading": "{count} segment",
-    "transcript.empty": "Bu transkriptte segment yok."
+    "transcript.empty": "Bu transkriptte segment yok.",
+    "auth.login": "Kurumsal kimlikle giriş yap",
+    "auth.loggedIn": "Giriş yapıldı — oturum yalnız bu sekmede (yenilemede düşer)."
   }
 }
