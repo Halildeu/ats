@@ -154,6 +154,25 @@ class PostgresStoresTest {
         assertFalse(consents.find(T2, iv).isOk(), "cross-tenant NOT_FOUND");
     }
 
+    @Test
+    void app_role_privilege_matrix_content_deletable_state_not() throws java.sql.SQLException {
+        String trKey = transcripts.put(sampleTranscript()).asOptional().orElseThrow();
+        String caseKey = cases.put(new ReviewCase(T1, I1, ReviewState.AI_SUGGESTED,
+                List.of("r"), "v", null, null, null, null, null, null, null)).asOptional().orElseThrow();
+        try (java.sql.Connection c = ds.getConnection(); java.sql.Statement st = c.createStatement()) {
+            st.execute("SET ROLE ats_app");
+            // content-plane: DELETE İZİNLİ
+            st.execute("DELETE FROM transcript WHERE tenant_id = 't1' AND transcript_key = '"
+                    + trKey.replace("'", "''") + "'");
+            // state tablosu: DELETE YASAK (grant yok) — state-machine korunur
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class,
+                    () -> st.execute("DELETE FROM review_case WHERE tenant_id = 't1'"),
+                    "state tablosunda app-role DELETE edemez");
+            st.execute("RESET ROLE");
+        }
+        assertTrue(cases.find(T1, I1, caseKey).isOk(), "state satırı duruyor");
+    }
+
     /** Orkestrasyon PG-smoke: CitationService, TAMAMEN PG store'lar + PG WORM ledger ile uçtan uca. */
     @Test
     void citation_service_end_to_end_on_postgres_stores() {

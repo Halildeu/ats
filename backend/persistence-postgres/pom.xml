@@ -10,10 +10,10 @@
   </parent>
   <artifactId>persistence-postgres</artifactId>
 
-  <!-- ATS-0018 slice-8a: worm_ledger PostgreSQL adapter'ı (plain-JDBC; JPA/Hibernate/Spring-Data
-       YOK — ADR karar-2). Main kod YALNIZ java.sql/javax.sql kullanır (mevcut ArchUnit yasağı
-       DEĞİŞMEDEN kalır — planlanandan da dar); Flyway migration'ı test/composition katmanı
-       çağırır. Testler Testcontainers-PG16 (ADR karar-5; test-scope bağımlılık kabulü). -->
+  <!-- ATS-0018 slice-8a+8b: worm_ledger + 6 store PG adapterlari (plain-JDBC; JPA/Hibernate/Spring-Data
+       YOK — ADR karar-2). Main kod java.sql/javax.sql + domain PORT modüllerini kullanır (yön:
+       persistence → port; domain persistence'ı GÖRMEZ; JPA yasağı ArchUnit'te sürer); Flyway
+       migration'ı test/composition katmanı çağırır. Testler Testcontainers-PG16 (ADR karar-5). -->
 
   <properties>
     <postgresql.version>42.7.11</postgresql.version>
