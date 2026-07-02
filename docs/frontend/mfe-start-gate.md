@@ -40,7 +40,9 @@ ihtiyacı DOĞARSA ayrı karar (§4 lisans deseniyle) alınır — şimdi taşı
 - **AG Grid Enterprise: bu snapshot'ta YOK** (x-data-grid dışlandı) → lisans anahtarı şartı **şimdilik n/a**.
   İleride gerekirse desen HAZIR ve değişmez: build-time GitHub secret `AG_GRID_LICENSE_KEY`
   (Vault DEĞİL; platform kalıbı) + immutable-tag rebuild — o gün ayrı karar/PR.
-- Snapshot'taki OSS transitive bağımlılıklar mevcut `dependency-review` CI kapısından geçer (lisans/vuln).
+- OSS transitive bağımlılıklar: mevcut `dependency-review` CI'ı **vuln kapısıdır** (fail-on-severity: high);
+  **lisans-politikası enforcement'ı BU PR'DA YOK** (dürüst sınır) — release-evidence gate'inin
+  license/secret=0 disipliniyle release öncesi kapanır; snapshot-kopyası PR'ında ayrıca gözden geçirilir.
 
 ## 5. Upstream güncelleme politikası
 
