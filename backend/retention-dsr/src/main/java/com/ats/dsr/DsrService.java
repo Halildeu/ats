@@ -172,8 +172,8 @@ public final class DsrService {
      */
     public Outcome<PurgeReceipt> purgeExpired(TenantId tenantId, ActorId actorId,
             RetentionScanner scanner, String cutoffIso) {
-        if (scanner == null || isBlank(cutoffIso)) {
-            return Outcome.fail(OutcomeCode.INVALID, "scanner + cutoffIso zorunlu");
+        if (scanner == null || isBlank(cutoffIso) || actorId == null || isBlank(actorId.value())) {
+            return Outcome.fail(OutcomeCode.INVALID, "scanner + cutoffIso + actor zorunlu");
         }
         Outcome<java.util.List<RetentionScanner.ExpiredContent>> scanned = scanner.scanExpired(tenantId, cutoffIso);
         if (!(scanned instanceof Outcome.Ok<java.util.List<RetentionScanner.ExpiredContent>> ok)) {
@@ -208,8 +208,10 @@ public final class DsrService {
                 deleted++;
             }
             interviews++;
+            // actor_ref: taxonomy required-extra'sı reason_code; actor_ref denetim için EK taşınır
+            // (registry required = minimum; scheduler/operatör kimliği purge audit'inde değerli)
             emit(tenantId, RETENTION_PURGED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
-                    Map.of("reason_code", "retention_expired"));
+                    Map.of("reason_code", "retention_expired", "actor_ref", actorId.value()));
         }
         // boş tarama = meşru no-op (timer periyodik koşar); "silindi" iddiası receipt sayılarıyla dürüst
         return Outcome.ok(new PurgeReceipt(interviews, deleted));
