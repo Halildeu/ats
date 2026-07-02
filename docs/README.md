@@ -57,6 +57,7 @@
 
 ## Frontend standardı (public, living)
 - [frontend/a11y-i18n-standard.md](./frontend/a11y-i18n-standard.md) — ATS-0011 WCAG 2.2 AA + Türkçe-first i18n kanonik kriter registry'si (drift-guard `a11y-standard-guard`). Enforcement (axe/eslint/i18n-extract) P1 UI ile aktif.
+- [frontend/mfe-start-gate.md](./frontend/mfe-start-gate.md) — **ATS-0008 D-C P1 MFE START GATE sabitlemesi: KARŞILANDI** (platform-web snapshot SHA dondurulmuş + curated liste [x-data-grid/AG-Grid bilinçle dışlanmış → lisans n/a] + `@ats/ui` + manuel re-snapshot; drift-guard `mfe-start-gate-guard`) — `mfe-interview-evidence` UI dilimi AÇIK.
 
 ## Implementation (public, CI-yeşil)
 - `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)
