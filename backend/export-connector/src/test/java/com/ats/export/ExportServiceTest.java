@@ -98,7 +98,8 @@ class ExportServiceTest {
 
         citationKey = citationStore.put(new Citation(T1, I1, "i1/tr-1", CLAIM_TEXT, List.of(0, 2), Entailment.SUPPORTED))
                 .asOptional().orElseThrow();
-        caseKey = humanReview.open(T1, I1, List.of("fake-ev-cit-1"), "aiout-v1").asOptional().orElseThrow();
+        // karar-kanıtı ref'i = export edilecek claim (manifest: source_evidence_refs ⊆ claims)
+        caseKey = humanReview.open(T1, I1, List.of(citationKey), "aiout-v1").asOptional().orElseThrow();
         humanReview.startReview(T1, I1, caseKey, "human-opaque-1", "role-hiring-panel").asOptional();
         humanReview.recordEdit(T1, I1, caseKey, "cs-ref").asOptional();
         humanReview.recordRationale(T1, I1, caseKey, "rat-ref").asOptional();
@@ -138,6 +139,54 @@ class ExportServiceTest {
         assertTrue(sink.emitted().stream().anyMatch(e ->
                 e.eventTypeId().equals(ExportService.EXPORT_GENERATED_EVENT)
                         && HUMAN.value().equals(e.extras().get("actor_ref"))));
+        // schema $defs.ref pattern: slash'lı internal store anahtarı packet'e SIZAMAZ (refSafe '.'-map)
+        assertFalse(packet.contains("i1/cit"), "slash'lı internal key packet'e giremez (ref-pattern)");
+        assertTrue(packet.contains(ExportService.refSafe(citationKey)), "claim_id = refSafe(citation_key)");
+        assertTrue(packet.contains("pkt-" + ExportService.refSafe(caseKey)));
+    }
+
+    @Test
+    void decision_evidence_must_be_subset_of_exported_claims() {
+        String orphanCase = humanReview.open(T1, I1, List.of("baska-kanit-ref"), "aiout-v1").asOptional().orElseThrow();
+        humanReview.startReview(T1, I1, orphanCase, "human-opaque-1", "role-1").asOptional();
+        humanReview.recordEdit(T1, I1, orphanCase, "cs").asOptional();
+        humanReview.recordRationale(T1, I1, orphanCase, "rat").asOptional();
+        humanReview.finalizeDecision(T1, HUMAN, I1, orphanCase, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
+        ledger.entries.clear();
+        Outcome<ExportReceipt> out = service.exportPacket(T1, HUMAN, I1, orphanCase, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
+        assertFalse(out.isOk(), "karar-kanıtı claims dışıysa export fail-closed (manifest cross-invariant)");
+        assertTrue(ledger.entries.isEmpty());
+    }
+
+    @Test
+    void unsupported_claim_cannot_ground_decision() {
+        String unsupportedKey = citationStore.put(new Citation(T1, I1, "i1/tr-1", "desteklenmeyen iddia",
+                List.of(1), Entailment.NOT_SUPPORTED)).asOptional().orElseThrow();
+        String c2 = humanReview.open(T1, I1, List.of(unsupportedKey), "aiout-v1").asOptional().orElseThrow();
+        humanReview.startReview(T1, I1, c2, "human-opaque-1", "role-1").asOptional();
+        humanReview.recordEdit(T1, I1, c2, "cs").asOptional();
+        humanReview.recordRationale(T1, I1, c2, "rat").asOptional();
+        humanReview.finalizeDecision(T1, HUMAN, I1, c2, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-1"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(unsupportedKey, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        Outcome<ExportReceipt> out = service.exportPacket(T1, HUMAN, I1, c2, List.of(unsupportedKey), c, "2026-07-02T14:00:00Z");
+        assertFalse(out.isOk(), "unsupported claim karar-kanıtı olamaz (flag-and-exclude-from-decision)");
+    }
+
+    @Test
+    void slashy_context_ref_rejected_by_ref_pattern() {
+        ExportContext slashy = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent/with/slash"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        assertFalse(service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey), slashy, "2026-07-02T14:00:00Z").isOk(),
+                "schema ref-pattern ihlali fail-closed reddedilmeli");
     }
 
     @Test
