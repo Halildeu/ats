@@ -257,6 +257,21 @@ jobs:
       - name: speaker-attribution drift guard
         run: node scripts/check-speaker-attribution.mjs
 
+  ui-snapshot-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version: 20
+      - name: "@ats/ui snapshot butunluk guard'i (yasak token/path + closure + surface)"
+        run: node scripts/check-ui-snapshot.mjs
+      - name: "@ats/ui typecheck (tsc --noEmit, upstream-typed env)"
+        working-directory: packages/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc -p tsconfig.json --noEmit
+
   mfe-start-gate-guard:
     # docs/frontend/mfe-start-gate.md drift guard (ATS-0008 D-C): snapshot SHA 40-hex dondurulmuş +
     # 5 şart bölümü/checklist + curated/dışlanan listeler + AG-Grid-dışlama tokeni (sessiz dahil yasak) +

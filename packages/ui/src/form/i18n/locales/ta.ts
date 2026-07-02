@@ -1,0 +1,12 @@
+import type { ErrorMessageMap } from '../errorMessages';
+
+export const errorMessagesTa: ErrorMessageMap = {
+  required: (label) => `${label} தேவை`,
+  minLength: (label, min) => `${label} குறைந்தது ${min} எழுத்துகள் இருக்க வேண்டும்`,
+  maxLength: (label, max) => `${label} அதிகபட்சம் ${max} எழுத்துகள் இருக்க வேண்டும்`,
+  min: (label, min) => `${label} குறைந்தது ${min} ஆக இருக்க வேண்டும்`,
+  max: (label, max) => `${label} அதிகபட்சம் ${max} ஆக இருக்க வேண்டும்`,
+  pattern: (label) => `${label} வடிவம் தவறானது`,
+  email: (label) => `${label} சரியான மின்னஞ்சல் முகவரியாக இருக்க வேண்டும்`,
+  invalid: (label) => `${label} தவறானது`,
+};
