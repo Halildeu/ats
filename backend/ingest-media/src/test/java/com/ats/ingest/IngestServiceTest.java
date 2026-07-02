@@ -9,6 +9,7 @@ import com.ats.consent.InMemoryConsentStore;
 import com.ats.consent.RecordingPermission;
 import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.ingest.IngestService.IngestReceipt;
+import com.ats.ingest.ObjectStorePort.StoredObjectRef;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
@@ -99,6 +100,8 @@ class IngestServiceTest {
         assertTrue(out.isOk());
         IngestReceipt receipt = out.asOptional().orElseThrow();
         assertTrue(objectStore.contains(T1, receipt.objectKey()));
+        assertTrue(receipt.objectKey().startsWith("i1/rec-"), "anahtar content-addressed opak olmalı");
+        assertFalse(receipt.objectKey().contains("kayit.wav"), "filename anahtara/ledger'a giremez (PII düzlemi)");
         assertEquals(1, ledger.entries().size());
         assertEquals(IngestService.LEDGER_EVENT_TYPE, ledger.entries().get(0).eventType());
         OperationalEvent ok = sink.emitted().stream()
@@ -109,9 +112,50 @@ class IngestServiceTest {
     }
 
     @Test
-    void filename_traversal_rejected_at_request_construction() {
+    void same_filename_different_content_does_not_overwrite() {
+        grantConsent();
+        byte[] other = "SENTETIK-FARKLI-ICERIK".getBytes(StandardCharsets.UTF_8);
+        IngestReceipt r1 = service.uploadRecording(request(), SYNTHETIC_WAV).asOptional().orElseThrow();
+        IngestReceipt r2 = service.uploadRecording(request(), other).asOptional().orElseThrow();
+        assertFalse(r1.objectKey().equals(r2.objectKey()), "farklı içerik farklı anahtara düşmeli");
+        assertEquals(2, objectStore.size(), "overwrite yok — iki obje ayrı durur");
+        assertEquals(2, ledger.entries().size());
+    }
+
+    @Test
+    void rollback_failure_is_not_swallowed() {
+        grantConsent();
+        ObjectStorePort deleteFailingStore = new ObjectStorePort() {
+            @Override
+            public Outcome<StoredObjectRef> put(TenantId t, String key, byte[] bytes) {
+                return objectStore.put(t, key, bytes);
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String key) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "delete unavailable (test)");
+            }
+        };
+        IngestService svc = new IngestService(
+                new ConsentGate(consentStore, sink),
+                new LocalPatternScanAdapter(), deleteFailingStore, new FailingLedger(), sink);
+        Outcome<IngestReceipt> out = svc.uploadRecording(request(), SYNTHETIC_WAV);
+        assertFalse(out.isOk());
+        assertTrue(((Outcome.Fail<IngestReceipt>) out).reason().contains("telafi silmesi başarısız"),
+                "rollback fail'i yutulmamalı");
+        OperationalEvent failed = sink.emitted().stream()
+                .filter(e -> e.eventTypeId().equals(IngestService.APPEND_FAILED_EVENT))
+                .findFirst().orElseThrow();
+        assertEquals("ledger_unavailable_rollback_failed", failed.extras().get("reason_code"));
+    }
+
+    @Test
+    void filename_traversal_and_content_type_allowlist_enforced() {
         assertFalse(UploadRequest.create(T1, A1, I1, "../etc/passwd", "audio/wav", "2026-07-02T10:00:00Z").isOk());
         assertFalse(UploadRequest.create(T1, A1, I1, "a/../b.wav", "audio/wav", "2026-07-02T10:00:00Z").isOk());
         assertFalse(UploadRequest.create(T1, A1, I1, ".gizli", "audio/wav", "2026-07-02T10:00:00Z").isOk());
+        assertFalse(UploadRequest.create(T1, A1, I1, "kayit.exe", "application/x-msdownload", "2026-07-02T10:00:00Z").isOk(),
+                "contentType kapalı allowlist dışı reddedilmeli");
+        assertTrue(UploadRequest.create(T1, A1, I1, "kayit.mp4", "video/mp4", "2026-07-02T10:00:00Z").isOk());
     }
 }

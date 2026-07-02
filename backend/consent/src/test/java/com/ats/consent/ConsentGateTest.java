@@ -61,4 +61,30 @@ class ConsentGateTest {
         Outcome<Void> out = gate.requireRecordingAllowed(T2, I1);
         assertFalse(out.isOk(), "tenant-scope: T1 izni T2'ye sızamaz");
     }
+
+    @Test
+    void store_rejects_incomplete_permission() {
+        assertFalse(store.put(new RecordingPermission(T1, I1, "subj", null, "2026-07-02T00:00:00Z")).isOk());
+        assertFalse(store.put(new RecordingPermission(T1, I1, null, PermissionState.GRANTED, "2026-07-02T00:00:00Z")).isOk());
+    }
+
+    @Test
+    void malformed_null_state_record_denies_instead_of_throwing() {
+        // store validasyonunu bypass eden bozuk kaynak senaryosu (Codex #48 major-4)
+        ConsentStore malformed = new ConsentStore() {
+            @Override
+            public Outcome<Void> put(RecordingPermission p) {
+                return Outcome.ok(null);
+            }
+
+            @Override
+            public Outcome<RecordingPermission> find(TenantId t, InterviewId i) {
+                return Outcome.ok(new RecordingPermission(t, i, "subj", null, "2026-07-02T00:00:00Z"));
+            }
+        };
+        ConsentGate malformedGate = new ConsentGate(malformed, sink);
+        Outcome<Void> out = malformedGate.requireRecordingAllowed(T1, I1);
+        assertFalse(out.isOk());
+        assertEquals("consent_state_invalid", sink.emitted().get(0).extras().get("reason_code"));
+    }
 }

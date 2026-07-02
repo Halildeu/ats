@@ -6,7 +6,11 @@ import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
 
-/** Upload-ingest isteği (PRD-P1 F1). filename path-traversal reddi resolved-form kontrolüyle. */
+/**
+ * Upload-ingest isteği (PRD-P1 F1). filename yalnız istek-doğrulama düzleminde yaşar —
+ * WORM ledger'a/objekt-anahtarına GİRMEZ (PII taşıyabilir; Codex #48 blocker-1);
+ * contentType kapalı allowlist (free-form değer immutable düzleme sokulmaz).
+ */
 public record UploadRequest(
         TenantId tenantId,
         ActorId actorId,
@@ -17,6 +21,10 @@ public record UploadRequest(
 
     private static final java.util.regex.Pattern SAFE_FILENAME =
             java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,254}");
+
+    /** Kapalı medya-tipi allowlist'i (mülakat kaydı formatları). */
+    static final java.util.Set<String> ALLOWED_CONTENT_TYPES = java.util.Set.of(
+            "audio/wav", "audio/mpeg", "audio/mp4", "audio/webm", "video/mp4", "video/webm");
 
     public static Outcome<UploadRequest> create(
             TenantId tenantId,
@@ -31,8 +39,8 @@ public record UploadRequest(
         if (filename == null || !SAFE_FILENAME.matcher(filename).matches() || filename.contains("..")) {
             return Outcome.fail(OutcomeCode.INVALID, "filename güvenli değil (allowlist + traversal reddi)");
         }
-        if (contentType == null || contentType.isBlank()) {
-            return Outcome.fail(OutcomeCode.INVALID, "contentType zorunlu");
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
+            return Outcome.fail(OutcomeCode.INVALID, "contentType allowlist dışı: " + contentType);
         }
         if (occurredAtIso == null || occurredAtIso.isBlank()) {
             return Outcome.fail(OutcomeCode.INVALID, "occurredAtIso zorunlu (ISO-8601 string)");

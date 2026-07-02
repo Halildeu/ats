@@ -34,6 +34,10 @@ public final class ConsentGate {
             return deny(tenantId, "consent_record_missing");
         }
         PermissionState state = ok.value().state();
+        if (state == null) {
+            // malformed kayıt deny-by-default'u exception'a çeviremez (Codex #48 major-4)
+            return deny(tenantId, "consent_state_invalid");
+        }
         if (state != PermissionState.GRANTED) {
             // Locale.ROOT: tr-locale'de "WITHDRAWN".toLowerCase() "wıthdrawn" üretir (noktasız ı) —
             // reason_code makine-okur sabit olmalı

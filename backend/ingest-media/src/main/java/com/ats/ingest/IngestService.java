@@ -66,7 +66,11 @@ public final class IngestService {
             return Outcome.fail(OutcomeCode.INVALID, "içerik-tarama reddi (fail-closed)");
         }
 
-        String key = request.interviewId().value() + "/" + request.filename();
+        // Content-addressed OPAK anahtar (Codex #48 blocker-1/2): filename (PII taşıyabilir)
+        // anahtara/ledger'a GİRMEZ; aynı-isim-farklı-içerik farklı anahtara düşer (overwrite yok),
+        // aynı-içerik retry'ı byte-identical idempotent yazımdır.
+        String contentHash = sha256Hex(payload);
+        String key = request.interviewId().value() + "/rec-" + contentHash;
         Outcome<StoredObjectRef> stored = objectStore.put(request.tenantId(), key, payload);
         if (!(stored instanceof Outcome.Ok<StoredObjectRef> storedOk)) {
             return Outcome.fail(OutcomeCode.INVALID, "medya deposuna yazılamadı");
@@ -78,16 +82,24 @@ public final class IngestService {
                 request.interviewId(),
                 LEDGER_EVENT_TYPE,
                 request.occurredAtIso(),
-                request.tenantId().value() + ":" + key,
-                sha256Hex(payload),
+                request.tenantId().value() + ":" + request.interviewId().value() + ":" + contentHash,
+                contentHash,
                 JsonValue.object(Map.of(
                         "object_key", JsonValue.of(key),
                         "content_type", JsonValue.of(request.contentType()),
                         "size_bytes", JsonValue.of((double) storedOk.value().sizeBytes())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
-            objectStore.delete(request.tenantId(), key); // fail-closed telafi: kanıtsız medya bırakılmaz
-            emit(request, APPEND_FAILED_EVENT, "error", PiiClass.ID_ONLY, Map.of("reason_code", "ledger_unavailable"));
-            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "evidence ledger append başarısız (fail-closed; medya geri alındı)");
+            // fail-closed telafi: kanıtsız medya bırakılmaz; telafinin KENDİSİ fail olursa yutulmaz (Codex #48 major-3)
+            Outcome<Void> rolledBack = objectStore.delete(request.tenantId(), key);
+            if (rolledBack.isOk()) {
+                emit(request, APPEND_FAILED_EVENT, "error", PiiClass.ID_ONLY, Map.of("reason_code", "ledger_unavailable"));
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
+                        "evidence ledger append başarısız (fail-closed; medya geri alındı)");
+            }
+            emit(request, APPEND_FAILED_EVENT, "error", PiiClass.ID_ONLY,
+                    Map.of("reason_code", "ledger_unavailable_rollback_failed"));
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
+                    "evidence ledger append başarısız VE telafi silmesi başarısız — medya kanıtsız kalmış olabilir (operasyonel müdahale gerekir)");
         }
 
         LedgerEntry entry = entryOk.value();

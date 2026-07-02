@@ -14,8 +14,9 @@ public final class InMemoryConsentStore implements ConsentStore {
 
     @Override
     public Outcome<Void> put(RecordingPermission permission) {
-        if (permission == null || permission.tenantId() == null || permission.interviewId() == null) {
-            return Outcome.fail(OutcomeCode.INVALID, "permission/tenantId/interviewId zorunlu");
+        if (permission == null || permission.tenantId() == null || permission.interviewId() == null
+                || permission.state() == null || permission.subjectRef() == null || permission.recordedAtIso() == null) {
+            return Outcome.fail(OutcomeCode.INVALID, "permission alanları zorunlu (state/subjectRef/recordedAtIso dahil)");
         }
         byTenantAndInterview.put(key(permission.tenantId(), permission.interviewId()), permission);
         return Outcome.ok(null);
