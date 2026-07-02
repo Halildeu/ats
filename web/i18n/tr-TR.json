@@ -21,6 +21,14 @@
     "review.exported": "Kanıt paketi dışa aktarıldı",
     "dsar.requestReceived": "Veri sahibi talebi alındı",
     "error.required": "Bu alan zorunludur",
-    "error.generic": "Bir sorun oluştu; lütfen tekrar deneyin"
+    "error.generic": "Bir sorun oluştu; lütfen tekrar deneyin",
+    "transcript.title": "Transkript — Segment Görünümü",
+    "transcript.loadFormLabel": "Transkript yükleme formu",
+    "transcript.tokenLabel": "Erişim anahtarı (JWT)",
+    "transcript.interviewIdLabel": "Mülakat kimliği",
+    "transcript.keyLabel": "Transkript anahtarı",
+    "transcript.loadButton": "Transkripti getir",
+    "transcript.segmentsHeading": "{count} segment",
+    "transcript.empty": "Bu transkriptte segment yok."
   }
 }
