@@ -55,7 +55,12 @@ function walk(dir, out) {
 
 function runChecks(text, snapshotFiles = []) {
   const errors = [];
-  if (!/`Halildeu\/platform-web`/.test(text)) errors.push("kaynak repo satırı eksik");
+  // Kaynak-repo pini YAPISAL kontrol edilir (backtick'li owner/repo tablo satırı).
+  // Repo adı literal'i bilinçli olarak bu script'te YOK: ATS-0001 boundary-guard kod
+  // dosyalarında platform-repo referansı yasaklar (ADR-0001); provenance pini dokümanda yaşar.
+  if (!/\| Kaynak repo \| `[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+` \|/.test(text)) {
+    errors.push("kaynak repo satırı eksik (| Kaynak repo | `owner/repo` | formatı şart)");
+  }
   if (!/\*\*Snapshot commit SHA\*\* \| `[0-9a-f]{40}`/.test(text)) {
     errors.push("snapshot SHA eksik/40-hex değil (dondurulmuş nokta şart)");
   }
@@ -99,6 +104,7 @@ function selfTest() {
     ["namespace-changed", base.replaceAll("`@ats/ui`", "`@acme/ui`")],
     ["exclusion-row-removed", mut("BİLİNÇLE KAPSAM DIŞI", "Dahil edilenler")],
     ["license-overclaim", mut("**vuln kapısıdır** (fail-on-severity: high)", "kapıdır (lisans/vuln)")],
+    ["source-repo-row-removed", mut("| Kaynak repo |", "| Kaynak |")],
   ];
   const failed = [];
   for (const [name, txt] of cases) if (runChecks(txt).length === 0) failed.push(name);
@@ -117,4 +123,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log("mfe-start-gate OK — SHA dondurulmuş (40-hex), 5 şart bölümü + checklist tam, curated/dışlanan listeler pinli, AG-Grid hem doküman-tokeni hem GERÇEK snapshot-dosya taramasıyla dışarıda, lisans-overclaim yasak, namespace @ats/ui, manuel re-snapshot; self-test 8 negatif vektör fail ediyor.");
+console.log("mfe-start-gate OK — SHA dondurulmuş (40-hex) + kaynak-repo satırı yapısal pinli, 5 şart bölümü + checklist tam, curated/dışlanan listeler pinli, AG-Grid hem doküman-tokeni hem GERÇEK snapshot-dosya taramasıyla dışarıda, lisans-overclaim yasak, namespace @ats/ui, manuel re-snapshot; self-test 9 negatif vektör fail ediyor.");
