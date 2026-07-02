@@ -53,7 +53,9 @@ class SecurityConfig {
             "ats.transcript.read", "TRANSCRIPT_READ",
             "ats.citation.write", "CITATION_WRITE",
             "ats.review.write", "REVIEW_WRITE",
-            "ats.review.read", "REVIEW_READ");
+            "ats.review.read", "REVIEW_READ",
+            "ats.export.write", "EXPORT_WRITE",
+            "ats.dsar.write", "DSAR_WRITE");
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
@@ -75,6 +77,11 @@ class SecurityConfig {
                                 "/api/v1/interviews/*/review-case/transition",
                                 "/api/v1/interviews/*/review-case/finalize")
                             .hasAuthority("REVIEW_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/export")
+                            .hasAuthority("EXPORT_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar",
+                                "/api/v1/interviews/*/dsar/erasure")
+                            .hasAuthority("DSAR_WRITE")
                         // bilinmeyen yüzey: fail-closed (yeni endpoint = açık matcher + scope kararı)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(j -> j
