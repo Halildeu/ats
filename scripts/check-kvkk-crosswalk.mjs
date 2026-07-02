@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * KVKK crosswalk drift guard'ı: docs/compliance/kvkk-p1-crosswalk.md
- *  1. Zorunlu K1..K10 satırları + zorunlu bölümler + hukuki-görüş-değildir disclaimer'ı.
+ *  1. Zorunlu K1..K11 satırları + zorunlu bölümler + hukuki-görüş-değildir disclaimer'ı.
  *  2. Kanıt kolonundaki HER backtick'li repo-path GERÇEKTEN VAR (kod silinir/taşınırsa
  *     crosswalk yalan söylemesin — self-attestation değil makine-doğrulama).
  *  3. Durum sözlüğü kapalı: enforced (CI) | enforced (repo-test) (başka iddia giremez —
