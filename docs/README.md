@@ -16,7 +16,7 @@
 | [ATS-0011](./adr/ATS-0011-accessibility-i18n-standard.md) | accessibility (WCAG 2.2 AA) + i18n (Türkçe-first) | Accepted |
 | [ATS-0012](./adr/ATS-0012-interview-analysis-dimensions.md) | mülakat analiz-boyutları (Art.5 affect/biometric kaçınma + deception dışlama) | Önerildi |
 | [ATS-0013](./adr/ATS-0013-speaker-attribution-diarization-vs-voice-id.md) | speaker attribution (diarization + biyometrisiz eşleme; sesten-kimlik default-dışlanmış) | Önerildi |
-| [ATS-0014](./adr/ATS-0014-voice-enrollment-optin-internal-only.md) | voice-enrollment opt-in (YALNIZ iç-kullanıcı; aday kategorik-dışlanmış + eleme-yoluyla tespit) | Önerildi — owner risk-kabul bekliyor |
+| [ATS-0014](./adr/ATS-0014-voice-enrollment-optin-internal-only.md) | voice-enrollment opt-in (YALNIZ iç-kullanıcı; aday kategorik-dışlanmış + eleme-yoluyla tespit) | Accepted — owner beyanı 2026-07-02 (runtime P1 + imzalı-DPIA/VERBIS çift kilit) |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
@@ -42,12 +42,14 @@
 
 ## AI yönetişimi (public, living)
 - [ai-governance/interview-analysis-dimensions.md](./ai-governance/interview-analysis-dimensions.md) — ATS-0012 mülakat analiz-boyutları: içerik-tabanlı (CV-tutarlılık/çelişki/kalite/kapsama/citation; Art.5-yasaklı-affect/biometric'ten **kaçınma** tasarımı); duygu/ses-ton/davranış (Art.5) + yalan/deception (ürün-politikası) **excluded→safe-alternative** (drift-guard `analysis-dimensions-guard`; uygunluk iddiası değil).
-- [ai-governance/speaker-attribution-standard.md](./ai-governance/speaker-attribution-standard.md) — ATS-0013 paylaşımlı tek-mikrofon senaryosu: **diarization = ayrıştırma** (session-scoped, takma-ad S1..Sn; kalıcı şablon YOK) + **biyometrisiz attribution** (cihaz-metadata / sözlü-tanıtım-lexical / katılımcı-cihazı / insan-etiketleme; insan onayı zorunlu); **sesten-kimlik (voiceprint) default-dışlanmış sentinel** (drift-guard `speaker-attribution-guard`).
+- [ai-governance/speaker-attribution-standard.md](./ai-governance/speaker-attribution-standard.md) — ATS-0013 paylaşımlı tek-mikrofon senaryosu: **diarization = ayrıştırma** (session-scoped, takma-ad S1..Sn; kalıcı şablon YOK) + **biyometrisiz attribution** (cihaz-metadata / sözlü-tanıtım-lexical / katılımcı-cihazı / insan-etiketleme; insan onayı zorunlu); **sesten-kimlik (voiceprint): ATS-0014 owner-onaylı internal-only sentinel — aday DAİMA dışlanmış, runtime P1+imzalı-DPIA çift kilit** (drift-guard `speaker-attribution-guard`).
 - [governance/human-oversight-standard.md](./governance/human-oversight-standard.md) — ATS-0004/0005 karar state-machine'i: "AI karar vermez; insan onaylar+gerekçe+kanıt" (drift-guard `human-oversight-guard`; otomatik-finalize yasak).
 - [ai-governance/eu-ai-act-technical-file-index.md](./ai-governance/eu-ai-act-technical-file-index.md) — ATS-0005 EU AI Act madde→artefakt **readiness** indeksi (drift-guard `eu-ai-act-guard`; overclaim-yasağı). Uygunluk beyanı DEĞİL.
 
 ## Mahremiyet / veri-yaşam-döngüsü (public, living)
 - [privacy/data-lifecycle-register.md](./privacy/data-lifecycle-register.md) — ATS-0003 operationalized: veri-sınıfı × retention/erasure/transfer kanonik matrisi (drift-guard `data-lifecycle-guard`). WORM-içerik-yasağı + crypto-erase/unlinkable invariantları makine-zorlanır (DPO/procurement yüzeyi).
+- [privacy/consent-texts-voice-enrollment.md](./privacy/consent-texts-voice-enrollment.md) — ATS-0014 rıza-metni TASLAKLARI: iç-kullanıcı enrollment açık-rızası + aday kayıt-rızası geçici-işleme ek-cümlesi (tenant adaptasyonu owner/DPO; hukuki görüş değildir).
+- [privacy/dpia-voice-enrollment.md](./privacy/dpia-voice-enrollment.md) — ATS-0014 DPIA + ölçülülük/alternatif-analizi TASLAĞI (owner/DPO sign-off PENDING; imzalı hali = runtime-enable kanıtı).
 
 ## Frontend standardı (public, living)
 - [frontend/a11y-i18n-standard.md](./frontend/a11y-i18n-standard.md) — ATS-0011 WCAG 2.2 AA + Türkçe-first i18n kanonik kriter registry'si (drift-guard `a11y-standard-guard`). Enforcement (axe/eslint/i18n-extract) P1 UI ile aktif.

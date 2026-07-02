@@ -9,13 +9,15 @@
  *     imzası/biyometrisi, şablon, enrollment, embedding, cross-session, speaker recognition, voice
  *     biometrics, konuşmacı tanıma); lexical_self_introduction + human_labeling satırında "insan onayı"
  *     tokeni ZORUNLU (otomatik kimlik iddiası yasak).
- *  §2 sentinel voiceprint_enrollment: excluded-biometric olarak DURMALI + aktif edilemez + koşulu
- *     ayrı-ADR/açık-rıza/owner-risk-kabul içermeli.
+ *  §2 sentinel voiceprint_enrollment (ATS-0014 owner beyanı 2026-07-02 sonrası): status =
+ *     active-internal-consented olarak DURMALI + §1'e taşınamaz + satırında iç-kullanıcı / aday-ASLA
+ *     (candidate_exclusion) / amaç-sınır / self-service / DPIA / P1 tokenları ZORUNLU (scope-daralması
+ *     machine-checked; aday-enrollment'a genişleme fail).
  *  §0 diarization embedding invariant cümlesi literal-pinli (silinemez/yumuşatılamaz).
  *  Bölüm yapısı allowlist: HER H2 yalnız §0–§4 (ara "## 1a." VE rakamsız "## Ek ..." kaçağı → fail).
  *  Cross-doc binding: event-taxonomy'de evidence.speaker.attributed + ledger_entry_ref + target_ref;
  *  data-lifecycle-register'da speaker_attribution_map.
- *  + gömülü self-test (16 negatif vektör).
+ *  + gömülü self-test (23 negatif vektör).
  *
  * Bağımsız (npm dep YOK), CI job `speaker-attribution-guard`. Regex ≠ runtime: attribution runtime P1.
  */
@@ -36,6 +38,11 @@ const SECTION_ALLOWED = new Set(["0.", "1.", "2.", "3.", "4."]);
 const FORBIDDEN_CONCEPT = /voiceprint|voice.?print|şablon|enrollment|embedding|cross.?session|biyometrik|biometric_signal|speaker.?identif|speaker.?recogni|voice.?biometri|ses.?izi|ses.?imzas|ses.?biyometri|konuşmacı.?tanıma/i;
 // §0 embedding invariant literal pin (invariant 5: silinemez/yumuşatılamaz)
 const EMBED_INVARIANT = "diarization embedding'leri **session-scoped**'tır; **persist edilmez**, **export edilmez**, **cross-session karşılaştırılmaz**";
+// sentinel koşul/scope hücresi LITERAL PIN (invariant 4; Codex iter: token-varlığı çelişkili genişletmeyi
+// yakalamaz — hücreye yapılan HER ekleme/çıkarma fail; bilinçli değişiklik = ADR + bu pin birlikte)
+const KOSUL_PIN = "owner design-plane risk-beyanı KAYITLI (2026-07-02, [[ATS-0014]] Accepted): YALNIZ iç-kullanıcı opt-in; aday ASLA enroll edilmez (candidate_exclusion; eleme-yoluyla öneri); amaç-sınırlı (yalnız attribution önerisi — authentication/izleme yasak) + self-service silme (crypto-erase, [[data-lifecycle-register]] `voiceprint_template`); rıza-metni + DPIA TASLAKLARI landed ([[consent-texts-voice-enrollment]], [[dpia-voice-enrollment]]) — fiili açık-rıza toplama + tenant yayımı + DPO/owner imzası + VERBIS = runtime-enable önkoşulu; runtime P1 gate-locked";
+// data-lifecycle voiceprint_template satırı zorunlu tokenlar (İNERT/gate durumu yumuşatılamaz)
+const VOICEPRINT_LIFE_TOKENS = ["gate-locked", "İNERT", "runtime P1", "imzalı-DPIA", "aday ASLA", "crypto-erase", "| none |"];
 
 function section(text, reHead) {
   const lines = text.split("\n"); let inSec = false; const out = [];
@@ -94,10 +101,20 @@ function runChecks(text, taxText, lifeText) {
   if (!sentinelRow) errors.push(`sentinel ${SENTINEL} §2'de eksik (silinemez)`);
   else {
     const [, , kosul, status] = sentinelRow;
-    if (status !== "excluded-biometric") errors.push(`${SENTINEL}: status excluded-biometric olmalı ("${status}")`);
-    if (!/ayrı ADR/i.test(kosul) || !/açık.?rıza/i.test(kosul) || !/risk-kabul/i.test(kosul)) {
-      errors.push(`${SENTINEL}: koşul satırı ayrı-ADR + açık-rıza + owner-risk-kabul içermeli`);
-    }
+    if (status !== "active-internal-consented") errors.push(`${SENTINEL}: status active-internal-consented olmalı — ATS-0014 owner beyanı ("${status}")`);
+    if (kosul !== KOSUL_PIN) errors.push(`${SENTINEL}: koşul/scope hücresi LITERAL-PİN dışına değişti (çelişkili genişletme/runtime-dili dahil her delta fail; bilinçli değişiklik = ADR + guard birlikte)`);
+    const SCOPE_TOKENS = [
+      [/iç-kullanıcı/i, "iç-kullanıcı (internal-only scope)"],
+      [/aday ASLA/i, "aday ASLA (aday-enrollment yasağı)"],
+      [/candidate_exclusion/i, "candidate_exclusion invariantı"],
+      [/amaç-sınır/i, "amaç-sınırı (authentication/izleme yasak)"],
+      [/self-service/i, "self-service silme"],
+      [/\[\[consent-texts-voice-enrollment\]\]/, "consent-texts doc linki"],
+      [/\[\[dpia-voice-enrollment\]\]/, "dpia doc linki"],
+      [/DPIA/, "DPIA (runtime-enable kanıtı)"],
+      [/\bP1\b/, "runtime P1 gate"],
+    ];
+    for (const [re, label] of SCOPE_TOKENS) if (!re.test(kosul)) errors.push(`${SENTINEL}: koşul/scope hücresinde zorunlu token eksik: ${label}`);
   }
 
   if (!text.includes(EMBED_INVARIANT)) errors.push(`§0 embedding invariant cümlesi eksik/yumuşatılmış (literal pin): "${EMBED_INVARIANT.slice(0, 60)}..."`);
@@ -107,6 +124,9 @@ function runChecks(text, taxText, lifeText) {
   if (!taxRow) errors.push("event-taxonomy: evidence.speaker.attributed satırı eksik");
   else if (!/ledger_entry_ref/.test(taxRow) || !/target_ref/.test(taxRow)) errors.push("event-taxonomy: evidence.speaker.attributed required-extra ledger_entry_ref + target_ref içermeli (two-plane)");
   if (!lifeText.includes("**speaker_attribution_map**")) errors.push("data-lifecycle-register: speaker_attribution_map veri-sınıfı eksik");
+  const vpLine = lifeText.split("\n").find((l) => l.includes("**voiceprint_template**"));
+  if (!vpLine) errors.push("data-lifecycle-register: voiceprint_template veri-sınıfı eksik (ATS-0014)");
+  else for (const t of VOICEPRINT_LIFE_TOKENS) if (!vpLine.includes(t)) errors.push(`data-lifecycle-register: voiceprint_template satırında zorunlu token eksik: "${t}" (İNERT/gate durumu yumuşatılamaz)`);
 
   return errors;
 }
@@ -124,7 +144,14 @@ function selfTest() {
     ["sentinel-deleted", base.replace(/\| \*\*voiceprint_enrollment\*\* .*\n/, ""), tax, life],
     ["sentinel-activated", mut("\n\n## 2.", "\n| **voiceprint_enrollment** | ses karakteristigi | no | active-compliant | x |\n\n## 2."), tax, life],
     ["embed-invariant-weakened", mut("**persist edilmez**, **export edilmez**", "gerektiğinde persist edilebilir"), tax, life],
-    ["excluded-status-invalid", mut("| excluded-biometric |", "| optional |"), tax, life],
+    ["sentinel-status-invalid", mut("| active-internal-consented |", "| optional |"), tax, life],
+    ["candidate-exclusion-removed", mut("**aday ASLA enroll edilmez** (candidate_exclusion; eleme-yoluyla öneri)", "eşleme kapsamı genişletilebilir"), tax, life],
+    ["runtime-precondition-removed", mut("— **fiili açık-rıza toplama + tenant yayımı + DPO/owner imzası + VERBIS = runtime-enable önkoşulu**; runtime **P1** gate-locked", "— hemen kullanılabilir"), tax, life],
+    ["contradictory-candidate-enrollment", mut("; runtime **P1** gate-locked | active-internal-consented |", "; runtime **P1** gate-locked; pilotlarda aday enrollment da yapılabilir | active-internal-consented |"), tax, life],
+    ["runtime-enabled-wording", mut("; runtime **P1** gate-locked | active-internal-consented |", "; imza beklemeden hemen kullanılabilir; runtime **P1** gate-locked | active-internal-consented |"), tax, life],
+    ["consent-dpia-links-removed", mut("([[consent-texts-voice-enrollment]], [[dpia-voice-enrollment]])", "(iç dokümanlar)"), tax, life],
+    ["crossdoc-lifecycle-voiceprint-missing", base, tax, life.replace(/\| \*\*voiceprint_template\*\* .*\n/, "")],
+    ["voiceprint-template-not-inert", base, tax, life.replace("owner beyanı 2026-07-02 kayıtlı — runtime P1 + imzalı-DPIA'ya kadar İNERT; aday ASLA enroll edilmez", "kullanıma hazır")],
     ["duplicate-active-row", mut("\n\n## 2.", "\n| **device_metadata** | ikinci kopya | no | active-compliant | dup |\n\n## 2."), tax, life],
     ["non-bold-alias-row", mut("\n\n## 2.", "\n| voice_map | akustik eşleme | no | active-compliant | alias |\n\n## 2."), tax, life],
     ["section-1a-escape", mut("\n\n## 2.", "\n\n## 1a. Ek aktif yöntemler\n\n| **auto_voice** | akustik | no | active-compliant | kaçak |\n\n## 2."), tax, life],
@@ -147,4 +174,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment excluded+aktif-değil+ADR/rıza/risk-kabul koşullu, embedding invariantı pinli, H2 bölüm-yapısı allowlist (rakamsız dahil), cross-doc (taxonomy ledger_entry_ref+target_ref, lifecycle speaker_attribution_map); self-test 16 negatif vektör fail ediyor.");
+console.log("speaker-attribution OK — aktif yöntem allowlist(4) biyometrisiz (biometric=no, duplicate/format-dışı satır yasak, §1 tam-gövde yasak-kavram taraması TR/EN alias'lı, insan-onay tokeni), sentinel voiceprint_enrollment=active-internal-consented (ATS-0014; §1'e taşınamaz; koşul hücresi LITERAL-PİN — çelişkili genişletme/runtime-dili dahil her delta fail; scope-token seti consent-texts+dpia linkleri dahil), embedding invariantı pinli, H2 bölüm-yapısı allowlist, cross-doc (taxonomy ledger_entry_ref+target_ref; lifecycle speaker_attribution_map + voiceprint_template satır-tokenları gate-locked/İNERT/runtime-P1/imzalı-DPIA/aday-ASLA/crypto-erase/transfer-none); self-test 23 negatif vektör fail ediyor.");

@@ -33,7 +33,7 @@
 | **transcript_redacted** | PII-azaltılmış transkript | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
 | **speaker_label** | diarization etiketi (S1/S2) | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
 | **speaker_attribution_map** | S1..Sn ↔ katılımcı display-ref eşlemesi (insan-onaylı; ATS-0013 — biyometrik şablon DEĞİL) | processor | pseudonymized | primary-db | açık-rıza | tenant-policy | hard-delete | HAYIR | n/a | none | design |
-| **voiceprint_template** | iç-kullanıcı opt-in ses-şablonu (ATS-0014; owner risk-kabul öncesi İNERT — aday ASLA enroll edilmez) | processor | raw-pii | primary-db | açık-rıza | opt-in-süresince (self-service silme) | crypto-erase | HAYIR | n/a | none | gate-locked |
+| **voiceprint_template** | iç-kullanıcı opt-in ses-şablonu (ATS-0014; owner beyanı 2026-07-02 kayıtlı — runtime P1 + imzalı-DPIA'ya kadar İNERT; aday ASLA enroll edilmez) | processor | raw-pii | primary-db | açık-rıza | opt-in-süresince (self-service silme) | crypto-erase | HAYIR | n/a | none | gate-locked |
 | **candidate_pii** | aday kimlik verisi | processor | raw-pii | primary-db | açık-rıza | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
 | **participant_pii** | interviewer kimlik verisi | processor | raw-pii | primary-db | açık-rıza/sözleşme (m.5/2-c) | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
 | **embedding_vector** | citation arama indexi | processor | pseudonymized | vector-index | açık-rıza | tenant-policy | crypto-erase | HAYIR | n/a | none | design |
