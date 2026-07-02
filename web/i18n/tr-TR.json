@@ -31,6 +31,18 @@
     "transcript.segmentsHeading": "{count} segment",
     "transcript.empty": "Bu transkriptte segment yok.",
     "auth.login": "Kurumsal kimlikle giriş yap",
-    "auth.loggedIn": "Giriş yapıldı — oturum yalnız bu sekmede (yenilemede düşer)."
+    "auth.loggedIn": "Giriş yapıldı — oturum yalnız bu sekmede (yenilemede düşer).",
+    "review.workspaceTitle": "Kanıt İncelemesi ve İnsan Onayı",
+    "review.claimLabel": "İddia (claim) metni",
+    "review.createCitation": "Alıntı-kanıt oluştur",
+    "review.refCount": "{count} kaynak segment",
+    "review.openCase": "İncelemeyi başlat (insan)",
+    "review.caseState": "Vaka durumu:",
+    "review.markNoChange": "Değişiklik yok — incelendi",
+    "review.recordRationale": "Gerekçeyi kaydet",
+    "review.decisionRefLabel": "Karar-sonuç referansı",
+    "entailment.supported": "Destekleniyor (kaynaklı)",
+    "entailment.notSupported": "Desteklenmiyor",
+    "entailment.insufficient": "Yetersiz kanıt"
   }
 }
