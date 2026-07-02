@@ -101,8 +101,8 @@ class ExportServiceTest {
         // karar-kanıtı ref'i = export edilecek claim (manifest: source_evidence_refs ⊆ claims)
         caseKey = humanReview.open(T1, I1, List.of(citationKey), "aiout-v1").asOptional().orElseThrow();
         humanReview.startReview(T1, I1, caseKey, "human-opaque-1", "role-hiring-panel").asOptional();
-        humanReview.recordEdit(T1, I1, caseKey, "cs-ref").asOptional();
-        humanReview.recordRationale(T1, I1, caseKey, "rat-ref").asOptional();
+        humanReview.recordEdit(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, caseKey, "cs-ref").asOptional();
+        humanReview.recordRationale(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, caseKey, "rat-ref").asOptional();
         humanReview.finalizeDecision(T1, HUMAN, I1, caseKey, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
         ledger.entries.clear(); // finalize kaydını temizle — export ledger davranışını izole test et
     }
@@ -149,8 +149,8 @@ class ExportServiceTest {
     void decision_evidence_must_be_subset_of_exported_claims() {
         String orphanCase = humanReview.open(T1, I1, List.of("baska-kanit-ref"), "aiout-v1").asOptional().orElseThrow();
         humanReview.startReview(T1, I1, orphanCase, "human-opaque-1", "role-1").asOptional();
-        humanReview.recordEdit(T1, I1, orphanCase, "cs").asOptional();
-        humanReview.recordRationale(T1, I1, orphanCase, "rat").asOptional();
+        humanReview.recordEdit(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, orphanCase, "cs").asOptional();
+        humanReview.recordRationale(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, orphanCase, "rat").asOptional();
         humanReview.finalizeDecision(T1, HUMAN, I1, orphanCase, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
         ledger.entries.clear();
         Outcome<ExportReceipt> out = service.exportPacket(T1, HUMAN, I1, orphanCase, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
@@ -164,8 +164,8 @@ class ExportServiceTest {
                 List.of(1), Entailment.NOT_SUPPORTED)).asOptional().orElseThrow();
         String c2 = humanReview.open(T1, I1, List.of(unsupportedKey), "aiout-v1").asOptional().orElseThrow();
         humanReview.startReview(T1, I1, c2, "human-opaque-1", "role-1").asOptional();
-        humanReview.recordEdit(T1, I1, c2, "cs").asOptional();
-        humanReview.recordRationale(T1, I1, c2, "rat").asOptional();
+        humanReview.recordEdit(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, c2, "cs").asOptional();
+        humanReview.recordRationale(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, c2, "rat").asOptional();
         humanReview.finalizeDecision(T1, HUMAN, I1, c2, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
         ExportContext c = new ExportContext(
                 "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",

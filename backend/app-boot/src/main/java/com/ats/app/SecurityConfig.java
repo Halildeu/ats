@@ -50,7 +50,10 @@ class SecurityConfig {
     private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.of(
             "ats.consent.write", "CONSENT_WRITE",
             "ats.recording.write", "RECORDING_WRITE",
-            "ats.transcript.read", "TRANSCRIPT_READ");
+            "ats.transcript.read", "TRANSCRIPT_READ",
+            "ats.citation.write", "CITATION_WRITE",
+            "ats.review.write", "REVIEW_WRITE",
+            "ats.review.read", "REVIEW_READ");
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
@@ -64,6 +67,14 @@ class SecurityConfig {
                             .hasAuthority("RECORDING_WRITE")
                         .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/transcript")
                             .hasAuthority("TRANSCRIPT_READ")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/citations")
+                            .hasAuthority("CITATION_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/review-case")
+                            .hasAuthority("REVIEW_READ")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/review-cases",
+                                "/api/v1/interviews/*/review-case/transition",
+                                "/api/v1/interviews/*/review-case/finalize")
+                            .hasAuthority("REVIEW_WRITE")
                         // bilinmeyen yüzey: fail-closed (yeni endpoint = açık matcher + scope kararı)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(j -> j

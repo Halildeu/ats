@@ -89,34 +89,35 @@ public final class HumanReviewService {
         if (isBlank(humanActorRef) || isBlank(oversightRoleRef)) {
             return Outcome.fail(OutcomeCode.INVALID, "human_actor_ref + oversight_role_ref zorunlu (HUMAN_REVIEWING)");
         }
-        return transition(tenantId, interviewId, caseKey, ReviewState.AI_SUGGESTED, ReviewState.HUMAN_REVIEWING,
+        return transition(tenantId, new ActorId(humanActorRef), interviewId, caseKey,
+                ReviewState.AI_SUGGESTED, ReviewState.HUMAN_REVIEWING,
                 c -> c.withHumanActor(humanActorRef, oversightRoleRef));
     }
 
-    public Outcome<Void> recordEdit(TenantId tenantId, InterviewId interviewId, String caseKey,
+    public Outcome<Void> recordEdit(TenantId tenantId, ActorId actor, InterviewId interviewId, String caseKey,
             String humanChangeSummaryRef) {
         if (isBlank(humanChangeSummaryRef)) {
             return Outcome.fail(OutcomeCode.INVALID, "human_change_summary_ref zorunlu (HUMAN_EDITED)");
         }
-        return transition(tenantId, interviewId, caseKey, ReviewState.HUMAN_REVIEWING, ReviewState.HUMAN_EDITED,
+        return transition(tenantId, actor, interviewId, caseKey, ReviewState.HUMAN_REVIEWING, ReviewState.HUMAN_EDITED,
                 c -> c.withChangeSummary(humanChangeSummaryRef));
     }
 
-    public Outcome<Void> markReviewedNoChange(TenantId tenantId, InterviewId interviewId, String caseKey) {
-        return transition(tenantId, interviewId, caseKey, ReviewState.HUMAN_REVIEWING,
+    public Outcome<Void> markReviewedNoChange(TenantId tenantId, ActorId actor, InterviewId interviewId, String caseKey) {
+        return transition(tenantId, actor, interviewId, caseKey, ReviewState.HUMAN_REVIEWING,
                 ReviewState.HUMAN_REVIEWED_NO_CHANGE, c -> c);
     }
 
-    public Outcome<Void> rejectAiSuggestion(TenantId tenantId, InterviewId interviewId, String caseKey,
+    public Outcome<Void> rejectAiSuggestion(TenantId tenantId, ActorId actor, InterviewId interviewId, String caseKey,
             String humanAuthoredRationaleRef) {
         if (isBlank(humanAuthoredRationaleRef)) {
             return Outcome.fail(OutcomeCode.INVALID, "human_authored_rationale_ref zorunlu (AI_SUGGESTION_REJECTED)");
         }
-        return transition(tenantId, interviewId, caseKey, ReviewState.HUMAN_REVIEWING,
+        return transition(tenantId, actor, interviewId, caseKey, ReviewState.HUMAN_REVIEWING,
                 ReviewState.AI_SUGGESTION_REJECTED, c -> c.withRationale(humanAuthoredRationaleRef));
     }
 
-    public Outcome<Void> recordRationale(TenantId tenantId, InterviewId interviewId, String caseKey,
+    public Outcome<Void> recordRationale(TenantId tenantId, ActorId actor, InterviewId interviewId, String caseKey,
             String humanAuthoredRationaleRef) {
         if (isBlank(humanAuthoredRationaleRef)) {
             return Outcome.fail(OutcomeCode.INVALID, "human_authored_rationale_ref zorunlu (HUMAN_RATIONALE_RECORDED)");
@@ -126,6 +127,10 @@ public final class HumanReviewService {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
         }
         ReviewCase current = ok.value();
+        Outcome<Void> actorOk = requireSameActor(current, actor);
+        if (actorOk instanceof Outcome.Fail<Void> mismatch) {
+            return mismatch;
+        }
         if (!ALLOWED.get(current.state()).contains(ReviewState.HUMAN_RATIONALE_RECORDED)) {
             return Outcome.fail(OutcomeCode.INVALID, "geçersiz geçiş: " + current.state() + " → HUMAN_RATIONALE_RECORDED");
         }
@@ -151,6 +156,10 @@ public final class HumanReviewService {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
         }
         ReviewCase current = ok.value();
+        Outcome<Void> actorOk = requireSameActor(current, actorId);
+        if (actorOk instanceof Outcome.Fail<Void> mismatch) {
+            return Outcome.fail(mismatch.code(), mismatch.reason());
+        }
         if (current.state() != ReviewState.HUMAN_RATIONALE_RECORDED) {
             return Outcome.fail(OutcomeCode.INVALID,
                     "FINALIZED'e tek giriş HUMAN_RATIONALE_RECORDED'dır (insan gerekçesi olmadan finalize YOK): " + current.state());
@@ -197,13 +206,25 @@ public final class HumanReviewService {
         return Outcome.ok(new FinalizeReceipt(caseKey, entry.evidenceId().value()));
     }
 
+    /**
+     * EXPORTED = SİSTEM geçişi (insan-adımı değil): export akışının aktörü
+     * ExportService'in kendi WORM kaydında; insan-accountability zinciri
+     * (requireSameActor) FINALIZED'a kadar geçerlidir — burada uygulanmaz.
+     */
     public Outcome<Void> markExported(TenantId tenantId, InterviewId interviewId, String caseKey,
             String exportArtifactRef) {
         if (isBlank(exportArtifactRef)) {
             return Outcome.fail(OutcomeCode.INVALID, "export_artifact_ref zorunlu (EXPORTED required-on-entry)");
         }
-        return transition(tenantId, interviewId, caseKey, ReviewState.FINALIZED, ReviewState.EXPORTED,
-                c -> c.withExportArtifact(exportArtifactRef));
+        Outcome<ReviewCase> found = store.find(tenantId, interviewId, caseKey);
+        if (!(found instanceof Outcome.Ok<ReviewCase> ok)) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
+        }
+        ReviewCase current = ok.value();
+        if (current.state() != ReviewState.FINALIZED) {
+            return Outcome.fail(OutcomeCode.INVALID, "geçersiz geçiş: " + current.state() + " → EXPORTED");
+        }
+        return store.save(tenantId, caseKey, current.withExportArtifact(exportArtifactRef).with(ReviewState.EXPORTED));
     }
 
     /** Rıza-geri-çekme/erasure — terminal olmayan HER state'ten; terminal'den ÇIKIŞSIZ (standart §2). */
@@ -222,17 +243,38 @@ public final class HumanReviewService {
         return store.save(tenantId, caseKey, current.withReason(reasonCode).with(ReviewState.WITHDRAWN));
     }
 
-    private Outcome<Void> transition(TenantId tenantId, InterviewId interviewId, String caseKey,
+    private Outcome<Void> transition(TenantId tenantId, ActorId actor, InterviewId interviewId, String caseKey,
             ReviewState expectedFrom, ReviewState to, java.util.function.UnaryOperator<ReviewCase> update) {
         Outcome<ReviewCase> found = store.find(tenantId, interviewId, caseKey);
         if (!(found instanceof Outcome.Ok<ReviewCase> ok)) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
         }
         ReviewCase current = ok.value();
+        Outcome<Void> actorOk = requireSameActor(current, actor);
+        if (actorOk instanceof Outcome.Fail<Void> mismatch) {
+            return mismatch;
+        }
         if (current.state() != expectedFrom || !ALLOWED.get(expectedFrom).contains(to)) {
             return Outcome.fail(OutcomeCode.INVALID, "geçersiz geçiş: " + current.state() + " → " + to);
         }
         return store.save(tenantId, caseKey, update.apply(current).with(to));
+    }
+
+    /**
+     * Aktör-accountability (Codex #65 blocker): START'ta atanan humanActorRef ile
+     * sonraki her insan-adımının çağıranı AYNI olmalı — "kim inceledi/gerekçeledi/
+     * finalize etti" kaydı tek kişiye bağlanır. Ekip-devri (handoff) ayrı explicit
+     * geçiş olarak tasarlanmadan başka aktör fail-closed reddedilir.
+     */
+    private static Outcome<Void> requireSameActor(ReviewCase current, ActorId actor) {
+        if (actor == null || isBlank(actor.value())) {
+            return Outcome.fail(OutcomeCode.INVALID, "actor zorunlu");
+        }
+        if (!isBlank(current.humanActorRef()) && !current.humanActorRef().equals(actor.value())) {
+            return Outcome.fail(OutcomeCode.DENIED,
+                    "vaka başka reviewer'a atanmış (human_actor_ref eşleşmiyor; handoff ayrı geçiş)");
+        }
+        return Outcome.ok(null);
     }
 
     private void emitAppendFailed(TenantId tenantId, String reasonCode) {
