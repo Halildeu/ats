@@ -223,6 +223,7 @@ class ExportDsarApiTest {
     @Test
     void null_elements_in_lists_are_400_not_500() {
         String tok = token(ALL, "reviewer-1");
+        int wormBefore = wormTotal(TENANT);
         // export: criteria[null] + consentRefs[null] + citationCriterion null-value
         ResponseEntity<String> e1 = post(tok, "/api/v1/interviews/iv-n/export",
                 "{\"caseKey\":\"k\",\"citationKeys\":[\"c\"],\"context\":{\"criteria\":[null]}}");
@@ -237,8 +238,8 @@ class ExportDsarApiTest {
         ResponseEntity<String> e4 = post(tok, "/api/v1/interviews/iv-n/dsar/erasure",
                 "{\"dsarKey\":\"iv-n/dsar-x\",\"scope\":{\"transcriptKeys\":[null]}}");
         assertEquals(400, e4.getStatusCode().value(), "body: " + e4.getBody());
-        // side-effect yok: iv-n tenant'ında hiç WORM satırı oluşmamalı (fail-closed erken çıkış)
-        assertEquals(0, wormTotal("iv-n-tenant-yok"));
+        // side-effect yok: fail-closed erken çıkış WORM'a satır YAZMAZ (before/after delta)
+        assertEquals(wormBefore, wormTotal(TENANT));
     }
 
     @Test

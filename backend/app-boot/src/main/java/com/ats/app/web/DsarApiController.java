@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * sıra (WORM silinmez; tombstone yazılamazsa content silinmez), content-plane
  * silme idempotent, terminal vaka state'i korunur ama content silinir (dürüst
  * receipt). subjectRef OPAK; scope anahtarları '/' içerir → gövdede.
- * Erasure YIKICI ve geri-alınamaz content işlemidir — ayrı scope (ats.dsar.write);
+ * Erasure YIKICI ve geri-alınamaz content işlemidir — ayrı yetki sınıfı (ats.erasure.execute; intake=ats.dsar.write);
  * çağıran aktör WORM tombstone + privacy event'lerinde kayıtlıdır.
  */
 @RestController
