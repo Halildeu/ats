@@ -68,13 +68,20 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
             return Outcome.fail(OutcomeCode.INVALID,
                     "payload WORM-içerik-yasağını ihlal ediyor (pointer/meta-only): " + forbidden);
         }
+        // Codex iter-2 blocker: JsonCodecException Outcome çizgisini DELEMEZ — canonicalization
+        // fail-closed Outcome'a çevrilir (örn. programatik NaN/Infinity JsonNumber)
+        final String canonicalPayload;
+        try {
+            canonicalPayload = JsonCodec.canonical(e.payload());
+        } catch (JsonCodec.JsonCodecException ex) {
+            return Outcome.fail(OutcomeCode.INVALID, "payload kanonik JSON değil (fail-closed): " + ex.getMessage());
+        }
         try (Connection c = dataSource.getConnection()) {
             c.setAutoCommit(false);
             try {
                 advisoryLock(c, e.tenantId().value());
                 String prevHash = lastEntryHash(c, e.tenantId().value());
                 String evidenceId = "ev-" + UUID.randomUUID();
-                String canonicalPayload = JsonCodec.canonical(e.payload());
                 String entryHash = entryHash(prevHash, e, evidenceId, canonicalPayload);
                 long seq;
                 try (PreparedStatement ps = c.prepareStatement(
@@ -114,11 +121,16 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
                         return existing;
                     }
                     LedgerEntry prior = exOk.value();
-                    boolean identical = prior.eventType().equals(e.eventType())
-                            && prior.actorId().value().equals(e.actorId().value())
-                            && prior.interviewId().value().equals(e.interviewId().value())
-                            && prior.contentHash().equals(e.contentHash())
-                            && JsonCodec.canonical(prior.payload()).equals(JsonCodec.canonical(e.payload()));
+                    boolean identical;
+                    try {
+                        identical = prior.eventType().equals(e.eventType())
+                                && prior.actorId().value().equals(e.actorId().value())
+                                && prior.interviewId().value().equals(e.interviewId().value())
+                                && prior.contentHash().equals(e.contentHash())
+                                && JsonCodec.canonical(prior.payload()).equals(canonicalPayload);
+                    } catch (JsonCodec.JsonCodecException ex) {
+                        identical = false; // karşılaştırılamayan payload = conflict (fail-closed)
+                    }
                     if (!identical) {
                         return Outcome.fail(OutcomeCode.INVALID,
                                 "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
@@ -209,10 +221,15 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
             if (!prev.equals(entry.previousHash())) {
                 return Outcome.fail(OutcomeCode.INVALID, "zincir kopuk @seq=" + entry.sequence());
             }
-            String recomputed = entryHash(prev,
-                    new EvidenceEvent(entry.tenantId(), entry.actorId(), entry.interviewId(), entry.eventType(),
-                            entry.occurredAt(), entry.idempotencyKey(), entry.contentHash(), entry.payload()),
-                    entry.evidenceId().value(), JsonCodec.canonical(entry.payload()));
+            String recomputed;
+            try {
+                recomputed = entryHash(prev,
+                        new EvidenceEvent(entry.tenantId(), entry.actorId(), entry.interviewId(), entry.eventType(),
+                                entry.occurredAt(), entry.idempotencyKey(), entry.contentHash(), entry.payload()),
+                        entry.evidenceId().value(), JsonCodec.canonical(entry.payload()));
+            } catch (JsonCodec.JsonCodecException ex) {
+                return Outcome.fail(OutcomeCode.INVALID, "payload kanonikleştirilemedi @seq=" + entry.sequence());
+            }
             if (!recomputed.equals(entry.entryHash())) {
                 return Outcome.fail(OutcomeCode.INVALID, "entry_hash uyuşmazlığı @seq=" + entry.sequence());
             }

@@ -196,6 +196,17 @@ class PostgresEvidenceLedgerTest {
     }
 
     @Test
+    void non_finite_json_number_returns_outcome_fail_not_runtime_exception() {
+        EvidenceEvent nan = new EvidenceEvent(T1, A1, I1, "transcript.created", "2026-07-02T15:00:00Z",
+                nextIdem(), "c".repeat(64),
+                JsonValue.object(Map.of("n", JsonValue.of(Double.NaN))));
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> {
+            Outcome<LedgerEntry> out = ledger.append(nan);
+            assertFalse(out.isOk(), "NaN payload Outcome.fail olmalı — exception Outcome çizgisini delemez");
+        });
+    }
+
+    @Test
     void forbidden_payload_keys_rejected_before_insert() {
         EvidenceEvent bad = new EvidenceEvent(T1, A1, I1, "transcript.created", "2026-07-02T15:00:00Z",
                 nextIdem(), "c".repeat(64),
