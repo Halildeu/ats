@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  app-boot — ATS-0008 D-A deployable composition katmanı (ATS-0018 §2 istisnası:
+  javax.sql.DataSource YALNIZ com.ats.persistence.. ve bu wiring paketinde görünür).
+
+  Spring Boot YALNIZ bu modüldedir: domain modülleri framework-free kalır
+  (component-scan com.ats.app ile sınırlı; domain bean'leri açık @Bean wiring).
+  JPA/Hibernate/Spring-Data KULLANILMAZ (ATS-0018 kalıcı yasak) — starter-jdbc
+  bile alınmaz; DataSource = HikariCP doğrudan, migration = Flyway programatik.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+
+  <artifactId>app-boot</artifactId>
+  <name>ats :: app-boot (composition)</name>
+
+  <properties>
+    <spring-boot.version>3.5.3</spring-boot.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- domain modülleri (framework-free) -->
+    <dependency><groupId>com.ats</groupId><artifactId>ops-events</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>consent</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>ingest-media</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>ai-orchestration</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>human-review</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>export-connector</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>retention-dsr</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>ai-provider-faz24</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>persistence-postgres</artifactId><version>${project.version}</version></dependency>
+
+    <!-- composition runtime -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.zaxxer</groupId>
+      <artifactId>HikariCP</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.11</version>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- test: gerçek-PG boot smoke -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
