@@ -30,9 +30,11 @@ import org.springframework.security.web.SecurityFilterChain;
  *  - IdP-nötr (herhangi OIDC sağlayıcı; ADR-0001 vendor-coupling yasağı) —
  *    gerçek IdP seçimi/deploy'u ayrı ADR/deploy-wiring işidir.
  *  - Yetki FAIL-CLOSED + endpoint-bazlı scope ayrımı: authority'ler YALNIZ
- *    non-blank `tenant` claim'i varken scope'lardan türetilir (ats.consent.write /
- *    ats.recording.write / ats.transcript.read). Tek genel scope YOK; bilinmeyen
- *    yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
+ *    non-blank tenant claim'i (adı configurable — ATS-0019; ats.security.
+ *    tenant-claim-name, default "tenant") varken scope'lardan türetilir. TenantAccess
+ *    runtime tenant-extraction'ı AYNI config'i kullanır (biri authority verip diğeri
+ *    tenant bulamama YAPISAL imkânsız); fallback claim adı YOK. Tek genel scope YOK;
+ *    bilinmeyen yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
  *  - Tenant DAİMA token'dan okunur (istek gövdesi/path'inden ASLA — ATS-0002).
  *  - Açık yüzeyler YALNIZ /healthz + GET /v3/api-docs (ikisi de veri taşımaz —
  *    liveness + şema metadata'sı); onların dışında her şey kimlikli.

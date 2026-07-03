@@ -25,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 class CitationApiController {
 
     private final CitationService citationService;
+    private final TenantAccess tenantAccess;
 
-    CitationApiController(CitationService citationService) {
+    CitationApiController(CitationService citationService, TenantAccess tenantAccess) {
         this.citationService = citationService;
+        this.tenantAccess = tenantAccess;
     }
 
     record CiteBody(String transcriptKey, String claim) {}
@@ -41,7 +43,7 @@ class CitationApiController {
                     .body(Map.of("error", "INVALID", "reason", "transcriptKey + claim zorunlu"));
         }
         Outcome<CitationReceipt> out = citationService.citeClaim(
-                TenantAccess.tenant(auth), TenantAccess.actor(auth), new InterviewId(interviewId),
+                tenantAccess.tenant(auth), tenantAccess.actor(auth), new InterviewId(interviewId),
                 body.transcriptKey(), body.claim(), Instant.now().toString());
         if (out instanceof Outcome.Fail<CitationReceipt> fail) {
             return OutcomeHttp.fail(fail);

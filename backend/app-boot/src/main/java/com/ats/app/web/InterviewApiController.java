@@ -44,15 +44,17 @@ class InterviewApiController {
     private final TranscriptStore transcriptStore;
     private final TranscriptionService transcriptionService;
     private final long maxUploadBytes;
+    private final TenantAccess tenantAccess;
 
     InterviewApiController(ConsentService consentService, IngestService ingestService,
             TranscriptStore transcriptStore, TranscriptionService transcriptionService,
-            AppProperties props) {
+            AppProperties props, TenantAccess tenantAccess) {
         this.consentService = consentService;
         this.ingestService = ingestService;
         this.transcriptStore = transcriptStore;
         this.transcriptionService = transcriptionService;
         this.maxUploadBytes = props.ingest().maxUploadBytes();
+        this.tenantAccess = tenantAccess;
     }
 
     record ConsentBody(String subjectRef, String state) {}
@@ -61,7 +63,7 @@ class InterviewApiController {
     ResponseEntity<?> putRecordingConsent(Authentication auth,
             @PathVariable("interviewId") String interviewId, @RequestBody ConsentBody body,
             @RequestHeader(value = "X-ATS-Idempotency-Key", required = false) String idempotencyKey) {
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
         if (body == null || body.subjectRef() == null || body.subjectRef().isBlank()
                 || body.state() == null) {
             return badRequest("subjectRef + state zorunlu");
@@ -86,7 +88,7 @@ class InterviewApiController {
         String requestKey = (idempotencyKey == null || idempotencyKey.isBlank())
                 ? java.util.UUID.randomUUID().toString()
                 : idempotencyKey;
-        Outcome<Void> out = consentService.record(permission, TenantAccess.actor(auth), requestKey);
+        Outcome<Void> out = consentService.record(permission, tenantAccess.actor(auth), requestKey);
         if (out instanceof Outcome.Fail<Void> fail) {
             return OutcomeHttp.fail(fail);
         }
@@ -99,7 +101,7 @@ class InterviewApiController {
             @PathVariable("interviewId") String interviewId,
             @RequestHeader(value = "X-ATS-Filename", required = false) String filename)
             throws java.io.IOException {
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
 
         long declared = request.getContentLengthLong();
         if (declared < 0) {
@@ -113,7 +115,7 @@ class InterviewApiController {
         }
 
         Outcome<UploadRequest> req = UploadRequest.create(
-                tenant, TenantAccess.actor(auth), new InterviewId(interviewId),
+                tenant, tenantAccess.actor(auth), new InterviewId(interviewId),
                 filename, request.getContentType(), Instant.now().toString());
         if (req instanceof Outcome.Fail<UploadRequest> fail) {
             return OutcomeHttp.fail(fail);
@@ -152,7 +154,7 @@ class InterviewApiController {
             return badRequest("sourceObjectKey zorunlu (upload makbuzundaki objectKey)");
         }
         Outcome<TranscriptionService.TranscriptionReceipt> out = transcriptionService.transcribeStored(
-                TenantAccess.tenant(auth), TenantAccess.actor(auth), new InterviewId(interviewId),
+                tenantAccess.tenant(auth), tenantAccess.actor(auth), new InterviewId(interviewId),
                 body.sourceObjectKey(), Instant.now().toString());
         if (out instanceof Outcome.Fail<TranscriptionService.TranscriptionReceipt> fail) {
             return OutcomeHttp.fail(fail);
@@ -171,7 +173,7 @@ class InterviewApiController {
     @GetMapping("/api/v1/interviews/{interviewId}/transcripts")
     ResponseEntity<?> listTranscripts(Authentication auth,
             @PathVariable("interviewId") String interviewId) {
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
         Outcome<List<TranscriptStore.TranscriptSummary>> out =
                 transcriptStore.listByInterview(tenant, new InterviewId(interviewId));
         if (out instanceof Outcome.Fail<List<TranscriptStore.TranscriptSummary>> fail) {
@@ -191,7 +193,7 @@ class InterviewApiController {
     ResponseEntity<?> getTranscript(Authentication auth,
             @PathVariable("interviewId") String interviewId,
             @org.springframework.web.bind.annotation.RequestParam("key") String transcriptKey) {
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
         Outcome<Transcript> out = transcriptStore.find(
                 tenant, new InterviewId(interviewId), transcriptKey);
         if (out instanceof Outcome.Fail<Transcript> fail) {

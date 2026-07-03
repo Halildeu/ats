@@ -27,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 class DsarApiController {
 
     private final DsrService dsrService;
+    private final TenantAccess tenantAccess;
 
-    DsarApiController(DsrService dsrService) {
+    DsarApiController(DsrService dsrService, TenantAccess tenantAccess) {
         this.dsrService = dsrService;
+        this.tenantAccess = tenantAccess;
     }
 
     record DsarBody(String subjectRef, String reasonCode) {}
@@ -40,7 +42,7 @@ class DsarApiController {
         if (body == null || body.subjectRef() == null || body.subjectRef().isBlank()) {
             return badRequest("subjectRef zorunlu (opak referans)");
         }
-        Outcome<String> out = dsrService.receiveDsar(TenantAccess.tenant(auth),
+        Outcome<String> out = dsrService.receiveDsar(tenantAccess.tenant(auth),
                 new InterviewId(interviewId), body.subjectRef(), body.reasonCode());
         if (out instanceof Outcome.Fail<String> fail) {
             return OutcomeHttp.fail(fail);
@@ -72,8 +74,8 @@ class DsarApiController {
                 orEmpty(s.transcriptKeys()), orEmpty(s.citationKeys()),
                 orEmpty(s.exportArtifactKeys()), orEmpty(s.reviewCaseKeys()),
                 orEmpty(s.tombstoneTargetEvidenceIds()));
-        Outcome<ErasureReceipt> out = dsrService.executeErasure(TenantAccess.tenant(auth),
-                TenantAccess.actor(auth), new InterviewId(interviewId), body.dsarKey(), scope);
+        Outcome<ErasureReceipt> out = dsrService.executeErasure(tenantAccess.tenant(auth),
+                tenantAccess.actor(auth), new InterviewId(interviewId), body.dsarKey(), scope);
         if (out instanceof Outcome.Fail<ErasureReceipt> fail) {
             return OutcomeHttp.fail(fail);
         }
