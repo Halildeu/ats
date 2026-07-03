@@ -44,6 +44,16 @@
     "entailment.supported": "Destekleniyor (kaynaklı)",
     "entailment.notSupported": "Desteklenmiyor",
     "entailment.insufficient": "Yetersiz kanıt",
-    "review.notDecisionEvidence": "Bu alıntı karar kanıtı olarak KULLANILAMAZ (desteklenmeyen/yetersiz iddia kanıt paketine giremez); inceleme akışı açılmadı."
+    "review.notDecisionEvidence": "Bu alıntı karar kanıtı olarak KULLANILAMAZ (desteklenmeyen/yetersiz iddia kanıt paketine giremez); inceleme akışı açılmadı.",
+    "review.editSummaryLabel": "Değişiklik-özeti referansı",
+    "review.markEdited": "Düzenleme yaptım — kaydet",
+    "review.rejectRefLabel": "Red gerekçesi referansı",
+    "review.rejectAi": "AI önerisini reddet (insan)",
+    "export.criterionLabel": "Rubric kriter kimliği",
+    "export.jobRelLabel": "İş-ilişkililik gerekçe referansı",
+    "export.create": "Kanıt paketini oluştur (F7)",
+    "export.done": "Kanıt paketi oluşturuldu (WORM'a bağlı)",
+    "export.digestLabel": "Paket özeti (digest):",
+    "export.claimCount": "{count} iddia"
   }
 }
