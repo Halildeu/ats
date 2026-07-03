@@ -44,6 +44,7 @@ MFE → ATS backend çağrıları **`/api/ats/v1/*` → ATS backend `/api/v1/*`*
 
 - `ats/web/mfe-interview-evidence` → platform-web MFE'ye taşınır; ATS repo'daki standalone frontend **deprecated (audit-only)** olur.
 - **Backend + domain + ADR ATS repo'da kalır.**
+- [[ATS-0001]] "platform repo'larına kod bağımlılığı YOK" kuralı **backend/domain/contracts düzlemi için KORUNUR**; frontend ürün yüzeyi bu ADR ile bilinçli **platform-web MFE istisnası** olarak amend edilir (ATS-0001'e amendment banner eklendi).
 - [[ATS-0008]] "frontend bağımsız Vite" yönü bu ADR ile **superseded**; "backend/domain bağımsız" kısmı **korunur**.
 - [[mfe-start-gate]] (eski `@ats/ui` snapshot + START GATE) **deprecated** — MFE design-system reuse'a devreder.
 - platform-web tarafında kısa entegrasyon README/RFC + shell registration + route/permission-key contract (bu ADR'ye link).

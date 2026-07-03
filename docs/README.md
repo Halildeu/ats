@@ -61,7 +61,7 @@
 
 ## Frontend standardı (public, living)
 - [frontend/a11y-i18n-standard.md](./frontend/a11y-i18n-standard.md) — ATS-0011 WCAG 2.2 AA + Türkçe-first i18n kanonik kriter registry'si (drift-guard `a11y-standard-guard`). Enforcement (axe/eslint/i18n-extract) P1 UI ile aktif.
-- [frontend/mfe-start-gate.md](./frontend/mfe-start-gate.md) — **ATS-0008 D-C P1 MFE START GATE sabitlemesi: KARŞILANDI** (platform-web snapshot SHA dondurulmuş + curated liste [x-data-grid/AG-Grid bilinçle dışlanmış → lisans n/a] + `@ats/ui` + manuel re-snapshot; drift-guard `mfe-start-gate-guard`) — `mfe-interview-evidence` UI dilimi AÇIK; **@ats/ui snapshot LANDED** (551 dosya bileşen-düzeyi curated; `packages/ui`; guard `ui-snapshot-guard`: yasak-token/path + import-closure + dependency-surface + tsc).
+- [frontend/mfe-start-gate.md](./frontend/mfe-start-gate.md) — **⚠️ DEPRECATED / historical ([ATS-0019](./adr/ATS-0019-platform-web-mfe-integration.md), 2026-07-03):** eski `@ats/ui` snapshot + standalone MFE START GATE yönü **superseded**. Yeni aktif frontend hattı = platform-web MFE (`@mfe/design-system` reuse). Aşağıdaki içerik tarihsel audit kaydıdır (snapshot SHA dondurulmuş + curated liste + `@ats/ui`; guard `mfe-start-gate-guard` tarihsel bütünlük için hâlâ koşar).
 
 ## Implementation (public, CI-yeşil)
 - `../contracts/` — ATS-0001 4 TS sözleşme + parity (PARITY.md)
@@ -70,8 +70,8 @@
 - `../.github/workflows/` — ci (boundary+contracts+backend) + security (gitleaks+dependency-review)
 
 ## P1 durum (dürüst özet — 2026-07-03)
-**Bitti (build+verified):** domain hattı F1/F2/F4/F5/F6/F7/F9/F10 + durable persistence (WORM+6 store+purge) + app-boot composition + JWT/scope'lu TAM API yüzeyi + @ats/ui curated kit + **browser-verified F3 segment-view** + retention-scheduler (default-off) + OpenAPI + KVKK crosswalk (K1..K11 kanıt-referanslı).
-**Kalan build-doğa:** F3-sonrası UI akışları (citation-panel/review ekranları). OIDC Auth-Code+PKCE login LANDED (browser-verified; prod IdP bağlaması deploy-wiring).
+**Bitti (build+verified):** domain hattı F1/F2/F4/F5/F6/F7/F9/F10 + durable persistence (WORM+6 store+purge) + app-boot composition + JWT/scope'lu TAM API yüzeyi + OpenAPI + KVKK crosswalk (K1..K11 kanıt-referanslı) + retention-scheduler (default-off).
+**Frontend — PIVOT ([ATS-0019](./adr/ATS-0019-platform-web-mfe-integration.md), 2026-07-03):** Aktif frontend hattı artık **platform-web MFE** (`@mfe/design-system` reuse; testai→ai.acik.com). Standalone `@ats/ui` curated kit + browser-verified F3 segment-view + OIDC Auth-Code+PKCE login = **pre-pivot standalone kanıtı** (historical; `ats/web/mfe-interview-evidence` deprecate ediliyor). Yeni MFE hattı: ADR-0019 (39a LANDED) → backend platform-KC JWT acceptance (39b, sıradaki) → MFE iskeleti + design-system Segment View + `/api/ats` proxy (39c).
 **Ayrı-doğa (owner/dış-bağımlı):** deploy-wiring (ats-gitops billing + ats-ai Faz24 endpoint'leri), F8 write-back (G0-partner-bağlı), VERBIS girişi (paket hazır), DPO/hukuk incelemesi, G0 saha kanıtları (ATS-0016: release-gate).
 
 ## Strateji/G0/rekabet/procurement (PRIVATE)
