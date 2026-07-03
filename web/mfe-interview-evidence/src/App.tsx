@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
 import { fetchTranscript, type TranscriptDto } from "./api";
+import { ConsentRecordingPanel } from "./ConsentRecordingPanel";
 import { DsarPanel } from "./DsarPanel";
 import type { ErasureReceipt } from "./dsarApi";
 import { ReviewWorkspace } from "./ReviewWorkspace";
@@ -108,6 +109,10 @@ export default function App() {
         <Text as="p" variant="error" data-testid="error-text" role="alert">
           {error}
         </Text>
+      )}
+
+      {token && interviewId.trim() && (
+        <ConsentRecordingPanel token={token} interviewId={interviewId.trim()} />
       )}
 
       {erasedReceipt && (
