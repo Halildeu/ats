@@ -36,6 +36,7 @@
     "evidence.unsupportedFlag": "Desteklenmeyen iddia — karar kanıtı olarak kullanılamaz",
     "review.rationaleLabel": "İnsan gerekçesi",
     "review.listCases": "Mevcut vakaları listele",
+    "review.startCase": "İncelemeyi başlat",
     "review.noCases": "Bu mülakat için inceleme vakası yok",
     "review.caseRowLabel": "{key} · {state} — devam et",
     "review.finalize": "Kararı kesinleştir",
