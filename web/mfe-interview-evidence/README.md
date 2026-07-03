@@ -1,5 +1,11 @@
 # mfe-interview-evidence — P1 ürün yüzeyi
 
+> **⚠️ DEPRECATED / audit-only ([ATS-0019](../../docs/adr/ATS-0019-platform-web-mfe-integration.md), 2026-07-03):**
+> Bu standalone uygulama **historical/local-audit**'tir. Aktif frontend hattı artık **platform-web MFE**
+> (`@mfe/design-system` + shell `@mfe/auth` reuse). Aşağıdaki dev-IdP/OIDC akışı ve `@ats/ui` tüketimi
+> platform MFE'ye **TAŞINMAZ** (MFE token üretmez; shell-managed Keycloak). Bu dizin lokal referans/audit
+> için korunur; yeni UI işi ATS-0019 hattından yürür.
+
 `@ats/ui` tüketen uygulama. P1 F1–F10 akışının UI yüzeyi tek sayfada:
 
 - **Kimlik**: OIDC Authorization-Code+PKCE (IdP-nötr; token YALNIZ bellekte — yenilemede düşer).

@@ -1,5 +1,10 @@
 # ATS-0001 — Ürün boundary + primitives-via-interfaces
 
+> **2026-07-03 ATS-0019 amendment:** Frontend ürün yüzeyi platform-web'e MFE olarak taşındı
+> ([ATS-0019](./ATS-0019-platform-web-mfe-integration.md)). Bu ADR'nin **"platform repo'larına
+> kod bağımlılığı YOK"** kuralı **backend/domain/contracts düzlemi için KORUNUR**; frontend ürün
+> yüzeyi bilinçli **platform-web MFE istisnası** olarak amend edilir (owner+cross-AI kararı).
+
 - **Durum:** Kabul edildi (cross-AI AGREE — Codex thread 019ef3d9, REVISE→AGREE)
 - **Tarih:** 2026-06-23
 - **Bağlam kaynağı:** [00-MASTER-PLAN v3.0](../00-ATS-MASTER-PLAN.md) §9 + M5 · 3-AI mutabakat [pingpong-3ai/05](../pingpong-3ai/05-consensus-draft.md)

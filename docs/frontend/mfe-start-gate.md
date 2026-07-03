@@ -1,5 +1,12 @@
 # P1 MFE START GATE — vendor-snapshot sabitlemesi (ATS-0008 D-C, canonical)
 
+> **⚠️ DEPRECATED (2026-07-03, [ATS-0019](../adr/ATS-0019-platform-web-mfe-integration.md)):** Bu START GATE'in
+> temsil ettiği yön (eski `@ats/ui` snapshot + standalone MFE) **superseded**'dir. Ürün yüzeyi artık
+> platform-web'e MFE olarak entegre olur ve `@mfe/design-system` reuse eder (owner+cross-AI 2026-07-03).
+> Aşağısı **tarihsel kayıt** (snapshot disiplini + START GATE 5-şart audit izi); yeni UI işi ATS-0019
+> hattından yürür. `check-mfe-start-gate.mjs` guard'ı tarihsel bütünlük için hâlâ koşar (marker'lar
+> dondurulmuş); guard emekliye ayırma ATS-0019 MFE dilimlerinde ele alınır.
+
 > ATS-0008 D-C kuralı: *"Bu gate karşılanmadan MFE UI dilimi başlamaz."* Bu doküman D-C'nin
 > istediği 5 şartı **yazılı sabitler**; sabitleme sonrası `mfe-interview-evidence` UI dilimi
 > AÇIKTIR (ATS-0016 P1 build kapsamı; release/gerçek-veri G0-kilitli kalır).

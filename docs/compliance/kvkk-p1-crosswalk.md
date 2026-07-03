@@ -29,7 +29,7 @@
 |---|---|---|
 | VERBIS kaydı güncellemesi (voice-enrollment kategorisi) | owner (fiziksel portal işlemi) | kopyala-yapıştır paketi HAZIR (`docs/privacy/dpia-voice-enrollment.md` §6) |
 | DPO/hukuk resmi incelemesi + uygunluk beyanı | owner + DPO | pre-G0; bu doküman girdi malzemesidir |
-| Prod kurumsal IdP tenant-wiring + refresh-token politikası (OIDC Auth-Code+PKCE akışı LANDED/browser-verified) | deploy-wiring | akış hazır; prod IdP bağlaması deploy işi |
+| Kimlik/oturum (ATS-0019 pivot sonrası) | platform-KC + ATS backend + deploy-wiring | Standalone OIDC Auth-Code+PKCE (browser-verified) = **pre-pivot historical**; MFE token üretmez, `oidc.ts` taşınmaz. **Aktif açık kalem:** platform-KC `ats-api` audience + tenant-claim mapper + `ats.*` scope claim + shell refresh-token/session politikası + ATS backend platform-KC JWT acceptance (39b) |
 | Prod deploy sertleştirmesi (edge, api-docs kısıtı, migration-role ayrımı) | deploy-wiring | ADR-0018/slice notlarında kayıtlı |
 
 ## 3. Standart-hizalama bağlantıları
