@@ -37,7 +37,9 @@ const STATE_LABEL_KEY: Record<ConsentState, string> = {
  */
 export function ConsentRecordingPanel({ token, interviewId }: Props) {
   const [subjectRef, setSubjectRef] = useState("");
-  const [state, setState] = useState<ConsentState>("GRANTED");
+  // açık-rıza UX'i: ÖN-SEÇİLİ state YOK — kullanıcı aktif seçim yapmadan
+  // beyan kaydedilemez (Codex #77 blocker-1)
+  const [state, setState] = useState<ConsentState | "">("");
   const idempotencyKey = useRef<string>(crypto.randomUUID());
   const [savedState, setSavedState] = useState<ConsentState | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -67,6 +69,19 @@ export function ConsentRecordingPanel({ token, interviewId }: Props) {
         {t("consent.panelTitle")}
       </Text>
 
+      {/* Aydınlatma + bu ekranın niteliği — beyan kaydından ÖNCE görünür (K5) */}
+      <div data-testid="consent-disclosure" style={{ display: "grid", gap: 4 }}>
+        <Text as="h3" size="lg" weight="medium">
+          {t("consent.disclosure.title")}
+        </Text>
+        <Text as="p" size="sm">
+          {t("consent.disclosure.body")}
+        </Text>
+        <Text as="p" size="sm" variant="secondary">
+          {t("consent.operatorNote")}
+        </Text>
+      </div>
+
       <div style={{ display: "grid", gap: 8 }}>
         <Input
           label={t("consent.subjectRefLabel")}
@@ -82,10 +97,13 @@ export function ConsentRecordingPanel({ token, interviewId }: Props) {
           {t("consent.stateLabel")}
           <select
             value={state}
-            onChange={(e) => setState(e.target.value as ConsentState)}
+            onChange={(e) => setState(e.target.value as ConsentState | "")}
             data-testid="consent-state-select"
             style={{ padding: 6, fontSize: 14 }}
           >
+            <option value="" disabled>
+              {t("consent.statePlaceholder")}
+            </option>
             {CONSENT_STATES.map((s) => (
               <option key={s} value={s}>
                 {t(STATE_LABEL_KEY[s])}
@@ -98,10 +116,13 @@ export function ConsentRecordingPanel({ token, interviewId }: Props) {
         </Text>
 
         <Button
-          disabled={busy || !subjectRef.trim()}
+          disabled={busy || !subjectRef.trim() || !state}
           data-testid="consent-save-button"
           onClick={() =>
             void run(async () => {
+              if (!state) {
+                return;
+              }
               await putRecordingConsent(
                 token, interviewId, subjectRef.trim(), state, idempotencyKey.current);
               setSavedState(state);
