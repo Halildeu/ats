@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Button, Input, Text } from "@ats/ui/f3";
+import { Badge, Button, Input, Text } from "@ats/ui/f3";
 import { fetchTranscript, type TranscriptDto } from "./api";
+import { DsarPanel } from "./DsarPanel";
+import type { ErasureReceipt } from "./dsarApi";
 import { ReviewWorkspace } from "./ReviewWorkspace";
 import { SegmentView } from "./SegmentView";
 import { t } from "./i18n";
@@ -21,6 +23,7 @@ export default function App() {
   const [transcript, setTranscript] = useState<TranscriptDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [erasedReceipt, setErasedReceipt] = useState<ErasureReceipt | null>(null);
 
   // OIDC callback: sayfa code+state ile döndüyse token'ı değiş (yalnız bellekte tut)
   useEffect(() => {
@@ -40,6 +43,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setTranscript(null);
+    setErasedReceipt(null);
     try {
       setTranscript(await fetchTranscript(token.trim(), interviewId.trim(), transcriptKey.trim()));
     } catch (e) {
@@ -106,6 +110,29 @@ export default function App() {
         </Text>
       )}
 
+      {erasedReceipt && (
+        <div data-testid="erased-info" style={{ display: "grid", gap: 4, margin: "12px 0" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <Badge variant="success">{t("dsar.eraseDone")}</Badge>
+            <Text as="span" size="sm">{erasedReceipt.dsarKey}</Text>
+          </div>
+          <Text as="p" variant="warning" role="status">
+            {t("dsar.erasedInfo")}
+          </Text>
+          <Text as="p" size="sm" data-testid="dsar-receipt-summary">
+            {t("dsar.receiptSummary", {
+              tombstones: erasedReceipt.tombstoneCount,
+              deleted: erasedReceipt.deletedContentCount,
+            })}
+          </Text>
+          {erasedReceipt.caseTransitioned && (
+            <Text as="p" size="sm" variant="secondary" data-testid="dsar-case-transitioned">
+              {t("dsar.caseTransitioned")}
+            </Text>
+          )}
+        </div>
+      )}
+
       {transcript && (
         <section aria-label={t("transcript.title")} data-testid="transcript-section">
           <Text as="h2" size="lg" weight="medium">
@@ -114,6 +141,16 @@ export default function App() {
           <SegmentView segments={transcript.segments} />
           <ReviewWorkspace token={token} interviewId={interviewId.trim()}
               transcriptKey={transcriptKey.trim()} />
+          <DsarPanel
+            token={token}
+            interviewId={interviewId.trim()}
+            transcriptKey={transcriptKey.trim()}
+            onErased={(receipt) => {
+              // dürüst state: içerik silindi — segment/inceleme yüzeyi kaldırılır
+              setTranscript(null);
+              setErasedReceipt(receipt);
+            }}
+          />
         </section>
       )}
     </main>
