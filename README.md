@@ -10,7 +10,7 @@ Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalış
 
 **P1 fonksiyonel BUILD SERBEST** (owner kararı 2026-07-02; PRD-P1 frozen scope F1-F10, haftalık ince slice, her slice cross-AI review + CI). **G0 artık RELEASE gate'idir** (fail-closed):
 
-- ✅ Build (şimdi): P1 sıralı teslim hattı (ingest → STT → diarization → segment-view → rubric/citation → human-approve+audit → consent floor → export) + mevcut gate-safe registry/guard seti (24 CI guard) korunarak.
+- ✅ Build (şimdi): P1 sıralı teslim hattı (ingest → STT → segment-view → rubric/citation → human-approve+audit → consent floor → export; diarization AYRI bileşen — canlı motor v0.1.0 sunmaz, bkz. ATS-0017 amendment) + mevcut gate-safe registry/guard seti (24 CI guard) korunarak.
 - 🔒 Release-locked (G0=GO + pilot-open Gate A-F olmadan YASAK): gerçek-tenant/pilot açılışı · satış/GTM · **gerçek aday verisiyle işleme** (build'de yalnız sentetik/açık-rızalı test fixture) · "eval eşikleri kalibre edildi" ilanı (golden fixture + partner gerekir; placeholder eşikler `uncalibrated`) · partner-spesifik acceptance.
 - 🔒 Compliance-locked (tenant-onboarding önkoşulu): fiili açık-rıza toplama + imzalı DPIA + VERBIS ([ATS-0014](./docs/adr/ATS-0014-voice-enrollment-optin-internal-only.md)).
 - Scope-freeze aynen: full-ATS/scoring/affect/auto-reject vb. PRD YASAK listesi (genişletme = ayrı ADR).
