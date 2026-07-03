@@ -176,8 +176,9 @@ class WiringConfig {
      * live-stt modunda cite bilinçli NOT_CONFIGURED kalır (Faz24LiveSttProvider
      * içinde): varsayımsal /v1/cite contract'ına otomatik delege YOK — gerçek bir
      * cite servisi kanıtlanırsa ayrı, açık config ile bağlanır (Codex plan-REVISE).
-     * mTLS client-cert HttpClient wiring'i ayrı deploy dilimi (Faz24LiveSttProvider
-     * https'i kendisi zorlar).
+     * slice-38: mTLS SSLContext wiring LANDED (mode=required PKCS12'den kurulur);
+     * canlı owner-CA client-auth round-trip ise deploy/evidence işidir (doğru
+     * client-CA denetim-PC tarafında — test-CA ≠ canlı-CA).
      */
     @Bean
     AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore) {
