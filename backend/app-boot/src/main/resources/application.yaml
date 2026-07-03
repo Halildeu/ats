@@ -19,6 +19,11 @@ ats:
     timeout: ${ATS_AI_TIMEOUT:30s}
     language: ${ATS_AI_LANGUAGE:tr}
     grant-ttl: ${ATS_AI_GRANT_TTL:60s}
+    mtls:
+      mode: ${ATS_AI_MTLS_MODE:required}
+      key-store-path: ${ATS_AI_MTLS_KEYSTORE:}
+      key-store-password: ${ATS_AI_MTLS_KEYSTORE_PASSWORD:}
+      trust-store-path: ${ATS_AI_MTLS_TRUSTSTORE:}
   security:
     jwks-uri: ${ATS_JWKS_URI:}
     issuer: ${ATS_JWT_ISSUER:}

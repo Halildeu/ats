@@ -70,7 +70,7 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
     }
 
     public record Ai(String provider, String baseUrl, String bearer, Duration timeout,
-                     String language, Duration grantTtl) {
+                     String language, Duration grantTtl, Mtls mtls) {
         public Ai {
             // slice-36: kapalı küme — bilinmeyen değer BOOT'ta düşürür (fail-closed).
             if (provider == null || provider.isBlank()) {
@@ -95,6 +95,36 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
             // one-shot ses-erişim grant TTL'i (kaçak handle raf ömrü).
             if (grantTtl == null || grantTtl.isZero() || grantTtl.isNegative()) {
                 grantTtl = Duration.ofSeconds(60);
+            }
+            if (mtls == null) {
+                mtls = new Mtls(null, null, null, null);
+            }
+            // slice-38: live-stt kanonik yol client-auth'tur — mTLS default REQUIRED
+            // (fail-closed); plain'e düşmek yalnız AÇIK "disabled" beyanıyla mümkün
+            // (Codex: sessiz downgrade YASAK). http-json bu alanı yok sayar.
+            if ("live-stt".equals(provider) && "required".equals(mtls.mode())
+                    && (mtls.keyStorePath() == null || mtls.trustStorePath() == null
+                        || mtls.keyStorePassword() == null)) {
+                throw new IllegalStateException(
+                        "live-stt + mTLS required: ats.ai.mtls.{key-store-path,key-store-password,"
+                        + "trust-store-path} zorunlu (fail-closed; plain için ats.ai.mtls.mode=disabled)");
+            }
+        }
+    }
+
+    /** slice-38 mTLS materyali (PKCS12-only; mode kapalı küme required|disabled). */
+    public record Mtls(String mode, String keyStorePath, String keyStorePassword,
+                       String trustStorePath) {
+        public Mtls {
+            if (mode == null || mode.isBlank()) {
+                mode = "required"; // live-stt için güvenli default
+            }
+            if (!mode.equals("required") && !mode.equals("disabled")) {
+                throw new IllegalStateException(
+                        "ats.ai.mtls.mode kapalı küme: required|disabled (fail-closed); verilen: " + mode);
+            }
+            if (keyStorePassword != null && keyStorePassword.isBlank()) {
+                keyStorePassword = null;
             }
         }
     }

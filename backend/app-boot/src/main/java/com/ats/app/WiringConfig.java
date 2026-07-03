@@ -36,7 +36,9 @@ import com.ats.provider.HttpAIProvider;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCaseStore;
 import com.zaxxer.hikari.HikariConfig;
+import java.nio.file.Path;
 import java.time.Clock;
+import javax.net.ssl.SSLContext;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -180,12 +182,28 @@ class WiringConfig {
     @Bean
     AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore) {
         return switch (props.ai().provider()) {
-            case "live-stt" -> new Faz24LiveSttProvider(
-                    props.ai().baseUrl(), props.ai().timeout(),
-                    new GrantRedeemingAudioSource(grants, objectStore),
-                    props.ai().language());
+            case "live-stt" -> liveSttProvider(props, grants, objectStore);
             default -> new HttpAIProvider(props.ai().baseUrl(), props.ai().timeout(), props.ai().bearer());
         };
+    }
+
+    private static Faz24LiveSttProvider liveSttProvider(AppProperties props,
+            AudioAccessGrants grants, ObjectStorePort objectStore) {
+        GrantRedeemingAudioSource audioSource = new GrantRedeemingAudioSource(grants, objectStore);
+        AppProperties.Mtls mtls = props.ai().mtls();
+        if ("disabled".equals(mtls.mode())) {
+            // Yalnız AÇIK beyanla plain (dev/test); prod kanonik yol client-auth'tur.
+            LOG.warn("live-stt mTLS DISABLED (ats.ai.mtls.mode=disabled) — plain HTTPS; "
+                    + "prod kanonik yol client-auth, bu yalnız dev/test için.");
+            return new Faz24LiveSttProvider(props.ai().baseUrl(), props.ai().timeout(),
+                    audioSource, props.ai().language());
+        }
+        // required (default): SSLContext client cert + truststore'dan (fail-closed).
+        SSLContext sslContext = MtlsSslContextFactory.fromPkcs12(
+                Path.of(mtls.keyStorePath()), mtls.keyStorePassword(), Path.of(mtls.trustStorePath()));
+        LOG.info("live-stt mTLS SSLContext configured: yes, mode=required");
+        return new Faz24LiveSttProvider(props.ai().baseUrl(), props.ai().timeout(),
+                audioSource, props.ai().language(), sslContext);
     }
 
     @Bean

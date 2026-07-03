@@ -24,7 +24,7 @@ class AppPropertiesTest {
 
     @Test
     void missing_ai_base_url_fails_closed() {
-        assertThrows(IllegalStateException.class, () -> new AppProperties.Ai(null, "", null, null, null, null));
+        assertThrows(IllegalStateException.class, () -> new AppProperties.Ai(null, "", null, null, null, null, null));
     }
 
     @Test
@@ -41,12 +41,14 @@ class AppPropertiesTest {
 
     @Test
     void blank_bearer_normalizes_to_null_and_timeout_defaults() {
-        AppProperties.Ai ai = new AppProperties.Ai(null, "http://ai.local", "  ", null, null, null);
+        AppProperties.Ai ai = new AppProperties.Ai(null, "http://ai.local", "  ", null, null, null, null);
         assertNull(ai.bearer());
         assertEquals(Duration.ofSeconds(30), ai.timeout());
         // slice-36 default'ları: provider kapalı-küme default'u + dil + grant TTL
         assertEquals("http-json", ai.provider());
         assertEquals("tr", ai.language());
         assertEquals(Duration.ofSeconds(60), ai.grantTtl());
+        // slice-38: mtls null → default record (mode=required güvenli default)
+        assertEquals("required", ai.mtls().mode());
     }
 }

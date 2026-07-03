@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLContext;
 
 /**
  * ATS-0017 amendment (2026-07-03 canlı keşif) — Faz 24 self-host live-stt motorunun
@@ -75,11 +76,38 @@ public final class Faz24LiveSttProvider implements AIProvider {
     private final Duration requestTimeout;
     private final AudioSource audioSource;
 
-    /** Kanonik constructor — https zorunlu (mTLS reverse-proxy yolu). */
+    /**
+     * Plain (server-auth-only) HTTPS ctor — https zorunlu. mTLS materyali YOKtur;
+     * kanonik prod yolu client-auth ise {@link #Faz24LiveSttProvider(String, Duration,
+     * AudioSource, String, SSLContext)} ctor'unu kullan (mTLS'i açıkça temsil eder).
+     */
     public Faz24LiveSttProvider(String baseUrl, Duration requestTimeout,
                                 AudioSource audioSource, String languageOverrideOrNull) {
         this(HttpClient.newBuilder().connectTimeout(requestTimeout).build(),
                 baseUrl, requestTimeout, audioSource, languageOverrideOrNull, false);
+    }
+
+    /**
+     * mTLS (client-auth) ctor — kanonik reverse-proxy yolu (Codex slice-38: null-means-plain
+     * bulanıklığı YOK; bu ctor mTLS'i AÇIKÇA temsil eder, {@code sslContext} zorunlu).
+     * SSLContext'i client cert + truststore'dan kurmak app-boot'un deploy işidir; JDK
+     * default hostname-verification KAPATILMAZ (server cert SAN ↔ URL host eşleşmeli).
+     */
+    public Faz24LiveSttProvider(String baseUrl, Duration requestTimeout,
+                                AudioSource audioSource, String languageOverrideOrNull,
+                                SSLContext sslContext) {
+        this(mtlsClient(requestTimeout, sslContext),
+                baseUrl, requestTimeout, audioSource, languageOverrideOrNull, false);
+    }
+
+    private static HttpClient mtlsClient(Duration requestTimeout, SSLContext sslContext) {
+        if (sslContext == null) {
+            throw new IllegalArgumentException("sslContext zorunlu (mTLS ctor; plain için diğer ctor)");
+        }
+        if (requestTimeout == null || requestTimeout.isZero() || requestTimeout.isNegative()) {
+            throw new IllegalArgumentException("requestTimeout pozitif olmalı");
+        }
+        return HttpClient.newBuilder().connectTimeout(requestTimeout).sslContext(sslContext).build();
     }
 
     /** Test constructor'ı: {@code allowPlaintextForLoopback} yalnız loopback host'a http açar. */
