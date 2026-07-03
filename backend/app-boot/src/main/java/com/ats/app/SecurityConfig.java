@@ -73,7 +73,8 @@ class SecurityConfig {
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
                             .hasAuthority("RECORDING_WRITE")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/transcript")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/transcript",
+                                "/api/v1/interviews/*/transcripts")
                             .hasAuthority("TRANSCRIPT_READ")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/citations")
                             .hasAuthority("CITATION_WRITE")

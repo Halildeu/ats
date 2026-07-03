@@ -132,6 +132,24 @@ class InterviewApiController {
                 "ledgerSequence", receipt.ledgerSequence()));
     }
 
+    record TranscriptSummaryDto(String transcriptKey, String language, int segmentCount) {}
+
+    /** Mülakatın transkript listesi — pointer-only meta (content taşımaz); UI seçim yüzeyi. */
+    @GetMapping("/api/v1/interviews/{interviewId}/transcripts")
+    ResponseEntity<?> listTranscripts(Authentication auth,
+            @PathVariable("interviewId") String interviewId) {
+        TenantId tenant = TenantAccess.tenant(auth);
+        Outcome<List<TranscriptStore.TranscriptSummary>> out =
+                transcriptStore.listByInterview(tenant, new InterviewId(interviewId));
+        if (out instanceof Outcome.Fail<List<TranscriptStore.TranscriptSummary>> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        return ResponseEntity.ok(((Outcome.Ok<List<TranscriptStore.TranscriptSummary>>) out).value()
+                .stream()
+                .map(s -> new TranscriptSummaryDto(s.transcriptKey(), s.language(), s.segmentCount()))
+                .toList());
+    }
+
     record SegmentDto(int index, String speakerLabel, long startMs, long endMs, String text) {}
     record TranscriptDto(String interviewId, String language, List<SegmentDto> segments) {}
 

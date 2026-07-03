@@ -90,6 +90,30 @@ class PostgresStoresTest {
     }
 
     @Test
+    void transcript_list_by_interview_is_tenant_scoped_and_pointer_only() {
+        InterviewId iv = new InterviewId("iv-list-1");
+        Transcript a = new Transcript(T1, iv, "i1/rec-" + "b".repeat(64), "tr", List.of(
+                new Transcript.Segment(0, "S1", 0, 500, "Birinci")));
+        Transcript b = new Transcript(T1, iv, "i1/rec-" + "c".repeat(64), "tr", List.of(
+                new Transcript.Segment(0, "S1", 0, 500, "Ikinci"),
+                new Transcript.Segment(1, "S2", 500, 900, "Devam")));
+        String keyA = transcripts.put(a).asOptional().orElseThrow();
+        String keyB = transcripts.put(b).asOptional().orElseThrow();
+
+        var listed = transcripts.listByInterview(T1, iv).asOptional().orElseThrow();
+        assertEquals(2, listed.size());
+        assertTrue(listed.stream().anyMatch(x -> x.transcriptKey().equals(keyA) && x.segmentCount() == 1));
+        assertTrue(listed.stream().anyMatch(x -> x.transcriptKey().equals(keyB) && x.segmentCount() == 2));
+        assertTrue(listed.stream().allMatch(x -> x.language().equals("tr")));
+
+        // pointer-only: özet content (segment metni) taşımaz — record'da alan yok (derleme garantisi)
+        // tenant izolasyonu: yabancı tenant BOŞ liste görür (404 değil — varlık sızdırmaz)
+        assertEquals(0, transcripts.listByInterview(T2, iv).asOptional().orElseThrow().size());
+        // bilinmeyen mülakat: boş liste
+        assertEquals(0, transcripts.listByInterview(T1, new InterviewId("iv-yok")).asOptional().orElseThrow().size());
+    }
+
+    @Test
     void citation_roundtrip_preserves_claim_text_in_deletable_plane() {
         String trKey = transcripts.put(sampleTranscript()).asOptional().orElseThrow();
         String key = citations.put(new Citation(T1, I1, trKey, "Aday bes yil calisti",
