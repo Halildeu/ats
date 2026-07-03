@@ -127,8 +127,13 @@ class IngestServiceTest {
         grantConsent();
         ObjectStorePort deleteFailingStore = new ObjectStorePort() {
             @Override
-            public Outcome<StoredObjectRef> put(TenantId t, String key, byte[] bytes) {
-                return objectStore.put(t, key, bytes);
+            public Outcome<StoredObjectRef> put(TenantId t, String key, byte[] bytes, String contentType) {
+                return objectStore.put(t, key, bytes, contentType);
+            }
+
+            @Override
+            public Outcome<ObjectStorePort.StoredObject> read(TenantId t, String key) {
+                return objectStore.read(t, key);
             }
 
             @Override

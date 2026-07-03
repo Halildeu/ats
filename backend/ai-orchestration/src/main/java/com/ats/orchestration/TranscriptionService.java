@@ -43,6 +43,7 @@ public final class TranscriptionService {
     private final TranscriptStore transcriptStore;
     private final EvidenceLedger ledger;
     private final OperationalEventSink sink;
+    private final AudioAccessGrants grants;
 
     public TranscriptionService(
             ConsentGate consentGate,
@@ -50,9 +51,11 @@ public final class TranscriptionService {
             SegmentSanitizer sanitizer,
             TranscriptStore transcriptStore,
             EvidenceLedger ledger,
-            OperationalEventSink sink) {
+            OperationalEventSink sink,
+            AudioAccessGrants grants) {
         this.consentGate = consentGate;
         this.provider = provider;
+        this.grants = grants;
         this.sanitizer = sanitizer;
         this.transcriptStore = transcriptStore;
         this.ledger = ledger;
@@ -113,7 +116,14 @@ public final class TranscriptionService {
                     "sourceObjectKey için recording.ingested kanıtı yok (fail-closed; önce yükleme)");
         }
 
-        Outcome<TranscriptResult> transcribed = provider.transcribe(sourceObjectKey);
+        // slice-36: provider'a orijinal key DEĞİL, tenant-bağlı one-shot capability
+        // handle'ı gider (Codex slice-33 sınırı). Handle sırdır: log/WORM/hata
+        // mesajına yazılmaz; WORM kaydında kaynak orijinal sourceObjectKey kalır.
+        Outcome<String> issued = grants.issue(tenantId, sourceObjectKey);
+        if (!(issued instanceof Outcome.Ok<String> issuedOk)) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ses-erişim grant'i verilemedi (fail-closed)");
+        }
+        Outcome<TranscriptResult> transcribed = provider.transcribe(issuedOk.value());
         if (!(transcribed instanceof Outcome.Ok<TranscriptResult> providerOk)) {
             emit(tenantId, PROVIDER_REJECTED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
                     Map.of("reason_code", "stt_provider_failed"));

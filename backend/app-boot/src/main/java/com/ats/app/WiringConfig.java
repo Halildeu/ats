@@ -16,8 +16,10 @@ import com.ats.ingest.LocalPatternScanAdapter;
 import com.ats.ingest.MalwareScanPort;
 import com.ats.ingest.ObjectStorePort;
 import com.ats.ops.OperationalEventSink;
+import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
 import com.ats.orchestration.CitationStore;
+import com.ats.orchestration.InMemoryAudioAccessGrants;
 import com.ats.orchestration.SegmentSanitizer;
 import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
@@ -29,10 +31,12 @@ import com.ats.persistence.PostgresExportArtifactStore;
 import com.ats.persistence.PostgresRetentionScanner;
 import com.ats.persistence.PostgresReviewCaseStore;
 import com.ats.persistence.PostgresTranscriptStore;
+import com.ats.provider.Faz24LiveSttProvider;
 import com.ats.provider.HttpAIProvider;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCaseStore;
 import com.zaxxer.hikari.HikariConfig;
+import java.time.Clock;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -161,8 +165,27 @@ class WiringConfig {
     // --- AI orchestration ---
 
     @Bean
-    AIProvider aiProvider(AppProperties props) {
-        return new HttpAIProvider(props.ai().baseUrl(), props.ai().timeout(), props.ai().bearer());
+    AudioAccessGrants audioAccessGrants(AppProperties props) {
+        return new InMemoryAudioAccessGrants(Clock.systemUTC(), props.ai().grantTtl());
+    }
+
+    /**
+     * slice-36 sağlayıcı seçimi (kapalı küme AppProperties.Ai'de boot-validate).
+     * live-stt modunda cite bilinçli NOT_CONFIGURED kalır (Faz24LiveSttProvider
+     * içinde): varsayımsal /v1/cite contract'ına otomatik delege YOK — gerçek bir
+     * cite servisi kanıtlanırsa ayrı, açık config ile bağlanır (Codex plan-REVISE).
+     * mTLS client-cert HttpClient wiring'i ayrı deploy dilimi (Faz24LiveSttProvider
+     * https'i kendisi zorlar).
+     */
+    @Bean
+    AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore) {
+        return switch (props.ai().provider()) {
+            case "live-stt" -> new Faz24LiveSttProvider(
+                    props.ai().baseUrl(), props.ai().timeout(),
+                    new GrantRedeemingAudioSource(grants, objectStore),
+                    props.ai().language());
+            default -> new HttpAIProvider(props.ai().baseUrl(), props.ai().timeout(), props.ai().bearer());
+        };
     }
 
     @Bean
@@ -173,8 +196,8 @@ class WiringConfig {
     @Bean
     TranscriptionService transcriptionService(ConsentGate gate, AIProvider provider,
             SegmentSanitizer sanitizer, TranscriptStore transcriptStore,
-            EvidenceLedger ledger, OperationalEventSink sink) {
-        return new TranscriptionService(gate, provider, sanitizer, transcriptStore, ledger, sink);
+            EvidenceLedger ledger, OperationalEventSink sink, AudioAccessGrants grants) {
+        return new TranscriptionService(gate, provider, sanitizer, transcriptStore, ledger, sink, grants);
     }
 
     @Bean

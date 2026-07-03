@@ -9,15 +9,32 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Slice-1 local adapter; anahtar tenant-önekli → cross-tenant okuma/yazma yapısal olarak ayrık. */
 public final class InMemoryObjectStore implements ObjectStorePort {
 
-    private final Map<String, byte[]> objects = new ConcurrentHashMap<>();
+    private record Stored(byte[] bytes, String contentType) {}
+
+    private final Map<String, Stored> objects = new ConcurrentHashMap<>();
 
     @Override
-    public Outcome<StoredObjectRef> put(TenantId tenantId, String key, byte[] bytes) {
+    public Outcome<StoredObjectRef> put(TenantId tenantId, String key, byte[] bytes, String contentType) {
         if (tenantId == null || key == null || key.isBlank() || bytes == null || bytes.length == 0) {
             return Outcome.fail(OutcomeCode.INVALID, "tenantId/key/bytes zorunlu");
         }
-        objects.put(scoped(tenantId, key), bytes.clone());
+        if (contentType == null || contentType.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "contentType zorunlu (write-side saklanır)");
+        }
+        objects.put(scoped(tenantId, key), new Stored(bytes.clone(), contentType));
         return Outcome.ok(new StoredObjectRef(key, bytes.length));
+    }
+
+    @Override
+    public Outcome<StoredObject> read(TenantId tenantId, String key) {
+        if (tenantId == null || key == null || key.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenantId/key zorunlu");
+        }
+        Stored stored = objects.get(scoped(tenantId, key));
+        if (stored == null) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "obje yok/tenant-uyuşmazlığı (fail-closed)");
+        }
+        return Outcome.ok(new StoredObject(stored.bytes().clone(), stored.contentType()));
     }
 
     @Override
