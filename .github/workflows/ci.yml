@@ -282,11 +282,12 @@ jobs:
       - name: "@ats/ui bagimliliklarini kur (file: dep cozumu icin)"
         working-directory: packages/ui
         run: npm ci --no-audit --no-fund
-      - name: "mfe-interview-evidence typecheck + build"
+      - name: "mfe-interview-evidence typecheck + test + build"
         working-directory: web/mfe-interview-evidence
         run: |
           npm ci --no-audit --no-fund
           npx tsc -p tsconfig.json --noEmit
+          npx vitest run
           npx vite build
       - name: "F3 bundle minimal-yuzey guard'i"
         run: node scripts/check-mfe-bundle.mjs
