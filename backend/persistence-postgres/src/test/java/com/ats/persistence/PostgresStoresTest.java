@@ -114,6 +114,24 @@ class PostgresStoresTest {
     }
 
     @Test
+    void review_case_list_by_interview_is_tenant_scoped_and_pointer_only() {
+        InterviewId iv = new InterviewId("iv-case-list-1");
+        ReviewCase base = new ReviewCase(T1, iv, ReviewState.AI_SUGGESTED,
+                List.of("cit-1"), "ai-v1", null, null, null, null, null, null, null);
+        String keyA = cases.put(base).asOptional().orElseThrow();
+        String keyB = cases.put(base.with(ReviewState.HUMAN_REVIEWING)).asOptional().orElseThrow();
+
+        var listed = cases.listByInterview(T1, iv).asOptional().orElseThrow();
+        assertEquals(2, listed.size());
+        assertTrue(listed.stream().anyMatch(x -> x.caseKey().equals(keyA) && x.state() == ReviewState.AI_SUGGESTED));
+        assertTrue(listed.stream().anyMatch(x -> x.caseKey().equals(keyB) && x.state() == ReviewState.HUMAN_REVIEWING));
+
+        // tenant izolasyonu: yabancı tenant BOŞ liste (varlık sızdırmaz); bilinmeyen mülakat boş
+        assertEquals(0, cases.listByInterview(T2, iv).asOptional().orElseThrow().size());
+        assertEquals(0, cases.listByInterview(T1, new InterviewId("iv-case-yok")).asOptional().orElseThrow().size());
+    }
+
+    @Test
     void citation_roundtrip_preserves_claim_text_in_deletable_plane() {
         String trKey = transcripts.put(sampleTranscript()).asOptional().orElseThrow();
         String key = citations.put(new Citation(T1, I1, trKey, "Aday bes yil calisti",

@@ -250,6 +250,41 @@ class RestApiSecurityTest {
     }
 
     @Test
+    void review_case_list_is_scoped_and_pointer_only() throws Exception {
+        try (var c = dataSource.getConnection(); var st = c.createStatement()) {
+            st.executeUpdate("INSERT INTO review_case (tenant_id, case_key, interview_id, state,"
+                    + " source_evidence_refs, ai_output_version_ref, human_authored_rationale_ref)"
+                    + " VALUES ('t-a', 'iv-cl/case-1', 'iv-cl', 'AI_SUGGESTED', '[\"cit-gizli-ref\"]'::jsonb,"
+                    + " 'ai-v1', 'gizli-gerekce-ref') ON CONFLICT DO NOTHING");
+        }
+        String reader = JWT.token(Map.of("tenant", "t-a", "scope", "ats.review.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        ResponseEntity<String> ok = rest.exchange("/api/v1/interviews/iv-cl/review-cases",
+                HttpMethod.GET, new HttpEntity<>(bearer(reader)), String.class);
+        assertEquals(200, ok.getStatusCode().value());
+        assertTrue(ok.getBody().contains("iv-cl/case-1"));
+        assertTrue(ok.getBody().contains("\"state\":\"AI_SUGGESTED\""));
+        // pointer-only: liste ref alanlarını TAŞIMAZ
+        assertFalse(ok.getBody().contains("gizli-gerekce-ref"));
+        assertFalse(ok.getBody().contains("cit-gizli-ref"));
+
+        // scope ayrımı: review.read olmayan token 403
+        String writeOnly = JWT.token(Map.of("tenant", "t-a", "scope", "ats.review.write"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-cl/review-cases",
+                HttpMethod.GET, new HttpEntity<>(bearer(writeOnly)), String.class)
+                .getStatusCode().value());
+
+        // tenant izolasyonu: yabancı tenant BOŞ liste
+        String foreign = JWT.token(Map.of("tenant", "t-b", "scope", "ats.review.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-2");
+        ResponseEntity<String> empty = rest.exchange("/api/v1/interviews/iv-cl/review-cases",
+                HttpMethod.GET, new HttpEntity<>(bearer(foreign)), String.class);
+        assertEquals(200, empty.getStatusCode().value());
+        assertEquals("[]", empty.getBody());
+    }
+
+    @Test
     void cross_tenant_transcript_read_is_404() {
         String tokenB = JWT.token("api-tenant-b", "recruiter-2");
         ResponseEntity<String> resp = rest.exchange(

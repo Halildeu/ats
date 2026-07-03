@@ -34,6 +34,20 @@ public final class InMemoryReviewCaseStore implements ReviewCaseStore {
     }
 
     @Override
+    public Outcome<java.util.List<CaseSummary>> listByInterview(TenantId tenantId, InterviewId interviewId) {
+        String prefix = tenantId.value() + "::";
+        java.util.List<CaseSummary> out = new java.util.ArrayList<>();
+        for (Map.Entry<String, ReviewCase> e : cases.entrySet()) {
+            if (e.getKey().startsWith(prefix) && e.getValue().interviewId().equals(interviewId)) {
+                out.add(new CaseSummary(e.getKey().substring(prefix.length()), e.getValue().state()));
+            }
+        }
+        // ConcurrentHashMap sırasızdır — deterministik çıktı için key'e göre sırala
+        out.sort(java.util.Comparator.comparing(CaseSummary::caseKey));
+        return Outcome.ok(out);
+    }
+
+    @Override
     public Outcome<Void> save(TenantId tenantId, String caseKey, ReviewCase reviewCase) {
         if (!cases.containsKey(scoped(tenantId, caseKey))) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");

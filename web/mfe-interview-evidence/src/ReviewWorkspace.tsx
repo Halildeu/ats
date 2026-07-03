@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
-import { createCitation, exportPacket, finalizeCase, getCaseState, openCase, transition,
-  type CitationReceipt, type ExportReceipt } from "./reviewApi";
+import { createCitation, exportPacket, finalizeCase, getCaseState, listCases, openCase, transition,
+  type CaseSummary, type CitationReceipt, type ExportReceipt } from "./reviewApi";
 import { t } from "./i18n";
 
 /**
@@ -30,6 +30,7 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
   const [criterionId, setCriterionId] = useState("c-teknik-yetkinlik");
   const [jobRelRef, setJobRelRef] = useState("");
   const [exportReceipt, setExportReceipt] = useState<ExportReceipt | null>(null);
+  const [existingCases, setExistingCases] = useState<CaseSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -51,6 +52,42 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
     <section aria-label={t("review.workspaceTitle")} data-testid="review-workspace"
         style={{ marginTop: 28, borderTop: "2px solid var(--border-muted, #E5E5E5)", paddingTop: 16 }}>
       <Text as="h2" size="lg" weight="medium">{t("review.workspaceTitle")}</Text>
+
+      {/* mevcut vakalar: sayfa/oturum yenilense de vakaya kalınan state'ten devam (pointer-only liste) */}
+      <div style={{ display: "grid", gap: 6, maxWidth: 560, marginTop: 8 }}>
+        <Button disabled={busy} data-testid="case-list-button"
+            onClick={() => void run(async () => setExistingCases(await listCases(token, interviewId)))}>
+          {t("review.listCases")}
+        </Button>
+        {existingCases && existingCases.length === 0 && (
+          <Text as="p" size="sm" variant="secondary" data-testid="case-list-empty">
+            {t("review.noCases")}
+          </Text>
+        )}
+        {existingCases && existingCases.length > 0 && (
+          <ul data-testid="case-list" style={{ display: "grid", gap: 6, listStyle: "none", padding: 0, margin: 0 }}>
+            {existingCases.map((c) => (
+              <li key={c.caseKey}>
+                <Button data-testid="case-row" disabled={busy}
+                    onClick={() => void run(async () => {
+                      // vaka değişimi = bağlam değişimi: transient akış-state'leri sıfırla (stale taşınmaz)
+                      setCaseKey(c.caseKey);
+                      setCitation(null);
+                      setExportReceipt(null);
+                      setRationaleRef("");
+                      setDecisionRef("");
+                      setEditSummaryRef("");
+                      setRejectRef("");
+                      setJobRelRef("");
+                      await refreshState(c.caseKey);
+                    })}>
+                  {t("review.caseRowLabel", { key: c.caseKey, state: c.state })}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div style={{ display: "grid", gap: 10, maxWidth: 560, marginTop: 8 }}>
         <Input label={t("review.claimLabel")} value={claim}

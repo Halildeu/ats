@@ -77,6 +77,32 @@ public final class PostgresReviewCaseStore implements ReviewCaseStore {
     }
 
     @Override
+    public Outcome<java.util.List<CaseSummary>> listByInterview(TenantId tenantId, InterviewId interviewId) {
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT case_key, state FROM review_case WHERE tenant_id = ? AND interview_id = ?"
+                                + " ORDER BY created_at DESC, case_key")) {
+            ps.setString(1, tenantId.value());
+            ps.setString(2, interviewId.value());
+            try (ResultSet rs = ps.executeQuery()) {
+                java.util.List<CaseSummary> out = new java.util.ArrayList<>();
+                while (rs.next()) {
+                    ReviewState state;
+                    try {
+                        state = ReviewState.valueOf(rs.getString("state"));
+                    } catch (IllegalArgumentException e) {
+                        return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "state değeri bozuk (fail-closed)");
+                    }
+                    out.add(new CaseSummary(rs.getString("case_key"), state));
+                }
+                return Outcome.ok(out);
+            }
+        } catch (SQLException e) {
+            return Pg.sqlFail(e);
+        }
+    }
+
+    @Override
     public Outcome<Void> save(TenantId tenantId, String caseKey, ReviewCase rc) {
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement(

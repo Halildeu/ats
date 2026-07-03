@@ -70,6 +70,19 @@ export function finalizeCase(token: string, interviewId: string, caseKey: string
       { caseKey, decisionOutcomeRef });
 }
 
+/** Pointer-only vaka özeti — ref gövdesi taşımaz. */
+export type CaseSummary = { caseKey: string; state: string };
+
+export async function listCases(token: string, interviewId: string): Promise<CaseSummary[]> {
+  const resp = await fetch(
+      `/api/v1/interviews/${encodeURIComponent(interviewId)}/review-cases`,
+      { headers: { Authorization: `Bearer ${token}` } });
+  if (!resp.ok) {
+    throw new Error(String(resp.status));
+  }
+  return (await resp.json()) as CaseSummary[];
+}
+
 export async function getCaseState(token: string, interviewId: string, caseKey: string): Promise<string> {
   const resp = await fetch(
       `/api/v1/interviews/${encodeURIComponent(interviewId)}/review-case?case=${encodeURIComponent(caseKey)}`,

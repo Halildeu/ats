@@ -60,6 +60,23 @@ class ReviewApiController {
                 .body(Map.of("caseKey", ((Outcome.Ok<String>) out).value()));
     }
 
+    record CaseSummaryDto(String caseKey, String state) {}
+
+    /** Mülakatın vaka listesi — pointer-only (key + state; ref gövdesi taşımaz); UI devam-etme yüzeyi. */
+    @GetMapping("/api/v1/interviews/{interviewId}/review-cases")
+    ResponseEntity<?> listCases(Authentication auth,
+            @PathVariable("interviewId") String interviewId) {
+        Outcome<List<ReviewCaseStore.CaseSummary>> out = reviewStore.listByInterview(
+                TenantAccess.tenant(auth), new InterviewId(interviewId));
+        if (out instanceof Outcome.Fail<List<ReviewCaseStore.CaseSummary>> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        return ResponseEntity.ok(((Outcome.Ok<List<ReviewCaseStore.CaseSummary>>) out).value()
+                .stream()
+                .map(c -> new CaseSummaryDto(c.caseKey(), c.state().name()))
+                .toList());
+    }
+
     enum TransitionAction { START, EDIT, REVIEWED_NO_CHANGE, REJECT, RATIONALE }
 
     record TransitionBody(String caseKey, String action, String ref, String oversightRoleRef) {}

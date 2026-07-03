@@ -78,7 +78,8 @@ class SecurityConfig {
                             .hasAuthority("TRANSCRIPT_READ")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/citations")
                             .hasAuthority("CITATION_WRITE")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/review-case")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/review-case",
+                                "/api/v1/interviews/*/review-cases")
                             .hasAuthority("REVIEW_READ")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/review-cases",
                                 "/api/v1/interviews/*/review-case/transition",
