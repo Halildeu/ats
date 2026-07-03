@@ -135,8 +135,14 @@ public final class Faz24LiveSttProvider implements AIProvider {
                     "contentType allowlist dışı (ingest aynası + header-injection guard)");
         }
         EncodedMultipart multipart = encodeMultipart(blob.bytes(), blob.contentType());
+        // HTTP/1.1 pin (2026-07-03 CANLI bulgu): JDK HttpClient default'u cleartext'te
+        // h2c-upgrade header'ları gönderir; motorun uvicorn/h11 yığını bu durumda
+        // multipart body'yi işlemez (canlıda 400/422 "audio Field required" —
+        // curl'e upgrade header'ları eklenerek deneysel doğrulandı). İstek-seviyesi
+        // pin, enjekte edilen HttpClient'ın versiyonundan bağımsız çalışır.
         HttpRequest request = HttpRequest.newBuilder(transcribeUri)
                 .timeout(requestTimeout)
+                .version(HttpClient.Version.HTTP_1_1)
                 .header("Content-Type", "multipart/form-data; boundary=" + multipart.boundary())
                 .POST(HttpRequest.BodyPublishers.ofByteArray(multipart.body()))
                 .build();
