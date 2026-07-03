@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
-import { fetchTranscript, type TranscriptDto } from "./api";
+import { fetchTranscript, listTranscripts, type TranscriptDto, type TranscriptSummary } from "./api";
 import { ConsentRecordingPanel } from "./ConsentRecordingPanel";
 import { DsarPanel } from "./DsarPanel";
 import type { ErasureReceipt } from "./dsarApi";
@@ -25,6 +25,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [erasedReceipt, setErasedReceipt] = useState<ErasureReceipt | null>(null);
+  const [summaries, setSummaries] = useState<TranscriptSummary[] | null>(null);
 
   // OIDC callback: sayfa code+state ile döndüyse token'ı değiş (yalnız bellekte tut)
   useEffect(() => {
@@ -40,13 +41,26 @@ export default function App() {
         .catch((e) => setError(e instanceof Error ? e.message : t("error.generic")));
   }, []);
 
-  async function onLoad() {
+  async function loadByKey(key: string) {
     setLoading(true);
     setError(null);
     setTranscript(null);
     setErasedReceipt(null);
     try {
-      setTranscript(await fetchTranscript(token.trim(), interviewId.trim(), transcriptKey.trim()));
+      setTranscript(await fetchTranscript(token.trim(), interviewId.trim(), key));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("error.generic"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onList() {
+    setLoading(true);
+    setError(null);
+    setSummaries(null);
+    try {
+      setSummaries(await listTranscripts(token.trim(), interviewId.trim()));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("error.generic"));
     } finally {
@@ -90,6 +104,39 @@ export default function App() {
           onChange={(e) => setInterviewId(e.target.value)}
           data-testid="interview-input"
         />
+        <Button
+          onClick={onList}
+          disabled={loading || !token || !interviewId}
+          data-testid="list-button"
+        >
+          {loading ? t("common.loading") : t("transcript.listButton")}
+        </Button>
+
+        {summaries && summaries.length === 0 && (
+          <Text as="p" variant="secondary" data-testid="transcript-list-empty">
+            {t("transcript.listEmpty")}
+          </Text>
+        )}
+        {summaries && summaries.length > 0 && (
+          <ul data-testid="transcript-list" style={{ display: "grid", gap: 6, listStyle: "none", padding: 0, margin: 0 }}>
+            {summaries.map((s) => (
+              <li key={s.transcriptKey} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <Button
+                  data-testid="transcript-row"
+                  onClick={() => {
+                    setTranscriptKey(s.transcriptKey);
+                    void loadByKey(s.transcriptKey);
+                  }}
+                  disabled={loading}
+                >
+                  {t("transcript.rowLabel", { key: s.transcriptKey, lang: s.language, count: s.segmentCount })}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* elle anahtar girişi (geriye-uyumlu yardımcı yol; ürün akışı liste-önce) */}
         <Input
           label={t("transcript.keyLabel")}
           value={transcriptKey}
@@ -97,7 +144,7 @@ export default function App() {
           data-testid="key-input"
         />
         <Button
-          onClick={onLoad}
+          onClick={() => void loadByKey(transcriptKey.trim())}
           disabled={loading || !token || !interviewId || !transcriptKey}
           data-testid="load-button"
         >

@@ -4,6 +4,8 @@ import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,6 +33,23 @@ public final class InMemoryTranscriptStore implements TranscriptStore {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "transkript yok (tenant-scope)");
         }
         return Outcome.ok(found);
+    }
+
+    @Override
+    public Outcome<List<TranscriptSummary>> listByInterview(TenantId tenantId, InterviewId interviewId) {
+        String prefix = tenantId.value() + "::";
+        List<TranscriptSummary> out = new ArrayList<>();
+        for (Map.Entry<String, Transcript> e : transcripts.entrySet()) {
+            if (e.getKey().startsWith(prefix) && e.getValue().interviewId().equals(interviewId)) {
+                out.add(new TranscriptSummary(
+                        e.getKey().substring(prefix.length()),
+                        e.getValue().language(),
+                        e.getValue().segments().size()));
+            }
+        }
+        // ConcurrentHashMap sırasızdır — deterministik çıktı için key'e göre sırala
+        out.sort(java.util.Comparator.comparing(TranscriptSummary::transcriptKey));
+        return Outcome.ok(out);
     }
 
     @Override

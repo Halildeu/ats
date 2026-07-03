@@ -1,6 +1,7 @@
 package com.ats.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -210,6 +211,42 @@ class RestApiSecurityTest {
     void invalid_consent_state_is_400() {
         String token = JWT.token("api-tenant-a", "recruiter-1");
         assertEquals(400, putConsent(token, "iv-x", "MAYBE").getStatusCode().value());
+    }
+
+    @Test
+    void transcript_list_is_scoped_and_pointer_only() throws Exception {
+        // content-plane doğrudan seed (transcription orchestration ayrı dilim)
+        try (var c = dataSource.getConnection(); var st = c.createStatement()) {
+            st.executeUpdate("INSERT INTO transcript (tenant_id, transcript_key, interview_id,"
+                    + " source_object_key, language, segments) VALUES ('t-a', 'iv-list/tr-1', 'iv-list',"
+                    + " 'obj/iv-list/rec-1', 'tr',"
+                    + " '[{\"index\":0,\"speaker_label\":\"S1\",\"start_ms\":0,\"end_ms\":100,"
+                    + "\"text\":\"gizli-segment-metni\"}]'::jsonb) ON CONFLICT DO NOTHING");
+        }
+        String reader = JWT.token(Map.of("tenant", "t-a", "scope", "ats.transcript.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        ResponseEntity<String> ok = rest.exchange("/api/v1/interviews/iv-list/transcripts",
+                HttpMethod.GET, new HttpEntity<>(bearer(reader)), String.class);
+        assertEquals(200, ok.getStatusCode().value());
+        assertTrue(ok.getBody().contains("iv-list/tr-1"));
+        assertTrue(ok.getBody().contains("\"segmentCount\":1"));
+        // pointer-only: liste content (segment metni) TAŞIMAZ
+        assertFalse(ok.getBody().contains("gizli-segment-metni"));
+
+        // scope ayrımı: transcript.read olmayan token 403
+        String consentOnly = JWT.token(Map.of("tenant", "t-a", "scope", "ats.consent.write"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-list/transcripts",
+                HttpMethod.GET, new HttpEntity<>(bearer(consentOnly)), String.class)
+                .getStatusCode().value());
+
+        // tenant izolasyonu: yabancı tenant BOŞ liste görür (varlık sızdırmaz)
+        String foreign = JWT.token(Map.of("tenant", "t-b", "scope", "ats.transcript.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-2");
+        ResponseEntity<String> empty = rest.exchange("/api/v1/interviews/iv-list/transcripts",
+                HttpMethod.GET, new HttpEntity<>(bearer(foreign)), String.class);
+        assertEquals(200, empty.getStatusCode().value());
+        assertEquals("[]", empty.getBody());
     }
 
     @Test

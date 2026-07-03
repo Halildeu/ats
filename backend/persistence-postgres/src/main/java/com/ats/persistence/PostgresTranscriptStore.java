@@ -101,6 +101,30 @@ public final class PostgresTranscriptStore implements TranscriptStore {
     }
 
     @Override
+    public Outcome<List<TranscriptSummary>> listByInterview(TenantId tenantId, InterviewId interviewId) {
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT transcript_key, language, jsonb_array_length(segments) AS segment_count"
+                                + " FROM transcript WHERE tenant_id = ? AND interview_id = ?"
+                                + " ORDER BY created_at DESC, transcript_key")) {
+            ps.setString(1, tenantId.value());
+            ps.setString(2, interviewId.value());
+            try (ResultSet rs = ps.executeQuery()) {
+                List<TranscriptSummary> out = new ArrayList<>();
+                while (rs.next()) {
+                    out.add(new TranscriptSummary(
+                            rs.getString("transcript_key"),
+                            rs.getString("language"),
+                            rs.getInt("segment_count")));
+                }
+                return Outcome.ok(out);
+            }
+        } catch (SQLException e) {
+            return Pg.sqlFail(e);
+        }
+    }
+
+    @Override
     public Outcome<Void> delete(TenantId tenantId, String transcriptKey) {
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement(
