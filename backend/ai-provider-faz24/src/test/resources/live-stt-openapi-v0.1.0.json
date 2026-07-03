@@ -1,0 +1,398 @@
+{
+  "components": {
+    "schemas": {
+      "Body_transcribe_endpoint_transcribe_post": {
+        "properties": {
+          "audio": {
+            "format": "binary",
+            "title": "Audio",
+            "type": "string"
+          }
+        },
+        "required": [
+          "audio"
+        ],
+        "title": "Body_transcribe_endpoint_transcribe_post",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "Health check response.",
+        "properties": {
+          "compute_type": {
+            "title": "Compute Type",
+            "type": "string"
+          },
+          "device": {
+            "title": "Device",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "status": {
+            "description": "ok / degraded / loading",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "model",
+          "device",
+          "compute_type"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "TranscribeResponse": {
+        "description": "Synchronous transcribe response.",
+        "properties": {
+          "compute_type": {
+            "description": "Quantization (int8/float16/...)",
+            "title": "Compute Type",
+            "type": "string"
+          },
+          "device": {
+            "description": "cpu / cuda",
+            "title": "Device",
+            "type": "string"
+          },
+          "duration": {
+            "description": "Audio duration (seconds)",
+            "minimum": 0.0,
+            "title": "Duration",
+            "type": "number"
+          },
+          "elapsed_ms": {
+            "description": "Whisper inference wall-clock",
+            "minimum": 0.0,
+            "title": "Elapsed Ms",
+            "type": "integer"
+          },
+          "language": {
+            "description": "Detected/forced language code (ISO 639-1)",
+            "title": "Language",
+            "type": "string"
+          },
+          "language_probability": {
+            "description": "Detection confidence (1.0 if forced)",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Language Probability",
+            "type": "number"
+          },
+          "model": {
+            "description": "Whisper model used",
+            "title": "Model",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "text": {
+            "description": "Concatenated transcript",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "language",
+          "language_probability",
+          "duration",
+          "elapsed_ms",
+          "model",
+          "compute_type",
+          "device"
+        ],
+        "title": "TranscribeResponse",
+        "type": "object"
+      },
+      "TranscriptSegment": {
+        "description": "Whisper segment — time-aligned transcript piece.",
+        "properties": {
+          "avg_logprob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean token log-prob",
+            "title": "Avg Logprob"
+          },
+          "end": {
+            "description": "End time (seconds)",
+            "minimum": 0.0,
+            "title": "End",
+            "type": "number"
+          },
+          "id": {
+            "description": "Segment index within request",
+            "title": "Id",
+            "type": "integer"
+          },
+          "no_speech_prob": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Probability segment is silence",
+            "title": "No Speech Prob"
+          },
+          "start": {
+            "description": "Start time (seconds)",
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "description": "Transcribed text",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "TranscriptSegment",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Faz 24 Meeting Intelligence — Whisper synchronous transcribe (PoC) + two-stage WebSocket live streaming (#128). Diarization separate.",
+    "title": "live-stt-service",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Status:\n- `loading`  → service up but model not yet loaded (first request pays cost)\n- `ok`       → model loaded\n- `degraded` → reserved for future failure-mode signaling",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness + readiness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Expose Prometheus metrics for Grafana scraping.",
+        "operationId": "metrics_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prometheus metrics endpoint",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/transcribe": {
+      "post": {
+        "description": "Synchronous transcribe.\n\nPoC contract:\n  - Accepts multipart audio file (wav/mp3/m4a/ogg/flac — anything ffmpeg reads)\n  - Max body size enforced via `STT_MAX_AUDIO_MB`\n  - Inference runs in threadpool (event loop never blocked)\n  - Total wall-clock capped by `STT_REQUEST_TIMEOUT`\n  - Returns full text + segments + meta\n\nError map:\n  - 400 unsupported content-type / empty body / oversized / decode fail\n  - 413 audio > `STT_MAX_AUDIO_MB`\n  - 503 model load OOM / resource exhaustion\n  - 504 inference exceeded `STT_REQUEST_TIMEOUT`\n  - 500 unexpected I/O\n\nStreaming / chunked back-pressure = separate slice (out of PoC scope; Codex\n`019e877b` notu).",
+        "operationId": "transcribe_endpoint_transcribe_post",
+        "parameters": [
+          {
+            "description": "Meeting identifier from Gateway",
+            "in": "query",
+            "name": "meeting_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Meeting identifier from Gateway",
+              "title": "Meeting Id"
+            }
+          },
+          {
+            "description": "Session identifier from Gateway",
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Session identifier from Gateway",
+              "title": "Session Id"
+            }
+          },
+          {
+            "description": "Device identifier from Gateway",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Device identifier from Gateway",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "ISO 639-1 language override (e.g. tr, en, de)",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 10,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO 639-1 language override (e.g. tr, en, de)",
+              "title": "Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_transcribe_endpoint_transcribe_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscribeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Whisper transcribe (sync, PoC)",
+        "tags": [
+          "transcribe"
+        ]
+      }
+    }
+  }
+}

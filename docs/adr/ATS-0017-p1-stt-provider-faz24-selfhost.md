@@ -29,3 +29,35 @@ Bu ADR seçim kaydıdır; gerçek servis bağlantısı ayrı slice (ATS-0016 sı
 ## Bağlantı
 
 [[ATS-0004]] · [[ATS-0008]] · [[ATS-0016]] (slice sırası) · ai/eval-harness (Gate C) · subprocessor-register (PRIVATE; transfer=none korunur).
+
+## Amendment — 2026-07-03 canlı wire-contract keşfi (slice-33)
+
+Motorun gerçek HTTP sözleşmesi canlı `/openapi.json`'dan read-only keşfedildi (FastAPI
+`live-stt-service` v0.1.0, faster-whisper). Keşif, slice-7 `HttpAIProvider`'ın
+varsayımsal sözleşmesini **yanlışladı**; düzeltilmiş gerçekler:
+
+| Boyut | Slice-7 varsayımı | Keşfedilen gerçek (v0.1.0) |
+|---|---|---|
+| Yol | `POST /v1/transcribe` | `POST /transcribe` (v1 prefix yok) |
+| Giriş | JSON `{"audio_ref"}` | **multipart/form-data**, zorunlu binary alan `audio`; opsiyonel `language` query (ISO 639-1) |
+| Zaman | `start_ms`/`end_ms` int | `start`/`end` **float saniye** |
+| Konuşmacı | segment başına `speaker` | **YOK** — spec: "Diarization separate" |
+| Hata haritası | — | 400/413/422 giriş reddi · 503 OOM · 504 inference timeout |
+
+**Overclaim düzeltmesi:** bu ADR'ın başlığındaki "STT/diarization" ifadesi motorun
+bugünkü yüzeyi için fazla iddialıdır — **live-stt v0.1.0 diarization SUNMAZ**;
+diarization ayrı bileşen/dilim işidir. Adaptör (`Faz24LiveSttProvider`) bu yüzden tüm
+segmentlere tek sentinel provider-label `undiarized_stream` verir (SegmentSanitizer →
+S1); bu bir diarization sonucu değil, tek-akış fallback'idir ([[ATS-0013]]).
+
+**Adaptör kararları (Codex REVISE absorb):** kanonik transport mTLS reverse-proxy →
+public constructor `https` zorunlu (plaintext yalnız loopback test constructor'ı);
+`AudioSource` portu yalnız üst katmanda (tenant + consent + WORM ingest-kanıtı)
+yetkilendirilmiş opaque ref çözer — global key-lookup köprüsü DEĞİL (tenant-aware boot
+kompozisyonu ayrı dilim); blank-text segment DROP değil FAIL; `cite()` bu motorda
+NOT_CONFIGURED (delege yok — composite provider ayrı, açık kompozisyon dilimi);
+multipart boundary collision-taramalı; contentType ingest-allowlist aynası (kapalı
+küme → header-injection yapısal imkânsız). Keşfedilen spec PUBLIC-safe snapshot olarak
+pinli (`ai-provider-faz24/src/test/resources/live-stt-openapi-v0.1.0.json`) +
+`LiveSttOpenApiConformanceTest` adaptör varsayımlarını makine-zorlamalı doğrular.
+İç ağ topolojisi/erişim detayı bu (public) repoya bilinçli yazılmaz.
