@@ -54,6 +54,7 @@
     "export.create": "Kanıt paketini oluştur (F7)",
     "export.done": "Kanıt paketi oluşturuldu (WORM'a bağlı)",
     "export.digestLabel": "Paket özeti (digest):",
-    "export.claimCount": "{count} iddia"
+    "export.claimCount": "{count} iddia",
+    "export.devPlaceholderWarning": "DEV bağlamı: consent/worm-chain/redaction/retention referansları yer-tutucudur — bu paket PROD denetim paketi DEĞİLDİR (prod'da bu yol kapalıdır; deploy-config bağlanmalı)."
   }
 }

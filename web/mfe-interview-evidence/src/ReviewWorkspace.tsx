@@ -60,6 +60,13 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
               setCitation(await createCitation(token, interviewId, transcriptKey, claim.trim()));
               setCaseKey(null);
               setCaseState(null);
+              // transient akış-state'leri: stale taşımayı önle (Codex #75 blocker-2)
+              setExportReceipt(null);
+              setRationaleRef("");
+              setDecisionRef("");
+              setEditSummaryRef("");
+              setRejectRef("");
+              setJobRelRef("");
             })}>
           {t("review.createCitation")}
         </Button>
@@ -165,6 +172,9 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
 
             {caseState === "FINALIZED" && citation && !exportReceipt && (
               <>
+                <Text as="p" size="sm" variant="warning" data-testid="export-dev-warning">
+                  {t("export.devPlaceholderWarning")}
+                </Text>
                 <Input label={t("export.criterionLabel")} value={criterionId}
                     onChange={(e) => setCriterionId(e.target.value)} data-testid="criterion-input" />
                 <Input label={t("export.jobRelLabel")} value={jobRelRef}

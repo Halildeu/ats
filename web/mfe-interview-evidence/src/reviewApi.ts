@@ -1,5 +1,18 @@
 /** Review-workspace API istemcisi — hepsi JWT'li; hata {error,reason} fail-closed. */
 import type { ApiError } from "./api";
+// schema_digest INTEGRITY alanıdır (opak ref değil): kanonik şemanın GERÇEK sha256'sı
+// build-time raw-import + WebCrypto ile hesaplanır (sıfır/placeholder digest YASAK).
+import evidencePacketSchemaRaw from "../../../contracts/schemas/evidence-packet.schema.json?raw";
+
+let schemaDigestPromise: Promise<string> | null = null;
+function evidencePacketSchemaDigest(): Promise<string> {
+  if (!schemaDigestPromise) {
+    schemaDigestPromise = crypto.subtle
+        .digest("SHA-256", new TextEncoder().encode(evidencePacketSchemaRaw))
+        .then((d) => [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join(""));
+  }
+  return schemaDigestPromise;
+}
 
 async function post<T>(token: string, path: string, body: unknown): Promise<T> {
   const resp = await fetch(path, {
@@ -76,12 +89,15 @@ export type ExportReceipt = {
 
 /**
  * F7 export — kriter-bağlama (iş-ilişkililik) KULLANICIDAN alınır (anlamlı
- * uygunluk girdisi); generator/redaction/retention ref'leri P1'de belgeli
- * dev-placeholder'lardır (deploy-config görevi; ExportContext alanları OPAK
- * pointer sözleşmesi — packet'e içerik girmez).
+ * uygunluk girdisi); schema_digest GERÇEK şema sha256'sıdır; consent/worm-chain/
+ * redaction/retention ref'leri P1'de belgeli DEV-PLACEHOLDER'dır (deploy-config
+ * görevi) — UI bunu AÇIKÇA gösterir ve PROD build'de bu yol FAIL-CLOSED kapalıdır.
  */
-export function exportPacket(token: string, interviewId: string, caseKey: string,
+export async function exportPacket(token: string, interviewId: string, caseKey: string,
     citationKey: string, criterionId: string, jobRelatednessRef: string) {
+  if (import.meta.env.PROD) {
+    throw new Error("export dev-placeholder context'i PROD'da kapalıdır (deploy-config ref'leri bağlanmalı)");
+  }
   return post<ExportReceipt>(token,
       `/api/v1/interviews/${encodeURIComponent(interviewId)}/export`, {
         caseKey,
@@ -99,7 +115,7 @@ export function exportPacket(token: string, interviewId: string, caseKey: string
           redactionPolicyRef: "redaction-policy-p1",
           redactionRunRef: "redaction-run-p1",
           retentionPolicyRef: "retention-policy-p1",
-          schemaDigest: "0".repeat(64),
+          schemaDigest: await evidencePacketSchemaDigest(),
           signatureRef: "sig-p1-dev",
         },
       });
