@@ -9,7 +9,7 @@ import type { AIProvider, CitationResult, TranscriptResult } from "../src/ai-pro
 
 export class GateStubAIProvider implements AIProvider {
   transcribe(_audioRef: string): Outcome<TranscriptResult> {
-    return fail("UNSUPPORTED_IN_GATE", "STT/diarization P1 fonksiyonel — G0=GO'ya kilitli");
+    return fail("UNSUPPORTED_IN_GATE", "STT (+ sağlayıcı-destekli diarization) P1 fonksiyonel — G0=GO'ya kilitli");
   }
 
   cite(_claim: string, _transcriptRef: string): Outcome<CitationResult> {

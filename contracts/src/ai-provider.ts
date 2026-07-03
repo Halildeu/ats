@@ -12,7 +12,11 @@
 import type { Outcome } from "./types.js";
 
 export interface TranscriptSegment {
-  /** Konuşmacı etiketi (diarization), ör. "S1". Kimlik/PII değil. */
+  /**
+   * Sağlayıcı konuşmacı/akış etiketi, ör. "S1": diarization varsa oturum-içi
+   * ayrıştırma label'ı, yoksa tek-akış sentinel (live-stt v0.1.0 diarization
+   * SUNMAZ — bkz. ATS-0017 amendment). Kimlik/PII değil.
+   */
   readonly speaker: string;
   readonly startMs: number;
   readonly endMs: number;
@@ -35,7 +39,10 @@ export interface CitationResult {
 }
 
 export interface AIProvider {
-  /** STT + diarization. Gate'te stub UNSUPPORTED_IN_GATE döner. */
+  /**
+   * STT (+ sağlayıcı sunuyorsa diarization; live-stt v0.1.0 SUNMAZ → tek-akış
+   * sentinel, bkz. ATS-0017 amendment). Gate'te stub UNSUPPORTED_IN_GATE döner.
+   */
   transcribe(audioRef: string): Outcome<TranscriptResult>;
 
   /**
