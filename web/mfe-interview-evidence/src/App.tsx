@@ -26,6 +26,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [erasedReceipt, setErasedReceipt] = useState<ErasureReceipt | null>(null);
   const [summaries, setSummaries] = useState<TranscriptSummary[] | null>(null);
+  // yüklü içeriğin BAĞLAMI input'lardan AYRI tutulur: render/inceleme/DSAR daima
+  // yüklendiği andaki interview+key ile çalışır — input sonradan değişse bile
+  // yıkıcı aksiyon (erasure) asla "o anki input"a gitmez (Codex #78 blocker)
+  const [loaded, setLoaded] = useState<{ interviewId: string; transcriptKey: string } | null>(null);
 
   // OIDC callback: sayfa code+state ile döndüyse token'ı değiş (yalnız bellekte tut)
   useEffect(() => {
@@ -45,9 +49,12 @@ export default function App() {
     setLoading(true);
     setError(null);
     setTranscript(null);
+    setLoaded(null);
     setErasedReceipt(null);
+    const iv = interviewId.trim();
     try {
-      setTranscript(await fetchTranscript(token.trim(), interviewId.trim(), key));
+      setTranscript(await fetchTranscript(token.trim(), iv, key));
+      setLoaded({ interviewId: iv, transcriptKey: key });
     } catch (e) {
       setError(e instanceof Error ? e.message : t("error.generic"));
     } finally {
@@ -59,6 +66,10 @@ export default function App() {
     setLoading(true);
     setError(null);
     setSummaries(null);
+    // yeni liste = yeni bağlam: eski içerik yüzeyi ve makbuz kapanır
+    setTranscript(null);
+    setLoaded(null);
+    setErasedReceipt(null);
     try {
       setSummaries(await listTranscripts(token.trim(), interviewId.trim()));
     } catch (e) {
@@ -66,6 +77,15 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /** interviewId değişimi = bağlam değişimi — içerik yüzeyi ve liste kapanır. */
+  function onInterviewIdChange(value: string) {
+    setInterviewId(value);
+    setSummaries(null);
+    setTranscript(null);
+    setLoaded(null);
+    setErasedReceipt(null);
   }
 
   return (
@@ -101,7 +121,7 @@ export default function App() {
         <Input
           label={t("transcript.interviewIdLabel")}
           value={interviewId}
-          onChange={(e) => setInterviewId(e.target.value)}
+          onChange={(e) => onInterviewIdChange(e.target.value)}
           data-testid="interview-input"
         />
         <Button
@@ -185,21 +205,22 @@ export default function App() {
         </div>
       )}
 
-      {transcript && (
+      {transcript && loaded && (
         <section aria-label={t("transcript.title")} data-testid="transcript-section">
           <Text as="h2" size="lg" weight="medium">
             {t("transcript.segmentsHeading", { count: transcript.segments.length })}
           </Text>
           <SegmentView segments={transcript.segments} />
-          <ReviewWorkspace token={token} interviewId={interviewId.trim()}
-              transcriptKey={transcriptKey.trim()} />
+          <ReviewWorkspace token={token} interviewId={loaded.interviewId}
+              transcriptKey={loaded.transcriptKey} />
           <DsarPanel
             token={token}
-            interviewId={interviewId.trim()}
-            transcriptKey={transcriptKey.trim()}
+            interviewId={loaded.interviewId}
+            transcriptKey={loaded.transcriptKey}
             onErased={(receipt) => {
               // dürüst state: içerik silindi — segment/inceleme yüzeyi kaldırılır
               setTranscript(null);
+              setLoaded(null);
               setErasedReceipt(receipt);
             }}
           />
