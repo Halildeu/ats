@@ -29,6 +29,7 @@
     "upload.receiptSummary": "Kanıt kimliği: {evidenceId} · defter sırası: {seq}",
     "upload.transcriptionNote": "Transkript bu kayıttan aşağıdaki düğmeyle üretilir (dev'de STT stub; PROD'da self-host motor).",
     "upload.transcribe": "Transkript üret",
+    "upload.transcribed": "Transkript üretildi (bu kayıt için tek sefer)",
     "consent.recordConsent": "Kaydı onaylıyorum",
     "consent.withdraw": "Rızamı geri çekiyorum",
     "recording.blockedNoConsent": "Rıza alınmadan kayıt başlatılamaz.",
