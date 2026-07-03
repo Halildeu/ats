@@ -47,8 +47,23 @@ export function ConsentRecordingPanel({ token, interviewId, onTranscribed }: Pro
   const [savedState, setSavedState] = useState<ConsentState | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [receipt, setReceipt] = useState<IngestReceipt | null>(null);
+  // aynı kayda ikinci transcribe İSTEĞİNİ UI'da kilitle (sunucu idempotency'si ayrı katman)
+  const [transcribedKey, setTranscribedKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // bağlam değişimi (interviewId) = panel state'i sıfırlanır — eski makbuz/beyan
+  // yeni mülakatın sahnesinde kalamaz (slice-22 stale-context disiplini)
+  const [boundInterviewId, setBoundInterviewId] = useState(interviewId);
+  if (boundInterviewId !== interviewId) {
+    setBoundInterviewId(interviewId);
+    setSubjectRef("");
+    setState("");
+    setSavedState(null);
+    setFile(null);
+    setReceipt(null);
+    setTranscribedKey(null);
+    setError(null);
+  }
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -162,6 +177,7 @@ export function ConsentRecordingPanel({ token, interviewId, onTranscribed }: Pro
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setReceipt(null);
+              setTranscribedKey(null);
             }}
           />
         </label>
@@ -197,18 +213,26 @@ export function ConsentRecordingPanel({ token, interviewId, onTranscribed }: Pro
             <Text as="p" size="sm" variant="secondary" data-testid="upload-next-note">
               {t("upload.transcriptionNote")}
             </Text>
-            <Button
-              disabled={busy}
-              data-testid="transcribe-button"
-              onClick={() =>
-                void run(async () => {
-                  const r = await transcribeRecording(token, interviewId, receipt.objectKey);
-                  onTranscribed(r.transcriptKey);
-                })
-              }
-            >
-              {t("upload.transcribe")}
-            </Button>
+            {!transcribedKey && (
+              <Button
+                disabled={busy}
+                data-testid="transcribe-button"
+                onClick={() =>
+                  void run(async () => {
+                    const r = await transcribeRecording(token, interviewId, receipt.objectKey);
+                    setTranscribedKey(r.transcriptKey);
+                    onTranscribed(r.transcriptKey);
+                  })
+                }
+              >
+                {t("upload.transcribe")}
+              </Button>
+            )}
+            {transcribedKey && (
+              <Badge variant="success" data-testid="transcribed-badge">
+                {t("upload.transcribed")}
+              </Badge>
+            )}
           </div>
         )}
       </div>

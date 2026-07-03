@@ -20,8 +20,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderPanel() {
-  render(<ConsentRecordingPanel token="t" interviewId="iv-1" onTranscribed={() => {}} />);
+function renderPanel(interviewId = "iv-1", onTranscribed: (k: string) => void = () => {}) {
+  return render(<ConsentRecordingPanel token="t" interviewId={interviewId} onTranscribed={onTranscribed} />);
 }
 
 describe("açık-rıza UX", () => {
@@ -83,5 +83,47 @@ describe("kayıt yükleme", () => {
     expect(headers["Content-Type"]).toBe("audio/wav");
     expect(headers["X-ATS-Filename"]).toBe("kayit.wav");
     expect(screen.getByTestId("upload-receipt").textContent).toContain("ev-1");
+  });
+});
+
+describe("UX hijyeni (Codex #85 non-blocking absorb)", () => {
+  async function uploadOk() {
+    const file = new File([new Uint8Array(64)], "kayit.wav", { type: "audio/wav" });
+    fireEvent.change(screen.getByTestId("upload-file-input"), { target: { files: [file] } });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(
+        { objectKey: "iv-1/rec-" + "a".repeat(64), evidenceId: "ev-1", ledgerSequence: 1 }),
+        { status: 201, headers: { "Content-Type": "application/json" } }));
+    fireEvent.click(screen.getByTestId("upload-button"));
+    await screen.findByTestId("upload-receipt");
+  }
+
+  it("transcribe başarısından sonra buton KİLİTLENİR (tek-sefer); yeni dosya seçimi hakkı yeniler", async () => {
+    renderPanel();
+    await uploadOk();
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(
+        { transcriptKey: "iv-1/tr-x", evidenceId: "ev-2", segmentCount: 2 }),
+        { status: 201, headers: { "Content-Type": "application/json" } }));
+    fireEvent.click(screen.getByTestId("transcribe-button"));
+    await screen.findByTestId("transcribed-badge");
+    expect(screen.queryByTestId("transcribe-button")).toBeNull(); // ikinci basış yapısal imkânsız
+
+    // yeni dosya = yeni kayıt = transcribe hakkı yenilenir
+    const file2 = new File([new Uint8Array(32)], "kayit2.wav", { type: "audio/wav" });
+    fireEvent.change(screen.getByTestId("upload-file-input"), { target: { files: [file2] } });
+    expect(screen.queryByTestId("transcribed-badge")).toBeNull();
+  });
+
+  it("interviewId değişince panel state'i sıfırlanır (stale makbuz/beyan taşınmaz)", async () => {
+    const view = renderPanel("iv-a");
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    fireEvent.change(screen.getByTestId("consent-subject-input"), { target: { value: "subj-1" } });
+    fireEvent.change(screen.getByTestId("consent-state-select"), { target: { value: "GRANTED" } });
+    fireEvent.click(screen.getByTestId("consent-save-button"));
+    await screen.findByTestId("consent-saved");
+
+    view.rerender(<ConsentRecordingPanel token="t" interviewId="iv-b" onTranscribed={() => {}} />);
+    expect(screen.queryByTestId("consent-saved")).toBeNull();
+    expect((screen.getByTestId("consent-subject-input") as HTMLInputElement).value).toBe("");
+    expect((screen.getByTestId("consent-state-select") as HTMLSelectElement).value).toBe("");
   });
 });
