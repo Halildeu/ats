@@ -21,6 +21,7 @@
 | [ATS-0016](./adr/ATS-0016-p1-build-unlock-g0-release-gate.md) | P1 build unlock — G0 build-gate→RELEASE-gate (owner kararı; slice-1 sınırlı) | Accepted — owner 2026-07-02 |
 | [ATS-0017](./adr/ATS-0017-p1-stt-provider-faz24-selfhost.md) | P1 STT sağlayıcısı: Faz 24 self-host motoru (AIProvider portu; cloud=isim-özel owner onayı; diarization AYRI bileşen — v0.1.0 sunmaz, 2026-07-03 wire-contract keşif amendment'ı) | Accepted — standing-autonomy 2026-07-02 (dar kapsam; kalite iddiasız; owner veto sürer) |
 | [ATS-0018](./adr/ATS-0018-persistence-unlock-postgres-jdbc.md) | persistence unlock: PG16+Flyway+plain-JDBC tek-adapter-modülü (JPA'sız; WORM append-only tablo + ArchUnit daralma) | Accepted — cross-AI 2026-07-02; impl: 8a+8b+8c LANDED (Testcontainers); prod wiring yok |
+| [ATS-0019](./adr/ATS-0019-platform-web-mfe-integration.md) | Ürün yüzeyi platform-web'e MFE entegrasyon + `@mfe/design-system`/`@mfe/auth` reuse (frontend pivot; backend ATS app-boot AYRI; `/api/ats` proxy; platform-KC issuer/`ats-api`-audience/tenant/10-scope contract; ATS-0016 synthetic/G0 korunur) | Accepted — owner+cross-AI 2026-07-03 (ATS-0008 frontend supersede; mfe-start-gate deprecated) |
 
 > **Private ADR'ler** (iç-mühendislik/ticari → `ats-strategy`): ATS-0006 (sovereign SKU/pricing), ATS-0008 (servis/MFE decomposition + stack-lock), ATS-0009 (CI runner). On-prem **kabiliyet** trust sinyali ATS-0002'de (topology).
 
