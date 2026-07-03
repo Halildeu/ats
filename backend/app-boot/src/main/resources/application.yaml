@@ -28,6 +28,7 @@ ats:
     jwks-uri: ${ATS_JWKS_URI:}
     issuer: ${ATS_JWT_ISSUER:}
     audience: ${ATS_JWT_AUDIENCE:}
+    tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
   retention:

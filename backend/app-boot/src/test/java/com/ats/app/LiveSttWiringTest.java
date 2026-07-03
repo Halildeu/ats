@@ -43,7 +43,7 @@ class LiveSttWiringTest {
         return new AppProperties(
                 new AppProperties.Db("jdbc:postgresql://127.0.0.1:5432/x", "u", "p"),
                 ai,
-                new AppProperties.Security("https://idp.example/jwks.json", "https://idp.example", "ats"),
+                new AppProperties.Security("https://idp.example/jwks.json", "https://idp.example", "ats", "tenant"),
                 new AppProperties.Ingest(1024L),
                 new AppProperties.Retention(false, null, 0, null));
     }
