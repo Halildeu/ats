@@ -8,6 +8,27 @@ import { createServer } from "node:http";
 
 const PORT = 9452;
 createServer(async (req, res) => {
+  if (req.url === "/v1/transcribe" && req.method === "POST") {
+    let data = "";
+    for await (const c of req) data += c;
+    try {
+      JSON.parse(data); // audio_ref taşır; stub içerik üretir (dep'siz sentetik)
+    } catch {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      language: "tr-TR",
+      segments: [
+        { speaker: "S1", start_ms: 0, end_ms: 4000, text: "Merhaba, deneyiminizi anlatir misiniz? (dev-stub)" },
+        { speaker: "S2", start_ms: 4000, end_ms: 9000, text: "Aday deneyimini somut orneklerle anlatti. (dev-stub)" },
+        { speaker: "S1", start_ms: 9000, end_ms: 10000, text: "Tesekkurler. (dev-stub)" },
+      ],
+    }));
+    return;
+  }
   if (req.url === "/v1/cite" && req.method === "POST") {
     let data = "";
     for await (const c of req) data += c;

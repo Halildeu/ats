@@ -10,6 +10,7 @@ import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
 import com.ats.orchestration.Transcript;
 import com.ats.orchestration.TranscriptStore;
+import com.ats.orchestration.TranscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -41,13 +42,16 @@ class InterviewApiController {
     private final ConsentService consentService;
     private final IngestService ingestService;
     private final TranscriptStore transcriptStore;
+    private final TranscriptionService transcriptionService;
     private final long maxUploadBytes;
 
     InterviewApiController(ConsentService consentService, IngestService ingestService,
-            TranscriptStore transcriptStore, AppProperties props) {
+            TranscriptStore transcriptStore, TranscriptionService transcriptionService,
+            AppProperties props) {
         this.consentService = consentService;
         this.ingestService = ingestService;
         this.transcriptStore = transcriptStore;
+        this.transcriptionService = transcriptionService;
         this.maxUploadBytes = props.ingest().maxUploadBytes();
     }
 
@@ -130,6 +134,35 @@ class InterviewApiController {
                 "objectKey", receipt.objectKey(),
                 "evidenceId", receipt.evidenceId(),
                 "ledgerSequence", receipt.ledgerSequence()));
+    }
+
+    record TranscribeBody(String sourceObjectKey) {}
+
+    /**
+     * Yüklenmiş kayıttan transkript üretimi (F2→F3 köprüsü) — TranscriptionService
+     * fail-closed çekirdeği aynen: consent-gate + content-addressed sourceObjectKey
+     * TAM-eşleşme + sağlayıcı wire-contract; sağlayıcı erişilemezse açık hata
+     * (kısmi/uydurma sonuç yapısal imkânsız). Ayrı yetki sınıfı: ats.transcription.write
+     * (STT işleme = PII-üreten ayrı yetenek; upload'dan ayrık).
+     */
+    @PostMapping("/api/v1/interviews/{interviewId}/transcribe")
+    ResponseEntity<?> transcribe(Authentication auth,
+            @PathVariable("interviewId") String interviewId, @RequestBody TranscribeBody body) {
+        if (body == null || body.sourceObjectKey() == null || body.sourceObjectKey().isBlank()) {
+            return badRequest("sourceObjectKey zorunlu (upload makbuzundaki objectKey)");
+        }
+        Outcome<TranscriptionService.TranscriptionReceipt> out = transcriptionService.transcribeStored(
+                TenantAccess.tenant(auth), TenantAccess.actor(auth), new InterviewId(interviewId),
+                body.sourceObjectKey(), Instant.now().toString());
+        if (out instanceof Outcome.Fail<TranscriptionService.TranscriptionReceipt> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        TranscriptionService.TranscriptionReceipt r =
+                ((Outcome.Ok<TranscriptionService.TranscriptionReceipt>) out).value();
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                "transcriptKey", r.transcriptKey(),
+                "evidenceId", r.evidenceId(),
+                "segmentCount", r.segmentCount()));
     }
 
     record TranscriptSummaryDto(String transcriptKey, String language, int segmentCount) {}

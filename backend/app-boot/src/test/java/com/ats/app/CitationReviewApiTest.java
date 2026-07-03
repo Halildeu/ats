@@ -1,6 +1,7 @@
 package com.ats.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.kernel.Ids.InterviewId;
@@ -53,11 +54,26 @@ class CitationReviewApiTest {
     private static final JwtTestSupport JWT = new JwtTestSupport();
 
     /** ATS-0017 wire-contract /v1/cite stub'ı: claim'i AYNEN yankılar, seg-0'ı kaynak verir. */
+    private static final java.util.concurrent.atomic.AtomicInteger TRANSCRIBE_CALLS =
+            new java.util.concurrent.atomic.AtomicInteger();
     private static final HttpServer AI = aiStub();
 
     private static HttpServer aiStub() {
         try {
             HttpServer s = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            s.createContext("/v1/transcribe", exchange -> {
+                TRANSCRIBE_CALLS.incrementAndGet();
+                exchange.getRequestBody().readAllBytes(); // audio_ref taşır; stub sentetik döner
+                String body = "{\"language\":\"tr-TR\",\"segments\":["
+                        + "{\"speaker\":\"S1\",\"start_ms\":0,\"end_ms\":4000,\"text\":\"Soru (stub)\"},"
+                        + "{\"speaker\":\"S2\",\"start_ms\":4000,\"end_ms\":9000,\"text\":\"Yanit (stub)\"}]}";
+                byte[] b = body.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, b.length);
+                try (var os = exchange.getResponseBody()) {
+                    os.write(b);
+                }
+            });
             s.createContext("/v1/cite", exchange -> {
                 String req = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
                 // istekten claim'i çek (basit ayrıştırma; test-stub) — echo sözleşmesi
@@ -106,7 +122,7 @@ class CitationReviewApiTest {
 
     private String fullToken() {
         return JWT.token(java.util.Map.of("tenant", TENANT, "scope",
-                        "ats.consent.write ats.citation.write ats.review.write ats.review.read"),
+                        "ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read"),
                 JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "reviewer-1");
     }
 
@@ -131,6 +147,84 @@ class CitationReviewApiTest {
                 List.of(new Transcript.Segment(0, "S1", 0, 5_000, "Aday bes yil Java gelistirdigini soyledi."),
                         new Transcript.Segment(1, "S2", 5_000, 9_000, "Takim buyuklugu soruldu."))));
         return ((Outcome.Ok<String>) key).value();
+    }
+
+    // --- transcription (F2→F3 köprüsü) ---
+
+    @Test
+    void transcribe_end_to_end_upload_then_stub_provider_then_transcript_readable() throws Exception {
+        String token = fullToken();
+        String iv = "iv-transcribe-1";
+        grantConsent(token, iv);
+
+        // gerçek upload → content-addressed objectKey (serbest string transcribe'a giremez)
+        HttpHeaders up = new HttpHeaders();
+        up.setBearerAuth(token);
+        up.setContentType(MediaType.parseMediaType("audio/wav"));
+        up.set("X-ATS-Filename", "kayit.wav");
+        ResponseEntity<String> uploaded = rest.exchange("/api/v1/interviews/" + iv + "/recordings",
+                HttpMethod.POST, new HttpEntity<>(new byte[128], up), String.class);
+        assertEquals(201, uploaded.getStatusCode().value());
+        String objectKey = uploaded.getBody().replaceAll(".*\"objectKey\":\"([^\"]+)\".*", "$1");
+
+        ResponseEntity<String> tr = rest.exchange("/api/v1/interviews/" + iv + "/transcribe",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"sourceObjectKey\":\"" + objectKey + "\"}", jsonBearer(token)),
+                String.class);
+        assertEquals(201, tr.getStatusCode().value());
+        assertTrue(tr.getBody().contains("transcriptKey"));
+        assertTrue(tr.getBody().contains("\"segmentCount\":2"));
+        String trKey = tr.getBody().replaceAll(".*\"transcriptKey\":\"([^\"]+)\".*", "$1");
+
+        // üretilen transkript gerçek okuma yüzeyinden gelir (S1/S2 stub segmentleri)
+        ResponseEntity<String> got = rest.exchange(
+                "/api/v1/interviews/" + iv + "/transcript?key=" + trKey, // raw: RestTemplate query-degerindeki slash literal tasinir
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(token)), String.class);
+        assertEquals(200, got.getStatusCode().value());
+        // sanitizer parantez-içi işaretleri STRIP eder (slice-2) — lexical içerik + S1/S2 takma-adlar kalır
+        assertTrue(got.getBody().contains("Yanit"));
+        assertTrue(got.getBody().contains("\"speakerLabel\":\"S2\""));
+        assertFalse(got.getBody().contains("(stub)"), "parantez-içi işaret transkriptte kalmamalı (sanitizer kanıtı)");
+
+        // serbest-string sourceObjectKey fail-closed 4xx (content-addressed TAM-eşleşme)
+        ResponseEntity<String> badKey = rest.exchange("/api/v1/interviews/" + iv + "/transcribe",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"sourceObjectKey\":\"serbest/../kacis\"}", jsonBearer(token)),
+                String.class);
+        assertTrue(badKey.getStatusCode().is4xxClientError());
+    }
+
+    @Test
+    void valid_shaped_but_never_ingested_source_key_rejected_before_provider() throws Exception {
+        String token = fullToken();
+        String iv = "iv-transcribe-ghost";
+        grantConsent(token, iv);
+
+        int callsBefore = TRANSCRIBE_CALLS.get();
+        String ghostKey = iv + "/rec-" + "a".repeat(64); // format-VALID ama hiç yüklenmemiş
+        ResponseEntity<String> tr = rest.exchange("/api/v1/interviews/" + iv + "/transcribe",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"sourceObjectKey\":\"" + ghostKey + "\"}", jsonBearer(token)),
+                String.class);
+        assertTrue(tr.getStatusCode().is4xxClientError(), "ingest kanıtı olmadan transcribe reddedilmeli");
+        assertTrue(tr.getBody().contains("recording.ingested"));
+        // sağlayıcı HİÇ çağrılmadı (kanıt-zinciri kapısı provider'dan ÖNCE)
+        assertEquals(callsBefore, TRANSCRIBE_CALLS.get());
+
+        // transcript store'da satır YOK + WORM'da transcript.created YOK
+        try (var c = dataSource.getConnection(); var st = c.createStatement()) {
+            try (var rs = st.executeQuery(
+                    "SELECT count(*) FROM transcript WHERE interview_id = '" + iv + "'")) {
+                rs.next();
+                assertEquals(0, rs.getInt(1));
+            }
+            try (var rs = st.executeQuery(
+                    "SELECT count(*) FROM worm_ledger WHERE interview_id = '" + iv
+                            + "' AND event_type = 'transcript.created'")) {
+                rs.next();
+                assertEquals(0, rs.getInt(1));
+            }
+        }
     }
 
     // --- citation ---

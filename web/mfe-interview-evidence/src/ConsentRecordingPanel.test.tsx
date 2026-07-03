@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 function renderPanel() {
-  render(<ConsentRecordingPanel token="t" interviewId="iv-1" />);
+  render(<ConsentRecordingPanel token="t" interviewId="iv-1" onTranscribed={() => {}} />);
 }
 
 describe("açık-rıza UX", () => {

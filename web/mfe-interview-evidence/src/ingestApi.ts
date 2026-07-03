@@ -77,3 +77,29 @@ export async function uploadRecording(
   }
   return (await resp.json()) as IngestReceipt;
 }
+
+export type TranscribeReceipt = {
+  transcriptKey: string;
+  evidenceId: string;
+  segmentCount: number;
+};
+
+/** F2→F3 köprüsü: yüklenmiş kayıttan transkript üretimi (consent-gate + wire-contract backend'de). */
+export async function transcribeRecording(
+  token: string,
+  interviewId: string,
+  sourceObjectKey: string,
+): Promise<TranscribeReceipt> {
+  const resp = await fetch(
+    `/api/v1/interviews/${encodeURIComponent(interviewId)}/transcribe`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceObjectKey }),
+    },
+  );
+  if (!resp.ok) {
+    await failWithReason(resp);
+  }
+  return (await resp.json()) as TranscribeReceipt;
+}

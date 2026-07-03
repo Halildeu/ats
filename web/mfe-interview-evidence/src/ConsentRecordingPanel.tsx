@@ -3,6 +3,7 @@ import { Badge, Button, Input, Text } from "@ats/ui/f3";
 import {
   putRecordingConsent,
   RECORDING_ACCEPT,
+  transcribeRecording,
   uploadRecording,
   type ConsentState,
   type IngestReceipt,
@@ -12,6 +13,8 @@ import { t } from "./i18n";
 type Props = {
   token: string;
   interviewId: string;
+  /** Transkript üretildiğinde çağrılır — App dönen key'le transkripti yükler. */
+  onTranscribed: (transcriptKey: string) => void;
 };
 
 const CONSENT_STATES: ConsentState[] = ["GRANTED", "DENIED", "WITHDRAWN"];
@@ -35,7 +38,7 @@ const STATE_LABEL_KEY: Record<ConsentState, string> = {
  * - upload: Content-Type dosyadan; kapalı allowlist + boyut sınırı backend'de,
  *   UI reddi yalnız gösterir. Makbuz pointer-only (objectKey/evidenceId/seq).
  */
-export function ConsentRecordingPanel({ token, interviewId }: Props) {
+export function ConsentRecordingPanel({ token, interviewId, onTranscribed }: Props) {
   const [subjectRef, setSubjectRef] = useState("");
   // açık-rıza UX'i: ÖN-SEÇİLİ state YOK — kullanıcı aktif seçim yapmadan
   // beyan kaydedilemez (Codex #77 blocker-1)
@@ -194,6 +197,18 @@ export function ConsentRecordingPanel({ token, interviewId }: Props) {
             <Text as="p" size="sm" variant="secondary" data-testid="upload-next-note">
               {t("upload.transcriptionNote")}
             </Text>
+            <Button
+              disabled={busy}
+              data-testid="transcribe-button"
+              onClick={() =>
+                void run(async () => {
+                  const r = await transcribeRecording(token, interviewId, receipt.objectKey);
+                  onTranscribed(r.transcriptKey);
+                })
+              }
+            >
+              {t("upload.transcribe")}
+            </Button>
           </div>
         )}
       </div>

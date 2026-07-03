@@ -285,6 +285,18 @@ class RestApiSecurityTest {
     }
 
     @Test
+    void transcribe_requires_its_own_scope() {
+        // recording.write TEK BAŞINA yetmez — transcription ayrı yetki sınıfı (intake≠işleme)
+        String recordingOnly = JWT.token(Map.of("tenant", "t-a", "scope", "ats.recording.write"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");
+        HttpHeaders h = bearer(recordingOnly);
+        h.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-1/transcribe", HttpMethod.POST,
+                new HttpEntity<>("{\"sourceObjectKey\":\"iv-1/rec-x\"}", h), String.class)
+                .getStatusCode().value());
+    }
+
+    @Test
     void cross_tenant_transcript_read_is_404() {
         String tokenB = JWT.token("api-tenant-b", "recruiter-2");
         ResponseEntity<String> resp = rest.exchange(

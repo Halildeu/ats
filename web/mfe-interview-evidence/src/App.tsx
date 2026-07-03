@@ -179,7 +179,14 @@ export default function App() {
       )}
 
       {token && interviewId.trim() && (
-        <ConsentRecordingPanel token={token} interviewId={interviewId.trim()} />
+        <ConsentRecordingPanel
+          token={token}
+          interviewId={interviewId.trim()}
+          onTranscribed={(key) => {
+            setTranscriptKey(key);
+            void loadByKey(key);
+          }}
+        />
       )}
 
       {erasedReceipt && (

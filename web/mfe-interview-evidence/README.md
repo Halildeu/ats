@@ -5,6 +5,7 @@
 - **Kimlik**: OIDC Authorization-Code+PKCE (IdP-nötr; token YALNIZ bellekte — yenilemede düşer).
 - **F1/F2**: rıza kaydı (aydınlatma + operatör-kaydı beyanı; ön-seçili state YOK) + kayıt yükleme
   (consent-gate'li — GRANTED değilse sunucu fail-closed reddeder).
+- **F2→F3**: yüklenmiş kayıttan **Transkript üret** (consent-gate + sanitizer S1/S2 + WORM transcript.created; ayrı yetki sınıfı ats.transcription.write)
 - **F3**: transkript liste/seçim (pointer-only özet) + zaman-damgalı segment görünümü
   (S1..Sn takma-ad rozetleri — ATS-0013; mm:ss).
 - **F4/F5**: claim → citation (entailment rozeti; kanıt-kapısı: yalnız SUPPORTED+kaynaklı
@@ -37,6 +38,8 @@ SPRING_APPLICATION_JSON='{"ats":{"db":{"url":"jdbc:postgresql://127.0.0.1:55432/
 # sağlık: curl http://127.0.0.1:8080/healthz  → 200
 
 # 5) MFE (:5183) — packages/ui içinde de `npm install` gerekir (file: bağımlılık)
+#    OIDC scope default'u UI'ın kullandığı TAM P1 setidir (src/oidc.ts DEFAULT_SCOPE);
+#    dar scope isteyen deploy VITE_OIDC_SCOPE="openid ats.transcript.read ..." ile daraltır.
 VITE_OIDC_ISSUER=http://127.0.0.1:9451 npm run dev
 # probe: http://localhost:5183 (localhost'a bind eder; 127.0.0.1 curl'ü 000 verebilir)
 ```
@@ -62,8 +65,9 @@ ON CONFLICT DO NOTHING;
 SQL
 ```
 
-Not: kayıt yükleme (F2) UI'dan da yapılabilir — transcript üretimi ayrı süreçtir
-(transcription orchestration); dev'de transkript yukarıdaki SQL ile seed edilir.
+Not: tam ürün zinciri UI'dan yürür — rıza → kayıt yükle → **Transkript üret** düğmesi
+(POST /transcribe; dev'de STT stub'ı /v1/transcribe). Yukarıdaki SQL seed'i yalnız
+hazır-transkript senaryoları (liste/inceleme testleri) için hızlı yoldur.
 
 ## Bilinen tuzaklar
 

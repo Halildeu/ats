@@ -97,6 +97,22 @@ public final class TranscriptionService {
             return Outcome.fail(denied.code(), denied.reason());
         }
 
+        // format-valid ama HİÇ ingest edilmemiş key sağlayıcıya ÇIKAMAZ ve transcript.created
+        // WORM kanıtına DÖNÜŞEMEZ — kaynak, aynı tenant+interview'ün recording.ingested
+        // kanıtına bağlanır (Codex #85 blocker-2; kanıt-zinciri bütünlüğü).
+        Outcome<java.util.List<LedgerEntry>> ingested = ledger.list(tenantId,
+                new EvidenceLedger.LedgerListFilter(interviewId, "recording.ingested"));
+        if (!(ingested instanceof Outcome.Ok<java.util.List<LedgerEntry>> ingestedOk)) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ingest kanıtı okunamadı (fail-closed)");
+        }
+        boolean sourceIngested = ingestedOk.value().stream().anyMatch(e ->
+                e.payload().values().get("object_key") instanceof JsonValue.JsonString js
+                        && js.value().equals(sourceObjectKey));
+        if (!sourceIngested) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND,
+                    "sourceObjectKey için recording.ingested kanıtı yok (fail-closed; önce yükleme)");
+        }
+
         Outcome<TranscriptResult> transcribed = provider.transcribe(sourceObjectKey);
         if (!(transcribed instanceof Outcome.Ok<TranscriptResult> providerOk)) {
             emit(tenantId, PROVIDER_REJECTED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
