@@ -20,7 +20,7 @@
 Aşağıdaki komutlar canlı doğrulanmış hâlleridir (2026-07-03 browser-verify oturumları).
 
 ```bash
-# 1) PostgreSQL 16 (:55432)
+# 1) PostgreSQL 16 (:55432) — ad çakışırsa önce: docker rm -f ats-pg-dev
 docker run -d --name ats-pg-dev -e POSTGRES_PASSWORD=dev -p 55432:5432 postgres:16
 
 # 2) Dev-IdP (:9451 — discovery + authorize + token + JWKS; yalnız lokal)
