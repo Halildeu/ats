@@ -16,9 +16,10 @@ type Props = {
  * söyler; kimlik eşlemesi backend/operasyon tarafındadır), (2) erasure —
  * YIKICI ve geri alınamaz olduğundan İKİ-ADIMLI onay (ilk tık uyarıyı açar,
  * ikinci tık yürütür). Bu ekranın silme kapsamı DÜRÜSTÇE dar: yalnız
- * görüntülenen transkript içeriği (tam-kapsam DSAR operasyonel süreçte).
- * WORM kanıt zinciri silinmez — tombstone düşülür; receipt gösterimi App'te
- * (silme sonrası içerik yüzeyi — bu panel dahil — kaldırıldığından).
+ * görüntülenen transkript içeriği; hedefli WORM tombstone ÜRETMEZ
+ * (tombstoneTargetEvidenceIds boş) — WORM silinmez, silme privacy-event'leriyle
+ * kayıtlanır; tombstone dahil tam-kapsam DSAR operasyonel süreçtedir. Receipt
+ * gösterimi App'te (silme sonrası içerik yüzeyi — bu panel dahil — kaldırıldığından).
  */
 export function DsarPanel({ token, interviewId, transcriptKey, onErased }: Props) {
   const [subjectRef, setSubjectRef] = useState("");

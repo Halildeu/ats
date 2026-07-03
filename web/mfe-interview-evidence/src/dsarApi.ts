@@ -1,8 +1,10 @@
 /**
  * F10 DSAR/erasure istemcisi — DsrService invariant'ları backend'de fail-closed;
  * UI yalnız taşır: subjectRef OPAK referanstır (PII değil), erasure YIKICI ve
- * geri alınamaz content işlemidir (WORM silinmez; tombstone düşülür), scope
- * anahtarları '/' içerdiğinden gövdede taşınır (path-segment değil).
+ * geri alınamaz content işlemidir (WORM silinmez; bu UI hedefli tombstone
+ * evidence-id'si GÖNDERMEZ — silme privacy-event'leriyle kayıtlanır; tombstone
+ * dahil tam-kapsam DSAR operasyonel süreçtedir), scope anahtarları '/'
+ * içerdiğinden gövdede taşınır (path-segment değil).
  */
 import type { ApiError } from "./api";
 
