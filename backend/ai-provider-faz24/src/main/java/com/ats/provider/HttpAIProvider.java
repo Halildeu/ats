@@ -16,8 +16,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * ATS-0017 (Accepted) — Faz 24 self-host STT/diarization motoru HTTP adaptörü
- * (`AIProvider` portunun arkasında; ADR: kopya değil provider-entegrasyon).
+ * ATS-0017 — Faz 24 self-host STT motoru için VARSAYIMSAL /v1 JSON wire-contract
+ * adaptörü (`AIProvider` portunun arkasında; ADR: kopya değil provider-entegrasyon).
+ * 2026-07-03 canlı keşif bu contract'ı YANLIŞLADI — motorun gerçek contract'ı
+ * {@link Faz24LiveSttProvider}'dadır; bu sınıf olası ats-ai facade/conformance-shim
+ * ucu için korunur (bkz. ATS-0017 amendment; diarization her iki uçta da ayrı bileşen).
  *
  * Wire-contract (ats-ai FastAPI):
  *  POST {base}/v1/transcribe  {"audio_ref": "..."}         → 200 {"language": "...",

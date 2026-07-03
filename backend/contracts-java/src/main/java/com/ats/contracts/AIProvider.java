@@ -19,7 +19,10 @@ public interface AIProvider {
 
     record CitationResult(String claim, List<String> sourceSegmentRefs, Entailment entailment) {}
 
-    /** STT + diarization. Gate'te stub UNSUPPORTED_IN_GATE. */
+    /**
+     * STT (+ sağlayıcı sunuyorsa diarization; live-stt v0.1.0 SUNMAZ → tek-akış
+     * sentinel, bkz. ATS-0017 amendment). Gate'te stub UNSUPPORTED_IN_GATE.
+     */
     Outcome<TranscriptResult> transcribe(String audioRef);
 
     /** Claim → kaynak alıntı entailment (karar/puan DEĞİL). Gate'te UNSUPPORTED_IN_GATE. */

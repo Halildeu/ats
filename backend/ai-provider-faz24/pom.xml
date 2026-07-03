@@ -10,7 +10,7 @@
   </parent>
   <artifactId>ai-provider-faz24</artifactId>
 
-  <!-- ATS-0017 (Accepted) STT/diarization sağlayıcı adaptörü: Faz 24 self-host motoru
+  <!-- ATS-0017 (Accepted) STT sağlayıcı adaptörleri (diarization AYRI bileşen — 2026-07-03 keşif amendment'ı): Faz 24 self-host motoru
        (ats-ai FastAPI) ile AIProvider portu arasındaki WIRE-CONTRACT katmanı.
        JDK-native (java.net.http + no-dep JSON parse) — vendor SDK YOK (slice-1 sınırı korunur).
        DÜRÜST SINIR: bu modül wire-contract davranışını STUB-sunucu testleriyle kanıtlar;
