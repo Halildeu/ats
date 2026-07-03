@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
-import { createCitation, exportPacket, finalizeCase, getCaseState, openCase, transition,
-  type CitationReceipt, type ExportReceipt } from "./reviewApi";
+import { createCitation, exportPacket, finalizeCase, getCaseDetail, getCaseState, listCases, openCase, transition,
+  type CaseSummary, type CitationReceipt, type ExportReceipt } from "./reviewApi";
 import { t } from "./i18n";
 
 /**
@@ -30,6 +30,10 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
   const [criterionId, setCriterionId] = useState("c-teknik-yetkinlik");
   const [jobRelRef, setJobRelRef] = useState("");
   const [exportReceipt, setExportReceipt] = useState<ExportReceipt | null>(null);
+  const [existingCases, setExistingCases] = useState<CaseSummary[] | null>(null);
+  // resume edilen vakanın kaynak-kanıt REF'leri (pointer-only) — export'un citation
+  // context'i kaybolmadan sürmesi için (Codex #79 blocker-2)
+  const [resumedRefs, setResumedRefs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -52,6 +56,44 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
         style={{ marginTop: 28, borderTop: "2px solid var(--border-muted, #E5E5E5)", paddingTop: 16 }}>
       <Text as="h2" size="lg" weight="medium">{t("review.workspaceTitle")}</Text>
 
+      {/* mevcut vakalar: sayfa/oturum yenilense de vakaya kalınan state'ten devam (pointer-only liste) */}
+      <div style={{ display: "grid", gap: 6, maxWidth: 560, marginTop: 8 }}>
+        <Button disabled={busy} data-testid="case-list-button"
+            onClick={() => void run(async () => setExistingCases(await listCases(token, interviewId)))}>
+          {t("review.listCases")}
+        </Button>
+        {existingCases && existingCases.length === 0 && (
+          <Text as="p" size="sm" variant="secondary" data-testid="case-list-empty">
+            {t("review.noCases")}
+          </Text>
+        )}
+        {existingCases && existingCases.length > 0 && (
+          <ul data-testid="case-list" style={{ display: "grid", gap: 6, listStyle: "none", padding: 0, margin: 0 }}>
+            {existingCases.map((c) => (
+              <li key={c.caseKey}>
+                <Button data-testid="case-row" disabled={busy}
+                    onClick={() => void run(async () => {
+                      // vaka değişimi = bağlam değişimi: transient akış-state'leri sıfırla (stale taşınmaz)
+                      setCaseKey(c.caseKey);
+                      setCitation(null);
+                      setExportReceipt(null);
+                      setRationaleRef("");
+                      setDecisionRef("");
+                      setEditSummaryRef("");
+                      setRejectRef("");
+                      setJobRelRef("");
+                      const detail = await getCaseDetail(token, interviewId, c.caseKey);
+                      setCaseState(detail.state);
+                      setResumedRefs(detail.sourceEvidenceRefs);
+                    })}>
+                  {t("review.caseRowLabel", { key: c.caseKey, state: c.state })}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div style={{ display: "grid", gap: 10, maxWidth: 560, marginTop: 8 }}>
         <Input label={t("review.claimLabel")} value={claim}
             onChange={(e) => setClaim(e.target.value)} data-testid="claim-input" />
@@ -60,6 +102,7 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
               setCitation(await createCitation(token, interviewId, transcriptKey, claim.trim()));
               setCaseKey(null);
               setCaseState(null);
+              setResumedRefs([]);
               // transient akış-state'leri: stale taşımayı önle (Codex #75 blocker-2)
               setExportReceipt(null);
               setRationaleRef("");
@@ -110,6 +153,16 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
                 <span data-testid="case-state">{caseState}</span>
               </Badge>
             </div>
+
+            {caseState === "AI_SUGGESTED" && (
+              <Button disabled={busy} data-testid="start-button"
+                  onClick={() => void run(async () => {
+                    await transition(token, interviewId, caseKey, "START", undefined, "role-hiring-panel");
+                    await refreshState(caseKey);
+                  })}>
+                {t("review.startCase")}
+              </Button>
+            )}
 
             {caseState === "HUMAN_REVIEWING" && (
               <>
@@ -170,7 +223,7 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
               </>
             )}
 
-            {caseState === "FINALIZED" && citation && !exportReceipt && (
+            {caseState === "FINALIZED" && !exportReceipt && (citation || resumedRefs.length > 0) && (
               <>
                 <Text as="p" size="sm" variant="warning" data-testid="export-dev-warning">
                   {t("export.devPlaceholderWarning")}
@@ -183,7 +236,8 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
                     data-testid="export-button"
                     onClick={() => void run(async () => {
                       setExportReceipt(await exportPacket(token, interviewId, caseKey,
-                          citation.citationKey, criterionId.trim(), jobRelRef.trim()));
+                          citation ? citation.citationKey : resumedRefs[0],
+                          criterionId.trim(), jobRelRef.trim()));
                       await refreshState(caseKey);
                     })}>
                   {t("export.create")}
