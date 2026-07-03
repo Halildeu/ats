@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
-import { createCitation, finalizeCase, getCaseState, openCase, transition,
-  type CitationReceipt } from "./reviewApi";
+import { createCitation, exportPacket, finalizeCase, getCaseState, openCase, transition,
+  type CitationReceipt, type ExportReceipt } from "./reviewApi";
 import { t } from "./i18n";
 
 /**
- * F4/F5 inceleme çalışma-alanı (P1 — İLK sürüm: NO_CHANGE happy-path'i;
- * EDIT/REJECT yolları sonraki dilim). Karar DAİMA insanın: otomatik-finalize yok.
+ * F4/F5 inceleme çalışma-alanı (P1): standart §2'nin ÜÇ insan-yolu da UI'da —
+ * NO_CHANGE / EDIT (değişiklik-özeti-ref) / REJECT (gerekçe-ref) → RATIONALE →
+ * FINALIZE → F7 export düğmesi. Karar DAİMA insanın: otomatik-finalize yok.
  *
  * KANIT-KAPISI (Codex #74 blocker): insan-karar yolu YALNIZ
  * SUPPORTED + kaynaklı citation için açılır — NOT_SUPPORTED karar-kanıtı
@@ -24,6 +25,11 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
   const [caseState, setCaseState] = useState<string | null>(null);
   const [rationaleRef, setRationaleRef] = useState("");
   const [decisionRef, setDecisionRef] = useState("");
+  const [editSummaryRef, setEditSummaryRef] = useState("");
+  const [rejectRef, setRejectRef] = useState("");
+  const [criterionId, setCriterionId] = useState("c-teknik-yetkinlik");
+  const [jobRelRef, setJobRelRef] = useState("");
+  const [exportReceipt, setExportReceipt] = useState<ExportReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -54,6 +60,13 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
               setCitation(await createCitation(token, interviewId, transcriptKey, claim.trim()));
               setCaseKey(null);
               setCaseState(null);
+              // transient akış-state'leri: stale taşımayı önle (Codex #75 blocker-2)
+              setExportReceipt(null);
+              setRationaleRef("");
+              setDecisionRef("");
+              setEditSummaryRef("");
+              setRejectRef("");
+              setJobRelRef("");
             })}>
           {t("review.createCitation")}
         </Button>
@@ -99,16 +112,37 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
             </div>
 
             {caseState === "HUMAN_REVIEWING" && (
-              <Button disabled={busy} data-testid="no-change-button"
-                  onClick={() => void run(async () => {
-                    await transition(token, interviewId, caseKey, "REVIEWED_NO_CHANGE");
-                    await refreshState(caseKey);
-                  })}>
-                {t("review.markNoChange")}
-              </Button>
+              <>
+                <Button disabled={busy} data-testid="no-change-button"
+                    onClick={() => void run(async () => {
+                      await transition(token, interviewId, caseKey, "REVIEWED_NO_CHANGE");
+                      await refreshState(caseKey);
+                    })}>
+                  {t("review.markNoChange")}
+                </Button>
+                <Input label={t("review.editSummaryLabel")} value={editSummaryRef}
+                    onChange={(e) => setEditSummaryRef(e.target.value)} data-testid="edit-input" />
+                <Button disabled={busy || !editSummaryRef.trim()} data-testid="edit-button"
+                    onClick={() => void run(async () => {
+                      await transition(token, interviewId, caseKey, "EDIT", editSummaryRef.trim());
+                      await refreshState(caseKey);
+                    })}>
+                  {t("review.markEdited")}
+                </Button>
+                <Input label={t("review.rejectRefLabel")} value={rejectRef}
+                    onChange={(e) => setRejectRef(e.target.value)} data-testid="reject-input" />
+                <Button disabled={busy || !rejectRef.trim()} data-testid="reject-button"
+                    onClick={() => void run(async () => {
+                      await transition(token, interviewId, caseKey, "REJECT", rejectRef.trim());
+                      await refreshState(caseKey);
+                    })}>
+                  {t("review.rejectAi")}
+                </Button>
+              </>
             )}
 
-            {caseState === "HUMAN_REVIEWED_NO_CHANGE" && (
+            {(caseState === "HUMAN_REVIEWED_NO_CHANGE" || caseState === "HUMAN_EDITED"
+                || caseState === "AI_SUGGESTION_REJECTED") && (
               <>
                 <Input label={t("review.rationaleLabel")} value={rationaleRef}
                     onChange={(e) => setRationaleRef(e.target.value)} data-testid="rationale-input" />
@@ -134,6 +168,37 @@ export function ReviewWorkspace({ token, interviewId, transcriptKey }: {
                   {t("review.finalize")}
                 </Button>
               </>
+            )}
+
+            {caseState === "FINALIZED" && citation && !exportReceipt && (
+              <>
+                <Text as="p" size="sm" variant="warning" data-testid="export-dev-warning">
+                  {t("export.devPlaceholderWarning")}
+                </Text>
+                <Input label={t("export.criterionLabel")} value={criterionId}
+                    onChange={(e) => setCriterionId(e.target.value)} data-testid="criterion-input" />
+                <Input label={t("export.jobRelLabel")} value={jobRelRef}
+                    onChange={(e) => setJobRelRef(e.target.value)} data-testid="jobrel-input" />
+                <Button disabled={busy || !criterionId.trim() || !jobRelRef.trim()}
+                    data-testid="export-button"
+                    onClick={() => void run(async () => {
+                      setExportReceipt(await exportPacket(token, interviewId, caseKey,
+                          citation.citationKey, criterionId.trim(), jobRelRef.trim()));
+                      await refreshState(caseKey);
+                    })}>
+                  {t("export.create")}
+                </Button>
+              </>
+            )}
+
+            {exportReceipt && (
+              <div data-testid="export-result" style={{ display: "grid", gap: 4 }}>
+                <Badge variant="success">{t("export.done")}</Badge>
+                <Text as="p" size="sm" variant="secondary">
+                  {t("export.digestLabel")} <code>{exportReceipt.packetDigest.slice(0, 16)}…</code>
+                  {" · "}{t("export.claimCount", { count: exportReceipt.claimCount })}
+                </Text>
+              </div>
             )}
           </div>
         )}
