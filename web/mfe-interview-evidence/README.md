@@ -5,6 +5,7 @@
 - **Kimlik**: OIDC Authorization-Code+PKCE (IdP-nötr; token YALNIZ bellekte — yenilemede düşer).
 - **F1/F2**: rıza kaydı (aydınlatma + operatör-kaydı beyanı; ön-seçili state YOK) + kayıt yükleme
   (consent-gate'li — GRANTED değilse sunucu fail-closed reddeder).
+- **F2→F3**: yüklenmiş kayıttan **Transkript üret** (consent-gate + sanitizer S1/S2 + WORM transcript.created; ayrı yetki sınıfı ats.transcription.write)
 - **F3**: transkript liste/seçim (pointer-only özet) + zaman-damgalı segment görünümü
   (S1..Sn takma-ad rozetleri — ATS-0013; mm:ss).
 - **F4/F5**: claim → citation (entailment rozeti; kanıt-kapısı: yalnız SUPPORTED+kaynaklı
@@ -62,8 +63,9 @@ ON CONFLICT DO NOTHING;
 SQL
 ```
 
-Not: kayıt yükleme (F2) UI'dan da yapılabilir — transcript üretimi ayrı süreçtir
-(transcription orchestration); dev'de transkript yukarıdaki SQL ile seed edilir.
+Not: tam ürün zinciri UI'dan yürür — rıza → kayıt yükle → **Transkript üret** düğmesi
+(POST /transcribe; dev'de STT stub'ı /v1/transcribe). Yukarıdaki SQL seed'i yalnız
+hazır-transkript senaryoları (liste/inceleme testleri) için hızlı yoldur.
 
 ## Bilinen tuzaklar
 

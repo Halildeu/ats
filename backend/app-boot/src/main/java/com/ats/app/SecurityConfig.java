@@ -51,6 +51,8 @@ class SecurityConfig {
     private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.of(
             "ats.consent.write", "CONSENT_WRITE",
             "ats.recording.write", "RECORDING_WRITE",
+            // STT işleme = PII-üreten ayrı yetenek (upload'dan ayrık yetki sınıfı)
+            "ats.transcription.write", "TRANSCRIPTION_WRITE",
             "ats.transcript.read", "TRANSCRIPT_READ",
             "ats.citation.write", "CITATION_WRITE",
             "ats.review.write", "REVIEW_WRITE",
@@ -73,6 +75,8 @@ class SecurityConfig {
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
                             .hasAuthority("RECORDING_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/transcribe")
+                            .hasAuthority("TRANSCRIPTION_WRITE")
                         .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/transcript",
                                 "/api/v1/interviews/*/transcripts")
                             .hasAuthority("TRANSCRIPT_READ")

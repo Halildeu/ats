@@ -47,7 +47,7 @@ describe("a11y smoke (axe-core; color-contrast hariç — jsdom sınırı)", () 
   });
 
   it("ConsentRecordingPanel — rıza + yükleme yüzeyi ihlalsiz", async () => {
-    const { container } = render(<ConsentRecordingPanel token="t" interviewId="iv-1" />);
+    const { container } = render(<ConsentRecordingPanel token="t" interviewId="iv-1" onTranscribed={() => {}} />);
     await expectNoViolations(container);
   });
 

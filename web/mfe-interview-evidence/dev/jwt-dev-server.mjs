@@ -13,7 +13,7 @@ import { createHash, createSign, generateKeyPairSync, randomUUID } from "node:cr
 const tenant = process.argv[2] ?? "dev-tenant";
 const sub = process.argv[3] ?? "dev-reviewer";
 const scope = process.argv.slice(4).join(" ")
-    || "ats.consent.write ats.recording.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.export.write ats.dsar.write ats.erasure.execute";
+    || "ats.consent.write ats.recording.write ats.transcription.write ats.transcript.read ats.citation.write ats.review.write ats.review.read ats.export.write ats.dsar.write ats.erasure.execute";
 
 const ISSUER = "https://dev-issuer.local";
 const AUDIENCE = "ats-api";
