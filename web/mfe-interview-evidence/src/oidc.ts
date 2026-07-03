@@ -159,6 +159,16 @@ export async function exchangeCode(
 }
 
 /** Config env'den; issuer boşsa OIDC kapalıdır (dev-paste fallback görünür). */
+/**
+ * Default = UI'ın GERÇEKTEN kullandığı P1 scope seti — gerçek IdP requested-scope'u
+ * honor eder; read-only default ürün zincirini prod'da kırardı (Codex #85 blocker-1).
+ * Dar scope isteyen deploy VITE_OIDC_SCOPE ile daraltır (env öncelikli).
+ */
+export const DEFAULT_SCOPE =
+    "openid ats.consent.write ats.recording.write ats.transcription.write"
+    + " ats.transcript.read ats.citation.write ats.review.write ats.review.read"
+    + " ats.export.write ats.dsar.write ats.erasure.execute";
+
 export function oidcConfigFromEnv(): OidcConfig | null {
   const issuer = import.meta.env.VITE_OIDC_ISSUER as string | undefined;
   if (!issuer) {
@@ -169,7 +179,6 @@ export function oidcConfigFromEnv(): OidcConfig | null {
     clientId: (import.meta.env.VITE_OIDC_CLIENT_ID as string | undefined) ?? "ats-mfe",
     redirectUri: (import.meta.env.VITE_OIDC_REDIRECT_URI as string | undefined)
         ?? window.location.origin + "/",
-    scope: (import.meta.env.VITE_OIDC_SCOPE as string | undefined)
-        ?? "openid ats.transcript.read",
+    scope: (import.meta.env.VITE_OIDC_SCOPE as string | undefined) ?? DEFAULT_SCOPE,
   };
 }

@@ -54,12 +54,15 @@ class CitationReviewApiTest {
     private static final JwtTestSupport JWT = new JwtTestSupport();
 
     /** ATS-0017 wire-contract /v1/cite stub'ı: claim'i AYNEN yankılar, seg-0'ı kaynak verir. */
+    private static final java.util.concurrent.atomic.AtomicInteger TRANSCRIBE_CALLS =
+            new java.util.concurrent.atomic.AtomicInteger();
     private static final HttpServer AI = aiStub();
 
     private static HttpServer aiStub() {
         try {
             HttpServer s = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             s.createContext("/v1/transcribe", exchange -> {
+                TRANSCRIBE_CALLS.incrementAndGet();
                 exchange.getRequestBody().readAllBytes(); // audio_ref taşır; stub sentetik döner
                 String body = "{\"language\":\"tr-TR\",\"segments\":["
                         + "{\"speaker\":\"S1\",\"start_ms\":0,\"end_ms\":4000,\"text\":\"Soru (stub)\"},"
@@ -189,6 +192,39 @@ class CitationReviewApiTest {
                 new HttpEntity<>("{\"sourceObjectKey\":\"serbest/../kacis\"}", jsonBearer(token)),
                 String.class);
         assertTrue(badKey.getStatusCode().is4xxClientError());
+    }
+
+    @Test
+    void valid_shaped_but_never_ingested_source_key_rejected_before_provider() throws Exception {
+        String token = fullToken();
+        String iv = "iv-transcribe-ghost";
+        grantConsent(token, iv);
+
+        int callsBefore = TRANSCRIBE_CALLS.get();
+        String ghostKey = iv + "/rec-" + "a".repeat(64); // format-VALID ama hiç yüklenmemiş
+        ResponseEntity<String> tr = rest.exchange("/api/v1/interviews/" + iv + "/transcribe",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"sourceObjectKey\":\"" + ghostKey + "\"}", jsonBearer(token)),
+                String.class);
+        assertTrue(tr.getStatusCode().is4xxClientError(), "ingest kanıtı olmadan transcribe reddedilmeli");
+        assertTrue(tr.getBody().contains("recording.ingested"));
+        // sağlayıcı HİÇ çağrılmadı (kanıt-zinciri kapısı provider'dan ÖNCE)
+        assertEquals(callsBefore, TRANSCRIBE_CALLS.get());
+
+        // transcript store'da satır YOK + WORM'da transcript.created YOK
+        try (var c = dataSource.getConnection(); var st = c.createStatement()) {
+            try (var rs = st.executeQuery(
+                    "SELECT count(*) FROM transcript WHERE interview_id = '" + iv + "'")) {
+                rs.next();
+                assertEquals(0, rs.getInt(1));
+            }
+            try (var rs = st.executeQuery(
+                    "SELECT count(*) FROM worm_ledger WHERE interview_id = '" + iv
+                            + "' AND event_type = 'transcript.created'")) {
+                rs.next();
+                assertEquals(0, rs.getInt(1));
+            }
+        }
     }
 
     // --- citation ---

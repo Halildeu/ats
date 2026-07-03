@@ -74,3 +74,16 @@ describe("pkceCookieAttributes", () => {
     expect(pkceCookieAttributes("https:")).toContain("SameSite=Lax");
   });
 });
+
+describe("DEFAULT_SCOPE", () => {
+  it("UI'ın kullandığı P1 yeteneklerinin TAMAMINI içerir (read-only DEĞİL)", async () => {
+    const { DEFAULT_SCOPE } = await import("./oidc");
+    for (const sc of [
+      "openid", "ats.consent.write", "ats.recording.write", "ats.transcription.write",
+      "ats.transcript.read", "ats.citation.write", "ats.review.write", "ats.review.read",
+      "ats.export.write", "ats.dsar.write", "ats.erasure.execute",
+    ]) {
+      expect(DEFAULT_SCOPE.split(" ")).toContain(sc);
+    }
+  });
+});

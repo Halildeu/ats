@@ -68,6 +68,14 @@ class TranscriptionServiceTest {
 
     static final class FakeLedger implements EvidenceLedger {
         final List<LedgerEntry> entries = new ArrayList<>();
+        final List<LedgerEntry> seeded = new ArrayList<>();
+
+        void seedIngested(String objectKey) {
+            seeded.add(new LedgerEntry(T1, A1, I1, "recording.ingested", "2026-07-02T10:00:00Z",
+                    "ing-" + objectKey, "c".repeat(64),
+                    JsonValue.object(java.util.Map.of("object_key", JsonValue.of(objectKey))),
+                    new EvidenceId("fake-ing-" + seeded.size()), -1, "fake-prev", "fake-ing-hash"));
+        }
 
         @Override
         public Outcome<LedgerEntry> append(EvidenceEvent e) {
@@ -91,7 +99,9 @@ class TranscriptionServiceTest {
 
         @Override
         public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
-            return Outcome.ok(List.copyOf(entries));
+            List<LedgerEntry> all = new ArrayList<>(seeded);
+            all.addAll(entries);
+            return Outcome.ok(all);
         }
     }
 
@@ -110,6 +120,36 @@ class TranscriptionServiceTest {
 
     private void grant() {
         consentStore.put(new RecordingPermission(T1, I1, "subj-opaque", PermissionState.GRANTED, "2026-07-02T00:00:00Z"));
+        // gerçek akış önkoşulu: transcribe yalnız recording.ingested KANITI olan kaynak için
+        // çalışır (Codex #85 blocker-2). Seed AYRI listede — testlerin `entries`
+        // (service'in yazdıkları) assert'leri kirlenmez.
+        ledger.seedIngested(SRC);
+    }
+
+    @Test
+    void valid_shaped_but_never_ingested_key_fails_closed_before_provider() {
+        consentStore.put(new RecordingPermission(T1, I1, "subj-opaque", PermissionState.GRANTED, "2026-07-02T00:00:00Z"));
+        // ingest kanıtı YOK — sağlayıcıya çıkılmaz, transcript yazılmaz
+        CountingProvider provider = new CountingProvider();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "sağlayıcı ingest-kanıtı olmadan ÇAĞRILMAMALI");
+        assertEquals(0, transcriptStore.size());
+    }
+
+    static final class CountingProvider implements AIProvider {
+        int calls = 0;
+        @Override
+        public Outcome<AIProvider.TranscriptResult> transcribe(String audioRef) {
+            calls++;
+            return Outcome.ok(new AIProvider.TranscriptResult("tr", List.of(
+                    new AIProvider.TranscriptSegment("Konusmaci 1", 0, 100, "x"))));
+        }
+        @Override
+        public Outcome<AIProvider.CitationResult> cite(String claim, String transcriptRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "test dışı");
+        }
     }
 
     @Test
@@ -248,7 +288,11 @@ class TranscriptionServiceTest {
 
         @Override
         public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
-            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ledger unavailable (test)");
+            // ingest-kanıtı OKUNUR (guard geçer) — bu fake yalnız APPEND'i düşürür (rollback testi)
+            return Outcome.ok(List.of(new LedgerEntry(T1, A1, I1, "recording.ingested",
+                    "2026-07-02T10:00:00Z", "ing", "c".repeat(64),
+                    JsonValue.object(java.util.Map.of("object_key", JsonValue.of(SRC))),
+                    new EvidenceId("fail-ing"), -1, "p", "h")));
         }
     }
 }

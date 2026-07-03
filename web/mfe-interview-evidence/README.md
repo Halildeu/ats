@@ -38,6 +38,8 @@ SPRING_APPLICATION_JSON='{"ats":{"db":{"url":"jdbc:postgresql://127.0.0.1:55432/
 # sağlık: curl http://127.0.0.1:8080/healthz  → 200
 
 # 5) MFE (:5183) — packages/ui içinde de `npm install` gerekir (file: bağımlılık)
+#    OIDC scope default'u UI'ın kullandığı TAM P1 setidir (src/oidc.ts DEFAULT_SCOPE);
+#    dar scope isteyen deploy VITE_OIDC_SCOPE="openid ats.transcript.read ..." ile daraltır.
 VITE_OIDC_ISSUER=http://127.0.0.1:9451 npm run dev
 # probe: http://localhost:5183 (localhost'a bind eder; 127.0.0.1 curl'ü 000 verebilir)
 ```
