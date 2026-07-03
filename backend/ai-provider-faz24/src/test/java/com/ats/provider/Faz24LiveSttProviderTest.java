@@ -52,6 +52,7 @@ class Faz24LiveSttProviderTest {
     private static volatile String lastQuery;
     private static volatile String lastContentTypeHeader;
     private static volatile byte[] lastRequestBody;
+    private static volatile java.util.Map<String, java.util.List<String>> lastRequestHeaders;
     private static final AtomicInteger CALLS = new AtomicInteger();
 
     @BeforeAll
@@ -61,6 +62,7 @@ class Faz24LiveSttProviderTest {
             CALLS.incrementAndGet();
             lastQuery = exchange.getRequestURI().getQuery();
             lastContentTypeHeader = exchange.getRequestHeaders().getFirst("Content-Type");
+            lastRequestHeaders = java.util.Map.copyOf(exchange.getRequestHeaders());
             lastRequestBody = exchange.getRequestBody().readAllBytes();
             byte[] out = responseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -85,6 +87,7 @@ class Faz24LiveSttProviderTest {
         lastQuery = null;
         lastContentTypeHeader = null;
         lastRequestBody = null;
+        lastRequestHeaders = null;
         CALLS.set(0);
     }
 
@@ -142,6 +145,27 @@ class Faz24LiveSttProviderTest {
         assertTrue(part.headers().contains("filename=\"audio\""), "sabit güvenli filename");
         assertTrue(part.headers().contains("Content-Type: audio/wav"));
         assertArrayEquals(WAV_BYTES, part.payload(), "audio baytları bozulmadan gitmeli");
+    }
+
+    @Test
+    void request_is_pinned_http11_without_h2c_upgrade_headers() {
+        // 2026-07-03 CANLI bulgudan türetilmiş deterministik transport invariant'ı
+        // (Codex blocker): motorun uvicorn/h11 yığını h2c-upgrade header'lı istekte
+        // multipart body'yi işlemiyor. JDK HttpServer stub'ı upgrade'i tolere ettiği
+        // için canlı test olmadan bu satır silinse CI yeşil kalırdı — bu test
+        // .version(HTTP_1_1) pin'i kaldırılırsa KIRMIZI olur (negatif self-test ile
+        // doğrulandı: pin'siz koşuda Upgrade+HTTP2-Settings header'ları görünür).
+        Outcome<AIProvider.TranscriptResult> out = provider(null, okSource()).transcribe("rec-1");
+        assertInstanceOf(Outcome.Ok.class, out);
+        assertFalse(lastRequestHeaders.containsKey("Upgrade"),
+                "h2c Upgrade header'ı GÖNDERİLMEMELİ (HTTP/1.1 pin)");
+        assertFalse(lastRequestHeaders.containsKey("Http2-settings")
+                        || lastRequestHeaders.containsKey("HTTP2-Settings"),
+                "HTTP2-Settings header'ı GÖNDERİLMEMELİ");
+        for (String connection : lastRequestHeaders.getOrDefault("Connection", java.util.List.of())) {
+            assertFalse(connection.toLowerCase().contains("upgrade"),
+                    "Connection header'ı Upgrade içermemeli: " + connection);
+        }
     }
 
     @Test
