@@ -2,6 +2,8 @@ package com.ats.orchestration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.consent.ConsentGate;
@@ -113,9 +115,12 @@ class TranscriptionServiceTest {
         ledger = new FakeLedger();
     }
 
+    private final InMemoryAudioAccessGrants grants =
+            new InMemoryAudioAccessGrants(java.time.Clock.systemUTC(), java.time.Duration.ofMinutes(5));
+
     private TranscriptionService service(AIProvider provider, EvidenceLedger l) {
         return new TranscriptionService(
-                new ConsentGate(consentStore, sink), provider, new SegmentSanitizer(), transcriptStore, l, sink);
+                new ConsentGate(consentStore, sink), provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
     }
 
     private void grant() {
@@ -136,6 +141,45 @@ class TranscriptionServiceTest {
         assertFalse(out.isOk());
         assertEquals(0, provider.calls, "sağlayıcı ingest-kanıtı olmadan ÇAĞRILMAMALI");
         assertEquals(0, transcriptStore.size());
+    }
+
+    @Test
+    void provider_receives_one_shot_handle_not_original_key() {
+        grant();
+        CapturingProvider capturing = new CapturingProvider();
+        Outcome<TranscriptionService.TranscriptionReceipt> out =
+                service(capturing, ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, out);
+        // handle sirdir ve orijinal key DEGILDIR; kriptografik-rastgele 64-hex
+        assertNotEquals(SRC, capturing.lastAudioRef);
+        assertTrue(capturing.lastAudioRef.matches("[0-9a-f]{64}"), "64-hex handle bekleniyordu");
+        // ayni grants defterinden redeem: tenant-bagli (T1, SRC) doner; ikinci redeem one-shot FAIL
+        Outcome<AudioAccessGrants.Grant> first = grants.redeem(capturing.lastAudioRef);
+        AudioAccessGrants.Grant g = ((Outcome.Ok<AudioAccessGrants.Grant>) first).value();
+        assertEquals(T1, g.tenantId());
+        assertEquals(SRC, g.objectKey());
+        assertInstanceOf(Outcome.Fail.class, grants.redeem(capturing.lastAudioRef));
+        // WORM kaydinda kaynak ORIJINAL key kalir (handle WORM'a yazilmaz)
+        assertTrue(ledger.entries.stream().anyMatch(e ->
+                e.payload().values().get("source_object_key") instanceof
+                        com.ats.kernel.JsonValue.JsonString js && js.value().equals(SRC)
+                || e.payload().toString().contains(SRC)));
+        assertTrue(ledger.entries.stream().noneMatch(e ->
+                e.payload().toString().contains(capturing.lastAudioRef)), "handle WORM'a sizmamali");
+    }
+
+    static final class CapturingProvider implements AIProvider {
+        String lastAudioRef;
+        @Override
+        public Outcome<TranscriptResult> transcribe(String audioRef) {
+            lastAudioRef = audioRef;
+            return Outcome.ok(new TranscriptResult("tr", List.of(
+                    new TranscriptSegment("spk_a", 0, 900, "Merhaba"))));
+        }
+        @Override
+        public Outcome<CitationResult> cite(String claim, String transcriptRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "test disi");
+        }
     }
 
     static final class CountingProvider implements AIProvider {

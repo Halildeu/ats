@@ -13,9 +13,12 @@ ats:
     username: ${ATS_DB_USERNAME:}
     password: ${ATS_DB_PASSWORD:}
   ai:
+    provider: ${ATS_AI_PROVIDER:http-json}
     base-url: ${ATS_AI_BASE_URL:}
     bearer: ${ATS_AI_BEARER:}
     timeout: ${ATS_AI_TIMEOUT:30s}
+    language: ${ATS_AI_LANGUAGE:tr}
+    grant-ttl: ${ATS_AI_GRANT_TTL:60s}
   security:
     jwks-uri: ${ATS_JWKS_URI:}
     issuer: ${ATS_JWT_ISSUER:}

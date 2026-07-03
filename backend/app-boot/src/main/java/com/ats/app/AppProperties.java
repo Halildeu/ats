@@ -69,8 +69,17 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
         }
     }
 
-    public record Ai(String baseUrl, String bearer, Duration timeout) {
+    public record Ai(String provider, String baseUrl, String bearer, Duration timeout,
+                     String language, Duration grantTtl) {
         public Ai {
+            // slice-36: kapalı küme — bilinmeyen değer BOOT'ta düşürür (fail-closed).
+            if (provider == null || provider.isBlank()) {
+                provider = "http-json";
+            }
+            if (!provider.equals("http-json") && !provider.equals("live-stt")) {
+                throw new IllegalStateException(
+                        "ats.ai.provider kapalı küme: http-json|live-stt (fail-closed boot); verilen: " + provider);
+            }
             require(baseUrl, "ats.ai.base-url (env ATS_AI_BASE_URL)");
             if (timeout == null || timeout.isZero() || timeout.isNegative()) {
                 timeout = Duration.ofSeconds(30);
@@ -78,6 +87,14 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
             // bearer opsiyoneldir (boş → auth başlığı gönderilmez); loglanmaz.
             if (bearer != null && bearer.isBlank()) {
                 bearer = null;
+            }
+            // live-stt dil override'ı config'ten (magic string değil); P1 default tr.
+            if (language == null || language.isBlank()) {
+                language = "tr";
+            }
+            // one-shot ses-erişim grant TTL'i (kaçak handle raf ömrü).
+            if (grantTtl == null || grantTtl.isZero() || grantTtl.isNegative()) {
+                grantTtl = Duration.ofSeconds(60);
             }
         }
     }

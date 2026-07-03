@@ -71,7 +71,7 @@ public final class IngestService {
         // aynı-içerik retry'ı byte-identical idempotent yazımdır.
         String contentHash = sha256Hex(payload);
         String key = request.interviewId().value() + "/rec-" + contentHash;
-        Outcome<StoredObjectRef> stored = objectStore.put(request.tenantId(), key, payload);
+        Outcome<StoredObjectRef> stored = objectStore.put(request.tenantId(), key, payload, request.contentType());
         if (!(stored instanceof Outcome.Ok<StoredObjectRef> storedOk)) {
             return Outcome.fail(OutcomeCode.INVALID, "medya deposuna yazılamadı");
         }
