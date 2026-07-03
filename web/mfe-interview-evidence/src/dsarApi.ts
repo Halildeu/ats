@@ -36,7 +36,8 @@ export async function receiveDsar(
   token: string,
   interviewId: string,
   subjectRef: string,
-  reasonCode: string | null,
+  // backend sözleşmesi (DsrService): reason_code ZORUNLU — UI da zorunlu taşır
+  reasonCode: string,
 ): Promise<string> {
   const resp = await fetch(
     `/api/v1/interviews/${encodeURIComponent(interviewId)}/dsar`,

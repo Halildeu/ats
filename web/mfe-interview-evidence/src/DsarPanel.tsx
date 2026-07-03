@@ -68,16 +68,11 @@ export function DsarPanel({ token, interviewId, transcriptKey, onErased }: Props
             data-testid="dsar-reason-input"
           />
           <Button
-            disabled={busy || !subjectRef.trim()}
+            disabled={busy || !subjectRef.trim() || !reasonCode.trim()}
             data-testid="dsar-receive-button"
             onClick={() =>
               void run(async () => {
-                const key = await receiveDsar(
-                  token,
-                  interviewId,
-                  subjectRef.trim(),
-                  reasonCode.trim() ? reasonCode.trim() : null,
-                );
+                const key = await receiveDsar(token, interviewId, subjectRef.trim(), reasonCode.trim());
                 setDsarKey(key);
               })
             }
