@@ -26,9 +26,16 @@ import org.junit.jupiter.api.Test;
  */
 class LiveSttWiringTest {
 
+    // Mevcut testler plain davranış bekler → mTLS disabled (açık beyan) ile kur.
     private static AppProperties.Ai ai(String provider, String baseUrl) {
         return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
-                Duration.ofSeconds(60));
+                Duration.ofSeconds(60), new AppProperties.Mtls("disabled", null, null, null));
+    }
+
+    private static AppProperties.Ai aiMtls(String provider, String baseUrl, String mode,
+            String ks, String ksPass, String ts) {
+        return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
+                Duration.ofSeconds(60), new AppProperties.Mtls(mode, ks, ksPass, ts));
     }
 
     private static AppProperties props(AppProperties.Ai ai) {
@@ -80,6 +87,43 @@ class LiveSttWiringTest {
         Outcome.Fail<AIProvider.CitationResult> fail = (Outcome.Fail<AIProvider.CitationResult>)
                 provider.cite("claim", "tr-ref");
         assertEquals(OutcomeCode.NOT_CONFIGURED, fail.code());
+    }
+
+    // --- slice-38: mTLS required fail-closed + materyalle wiring ---
+
+    @Test
+    void live_stt_mtls_required_without_material_fails_closed_at_properties() {
+        // mode=required (default) + cert-yol yok → AppProperties.Ai compact-ctor BOOT'ta patlar
+        assertThrows(IllegalStateException.class, () -> aiMtls(
+                "live-stt", "https://stt.internal.example:8243", "required", null, null, null));
+    }
+
+    @Test
+    void live_stt_mtls_required_with_pkcs12_wires_mtls_adapter() {
+        String ks = resourcePath("/mtls/client.p12");
+        String ts = resourcePath("/mtls/truststore.p12");
+        AIProvider provider = new WiringConfig().aiProvider(
+                props(aiMtls("live-stt", "https://stt.internal.example:8243", "required",
+                        ks, "atslive-test", ts)),
+                grants(), new InMemoryObjectStore());
+        assertInstanceOf(Faz24LiveSttProvider.class, provider);
+    }
+
+    @Test
+    void live_stt_mtls_required_with_unreadable_keystore_fails_closed_at_wiring() {
+        assertThrows(IllegalStateException.class, () -> new WiringConfig().aiProvider(
+                props(aiMtls("live-stt", "https://stt.internal.example:8243", "required",
+                        "/nonexistent/ks.p12", "pw", "/nonexistent/ts.p12")),
+                grants(), new InMemoryObjectStore()));
+    }
+
+    private static String resourcePath(String resource) {
+        try {
+            return java.nio.file.Path.of(
+                    LiveSttWiringTest.class.getResource(resource).toURI()).toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("test fixture yolu çözülemedi: " + resource, e);
+        }
     }
 
     // --- GrantRedeemingAudioSource köprüsü ---
