@@ -30,9 +30,11 @@ import org.springframework.security.web.SecurityFilterChain;
  *  - IdP-nötr (herhangi OIDC sağlayıcı; ADR-0001 vendor-coupling yasağı) —
  *    gerçek IdP seçimi/deploy'u ayrı ADR/deploy-wiring işidir.
  *  - Yetki FAIL-CLOSED + endpoint-bazlı scope ayrımı: authority'ler YALNIZ
- *    non-blank `tenant` claim'i varken scope'lardan türetilir (ats.consent.write /
- *    ats.recording.write / ats.transcript.read). Tek genel scope YOK; bilinmeyen
- *    yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
+ *    non-blank tenant claim'i (adı configurable — ATS-0019; ats.security.
+ *    tenant-claim-name, default "tenant") varken scope'lardan türetilir. TenantAccess
+ *    runtime tenant-extraction'ı AYNI config'i kullanır (biri authority verip diğeri
+ *    tenant bulamama YAPISAL imkânsız); fallback claim adı YOK. Tek genel scope YOK;
+ *    bilinmeyen yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
  *  - Tenant DAİMA token'dan okunur (istek gövdesi/path'inden ASLA — ATS-0002).
  *  - Açık yüzeyler YALNIZ /healthz + GET /v3/api-docs (ikisi de veri taşımaz —
  *    liveness + şema metadata'sı); onların dışında her şey kimlikli.
@@ -44,8 +46,6 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 @EnableWebSecurity
 class SecurityConfig {
-
-    static final String TENANT_CLAIM = "tenant";
 
     /** Endpoint-bazlı scope ayrımı (Codex #64 blocker-1): tek genel scope YOK. */
     private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.of(
@@ -63,7 +63,8 @@ class SecurityConfig {
             "ats.erasure.execute", "ERASURE_EXECUTE");
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder, AppProperties props)
+            throws Exception {
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
@@ -99,7 +100,8 @@ class SecurityConfig {
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(j -> j
                         .decoder(decoder)
-                        .jwtAuthenticationConverter(atsAuthenticationConverter())));
+                        .jwtAuthenticationConverter(atsAuthenticationConverter(
+                                props.security().tenantClaimName()))));
         return http.build();
     }
 
@@ -124,22 +126,27 @@ class SecurityConfig {
     /**
      * Authority'ler YALNIZ tenant-claim non-blank iken scope'lardan türetilir
      * (fail-closed: tenant'sız token hiçbir authority alamaz — tenant'sız veri
-     * erişimi yapısal imkânsız; ATS-0002).
+     * erişimi yapısal imkânsız; ATS-0002). tenant-claim ADI configurable
+     * (ATS-0019: platform-KC token'ında farklı olabilir); YALNIZ o JWT claim'i
+     * okunur — istek gövdesi/path/header fallback ASLA yok.
      */
-    private static Converter<Jwt, AbstractAuthenticationToken> atsAuthenticationConverter() {
-        return jwt -> {
-            String tenant = jwt.getClaimAsString(TENANT_CLAIM);
-            boolean hasTenant = tenant != null && !tenant.isBlank();
-            List<SimpleGrantedAuthority> authorities = List.of();
-            String scope = jwt.getClaimAsString("scope");
-            if (hasTenant && scope != null) {
-                authorities = List.of(scope.split(" ")).stream()
-                        .map(SCOPE_TO_AUTHORITY::get)
-                        .filter(a -> a != null)
-                        .map(SimpleGrantedAuthority::new)
-                        .toList();
-            }
-            return new JwtAuthenticationToken(jwt, authorities);
-        };
+    static Converter<Jwt, AbstractAuthenticationToken> atsAuthenticationConverter(String tenantClaimName) {
+        String claim = (tenantClaimName == null || tenantClaimName.isBlank()) ? "tenant" : tenantClaimName;
+        return jwt -> new JwtAuthenticationToken(jwt, deriveAuthorities(jwt, claim));
+    }
+
+    /** Test-görünür saf türetim: tenant-claim (configurable) + scope → authority. */
+    static List<SimpleGrantedAuthority> deriveAuthorities(Jwt jwt, String tenantClaimName) {
+        String tenant = jwt.getClaimAsString(tenantClaimName);
+        boolean hasTenant = tenant != null && !tenant.isBlank();
+        String scope = jwt.getClaimAsString("scope");
+        if (!hasTenant || scope == null) {
+            return List.of();
+        }
+        return List.of(scope.split(" ")).stream()
+                .map(SCOPE_TO_AUTHORITY::get)
+                .filter(a -> a != null)
+                .map(SimpleGrantedAuthority::new)
+                .toList();
     }
 }

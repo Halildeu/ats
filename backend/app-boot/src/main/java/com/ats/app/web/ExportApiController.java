@@ -28,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 class ExportApiController {
 
     private final ExportService exportService;
+    private final TenantAccess tenantAccess;
 
-    ExportApiController(ExportService exportService) {
+    ExportApiController(ExportService exportService, TenantAccess tenantAccess) {
         this.exportService = exportService;
+        this.tenantAccess = tenantAccess;
     }
 
     private static boolean hasNullElement(List<?> list) {
@@ -80,7 +82,7 @@ class ExportApiController {
                 c.redactionPolicyRef(), c.redactionRunRef(), c.retentionPolicyRef(),
                 c.schemaDigest(), c.signatureRef());
         Outcome<ExportReceipt> out = exportService.exportPacket(
-                TenantAccess.tenant(auth), TenantAccess.actor(auth), new InterviewId(interviewId),
+                tenantAccess.tenant(auth), tenantAccess.actor(auth), new InterviewId(interviewId),
                 body.caseKey(), body.citationKeys(), ctx, Instant.now().toString());
         if (out instanceof Outcome.Fail<ExportReceipt> fail) {
             return OutcomeHttp.fail(fail);

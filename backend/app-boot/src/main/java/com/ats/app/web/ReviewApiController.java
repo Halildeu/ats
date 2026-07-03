@@ -37,10 +37,12 @@ class ReviewApiController {
 
     private final HumanReviewService reviewService;
     private final ReviewCaseStore reviewStore;
+    private final TenantAccess tenantAccess;
 
-    ReviewApiController(HumanReviewService reviewService, ReviewCaseStore reviewStore) {
+    ReviewApiController(HumanReviewService reviewService, ReviewCaseStore reviewStore, TenantAccess tenantAccess) {
         this.reviewService = reviewService;
         this.reviewStore = reviewStore;
+        this.tenantAccess = tenantAccess;
     }
 
     record OpenBody(List<String> sourceEvidenceRefs, String aiOutputVersionRef) {}
@@ -51,7 +53,7 @@ class ReviewApiController {
         if (body == null) {
             return badRequest("gövde zorunlu");
         }
-        Outcome<String> out = reviewService.open(TenantAccess.tenant(auth),
+        Outcome<String> out = reviewService.open(tenantAccess.tenant(auth),
                 new InterviewId(interviewId), body.sourceEvidenceRefs(), body.aiOutputVersionRef());
         if (out instanceof Outcome.Fail<String> fail) {
             return OutcomeHttp.fail(fail);
@@ -67,7 +69,7 @@ class ReviewApiController {
     ResponseEntity<?> listCases(Authentication auth,
             @PathVariable("interviewId") String interviewId) {
         Outcome<List<ReviewCaseStore.CaseSummary>> out = reviewStore.listByInterview(
-                TenantAccess.tenant(auth), new InterviewId(interviewId));
+                tenantAccess.tenant(auth), new InterviewId(interviewId));
         if (out instanceof Outcome.Fail<List<ReviewCaseStore.CaseSummary>> fail) {
             return OutcomeHttp.fail(fail);
         }
@@ -93,9 +95,9 @@ class ReviewApiController {
         } catch (IllegalArgumentException e) {
             return badRequest("action START|EDIT|REVIEWED_NO_CHANGE|REJECT|RATIONALE olmalı");
         }
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
         InterviewId iv = new InterviewId(interviewId);
-        var actor = TenantAccess.actor(auth); // HER insan-adımı actor-aware (accountability zinciri)
+        var actor = tenantAccess.actor(auth); // HER insan-adımı actor-aware (accountability zinciri)
         Outcome<Void> out = switch (action) {
             case START -> reviewService.startReview(tenant, iv, body.caseKey(),
                     actor.value(), body.oversightRoleRef());
@@ -118,8 +120,8 @@ class ReviewApiController {
         if (body == null || body.caseKey() == null || body.caseKey().isBlank()) {
             return badRequest("caseKey zorunlu");
         }
-        Outcome<FinalizeReceipt> out = reviewService.finalizeDecision(TenantAccess.tenant(auth),
-                TenantAccess.actor(auth), new InterviewId(interviewId), body.caseKey(),
+        Outcome<FinalizeReceipt> out = reviewService.finalizeDecision(tenantAccess.tenant(auth),
+                tenantAccess.actor(auth), new InterviewId(interviewId), body.caseKey(),
                 body.decisionOutcomeRef(), Instant.now().toString());
         if (out instanceof Outcome.Fail<FinalizeReceipt> fail) {
             return OutcomeHttp.fail(fail);
@@ -136,7 +138,7 @@ class ReviewApiController {
     @GetMapping("/api/v1/interviews/{interviewId}/review-case")
     ResponseEntity<?> getCase(Authentication auth, @PathVariable("interviewId") String interviewId,
             @RequestParam("case") String caseKey) {
-        TenantId tenant = TenantAccess.tenant(auth);
+        TenantId tenant = tenantAccess.tenant(auth);
         Outcome<ReviewCase> out = reviewStore.find(tenant, new InterviewId(interviewId), caseKey);
         if (out instanceof Outcome.Fail<ReviewCase> fail) {
             return OutcomeHttp.fail(fail);

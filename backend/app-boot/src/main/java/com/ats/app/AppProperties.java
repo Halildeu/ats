@@ -40,11 +40,17 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
      * (imza anahtarları), issuer (iss doğrulaması), audience (aud doğrulaması).
      * IdP-nötr: herhangi bir OIDC sağlayıcı (ADR-0001 — vendor coupling yok).
      */
-    public record Security(String jwksUri, String issuer, String audience) {
+    public record Security(String jwksUri, String issuer, String audience, String tenantClaimName) {
         public Security {
             require(jwksUri, "ats.security.jwks-uri (env ATS_JWKS_URI)");
             require(issuer, "ats.security.issuer (env ATS_JWT_ISSUER)");
             require(audience, "ats.security.audience (env ATS_JWT_AUDIENCE)");
+            // ATS-0019: platform-KC token'ında tenant claim adı farklı olabilir
+            // (configurable); default "tenant". YALNIZ JWT claim adı — asla
+            // header/body/path fallback'e dönüşmez (tenant token-only, ATS-0002).
+            if (tenantClaimName == null || tenantClaimName.isBlank()) {
+                tenantClaimName = "tenant";
+            }
         }
     }
 
