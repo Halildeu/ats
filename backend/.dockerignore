@@ -1,0 +1,10 @@
+# Build context hijyeni (ATS-0019 39d-1): image katmanlarına ve build
+# context'ine SIZMAMASI gerekenler — secret/credential dosyaları, VCS
+# geçmişi, lokal derleme çıktıları (Codex 019f4c6c P1: context'e .git,
+# lokal config, credential girmez; builder stage final image'a kopyalanmaz).
+**/target
+**/.git
+**/.idea
+**/*.iml
+**/.DS_Store
+**/settings.xml

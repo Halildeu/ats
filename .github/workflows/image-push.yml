@@ -1,0 +1,77 @@
+# ATS app-boot GHCR image push (ATS-0019 39d-1).
+#
+# Zincir sözleşmesi (Codex 019f4c6c):
+#   built digest == scanned digest == SBOM subject == pushed digest
+#   == GitOps pinned digest == pod imageID
+# "digest:" log satırı downstream (platform-k8s-gitops) için AUTHORITY'dir;
+# sha-<short> tag'i yalnız insan-okunur alias.
+#
+# Güvenlik: minimum workflow izinleri; 3P action'lar commit-SHA pinli;
+# trivy CRITICAL bulguda FAIL (push'tan ÖNCE tarama — kırmızı imaj push edilmez).
+name: image-push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/image-push.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: image-push-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          echo "image=ghcr.io/${{ github.repository_owner }}/ats-app-boot" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image (backend context)
+        run: |
+          docker build \
+            -f backend/app-boot/Dockerfile \
+            -t "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+            backend
+
+      # Push'tan ÖNCE tarama: CRITICAL bulguda job kırmızı, imaj GHCR'a çıkmaz.
+      - name: Trivy scan (CRITICAL fail-closed)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: '${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}'
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      - name: SBOM (syft — taranan lokal imaj)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: '${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}'
+          format: spdx-json
+          artifact-name: ats-app-boot-sbom.spdx.json
+
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push + digest authority
+        run: |
+          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' \
+            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)
+          echo "ATS app-boot image published:"
+          echo "  - tag:      ${{ steps.meta.outputs.tag }}"
+          echo "  - digest:   ${DIGEST}"
