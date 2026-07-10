@@ -122,6 +122,21 @@ class RestApiSecurityTest {
     }
 
     @Test
+    void requested_privileged_scopes_without_assigned_roles_is_403_escalation_closed() {
+        // 39d-2b (Codex 019f4c6c P0, 10. negatif test): rolsüz kullanıcı
+        // ayrıcalıklı optional scope'ları AÇIKÇA istemiş ve IdP token'a
+        // yazmış olsa bile — resource_access EXPLICIT boş → rol-kapısı 403.
+        String escalated = JWT.token(Map.of(
+                        "tenant", "t-a",
+                        "scope", "ats.consent.write ats.recording.write ats.export.write ats.dsar.write ats.erasure.execute",
+                        "resource_access", Map.of()),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "escalating-user");
+        assertEquals(403, putConsent(escalated, "iv-esc", "GRANTED").getStatusCode().value());
+        ResponseEntity<String> upload = upload(escalated, "iv-esc", new byte[] {1, 2, 3});
+        assertEquals(403, upload.getStatusCode().value());
+    }
+
+    @Test
     void token_without_required_scope_is_403() {
         String noScope = JWT.token(Map.of("tenant", "t-a", "scope", "openid profile"),
                 JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "user-1");

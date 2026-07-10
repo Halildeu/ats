@@ -31,7 +31,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *    gerçek IdP seçimi/deploy'u ayrı ADR/deploy-wiring işidir.
  *  - Yetki FAIL-CLOSED + endpoint-bazlı scope ayrımı: authority'ler YALNIZ
  *    non-blank tenant claim'i (adı configurable — ATS-0019; ats.security.
- *    tenant-claim-name, default "tenant") varken scope'lardan türetilir. TenantAccess
+ *    tenant-claim-name, default "tenant") varken, İSTENEN scope ile ATANMIŞ
+ *    `resource_access.<ats-client>.roles` KESİŞİMİNDEN türetilir (39d-2b:
+ *    scope istemek ≠ permission; self-escalation yapısal kapalı). TenantAccess
  *    runtime tenant-extraction'ı AYNI config'i kullanır (biri authority verip diğeri
  *    tenant bulamama YAPISAL imkânsız); fallback claim adı YOK. Tek genel scope YOK;
  *    bilinmeyen yüzey denyAll (yeni endpoint = açık matcher + scope kararı).
@@ -101,7 +103,8 @@ class SecurityConfig {
                 .oauth2ResourceServer(o -> o.jwt(j -> j
                         .decoder(decoder)
                         .jwtAuthenticationConverter(atsAuthenticationConverter(
-                                props.security().tenantClaimName()))));
+                                props.security().tenantClaimName(),
+                                props.security().audience()))));
         return http.build();
     }
 
@@ -130,23 +133,68 @@ class SecurityConfig {
      * (ATS-0019: platform-KC token'ında farklı olabilir); YALNIZ o JWT claim'i
      * okunur — istek gövdesi/path/header fallback ASLA yok.
      */
-    static Converter<Jwt, AbstractAuthenticationToken> atsAuthenticationConverter(String tenantClaimName) {
+    static Converter<Jwt, AbstractAuthenticationToken> atsAuthenticationConverter(
+            String tenantClaimName, String atsClientId) {
         String claim = (tenantClaimName == null || tenantClaimName.isBlank()) ? "tenant" : tenantClaimName;
-        return jwt -> new JwtAuthenticationToken(jwt, deriveAuthorities(jwt, claim));
+        return jwt -> new JwtAuthenticationToken(jwt, deriveAuthorities(jwt, claim, atsClientId));
     }
 
-    /** Test-görünür saf türetim: tenant-claim (configurable) + scope → authority. */
-    static List<SimpleGrantedAuthority> deriveAuthorities(Jwt jwt, String tenantClaimName) {
+    /**
+     * Test-görünür saf türetim — ROL-KAPILI kesişim (39d-2b; Codex 019f4c6c
+     * P0, Seçenek A):
+     *
+     *   effective = requestedScope ∩ resource_access.&lt;ats-client&gt;.roles
+     *               ∩ SCOPE_TO_AUTHORITY (bilinen 10 permission)
+     *
+     * OAuth scope İSTENEN yetkidir, tek başına permission DEĞİLDİR — IdP'de
+     * optional scope'u herhangi bir oturumlu kullanıcı isteyebilir
+     * (self-escalation). Gerçek entitlement kullanıcıya ATANMIŞ ats-client
+     * rolüdür (Keycloak client-role yayını: `resource_access` anahtarı =
+     * audience client-id'si). Exact eşleşme; substring/prefix/wildcard YOK;
+     * rolün BAŞKA client altında yayınlanması ATS yetkisi vermez.
+     */
+    static List<SimpleGrantedAuthority> deriveAuthorities(
+            Jwt jwt, String tenantClaimName, String atsClientId) {
         String tenant = jwt.getClaimAsString(tenantClaimName);
         boolean hasTenant = tenant != null && !tenant.isBlank();
         String scope = jwt.getClaimAsString("scope");
         if (!hasTenant || scope == null) {
             return List.of();
         }
+        java.util.Set<String> assigned = assignedAtsRoles(jwt, atsClientId);
         return List.of(scope.split(" ")).stream()
+                .filter(assigned::contains)
                 .map(SCOPE_TO_AUTHORITY::get)
                 .filter(a -> a != null)
                 .map(SimpleGrantedAuthority::new)
                 .toList();
+    }
+
+    /**
+     * `resource_access.&lt;atsClientId&gt;.roles` tip-güvenli okuma: beklenmeyen
+     * HER şekil (claim yok / obje değil / roles liste değil / eleman string
+     * değil / boş) BOŞ küme döner. Fail-closed; ClassCastException veya 500
+     * üretmez — bozuk claim'li token yalnız yetkisiz kalır.
+     */
+    private static java.util.Set<String> assignedAtsRoles(Jwt jwt, String atsClientId) {
+        Object ra = jwt.getClaim("resource_access");
+        if (!(ra instanceof Map<?, ?> raMap)) {
+            return java.util.Set.of();
+        }
+        Object client = raMap.get(atsClientId);
+        if (!(client instanceof Map<?, ?> clientMap)) {
+            return java.util.Set.of();
+        }
+        Object roles = clientMap.get("roles");
+        if (!(roles instanceof List<?> list)) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (Object r : list) {
+            if (r instanceof String v && !v.isBlank()) {
+                out.add(v);
+            }
+        }
+        return java.util.Set.copyOf(out);
     }
 }
