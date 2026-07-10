@@ -72,6 +72,14 @@ final class JwtTestSupport {
         return token(Map.of("tenant", tenant, "scope", ALL_SCOPES), ISSUER, List.of(AUDIENCE), subject);
     }
 
+    /**
+     * 39d-2b rol-kapısı sonrası test-persona semantiği: `resource_access`
+     * AÇIKÇA verilmemişse token'daki `ats.*` scope'ları aynı adlı
+     * `resource_access.ats-api.roles` atamasıyla eşlenir (entitled persona —
+     * mevcut scope-ayrımı testleri davranışını korur; scope zaten yetkinin
+     * İSTENEN yarısıdır, atanmış yarısı rol). Escalation/negatif testler
+     * `resource_access`'i EXPLICIT verir ve otomatik türetim devre dışı kalır.
+     */
     String token(Map<String, Object> claims, String issuer, List<String> audience, String subject) {
         try {
             JWTClaimsSet.Builder b = new JWTClaimsSet.Builder()
@@ -80,6 +88,14 @@ final class JwtTestSupport {
                     .subject(subject)
                     .issueTime(Date.from(Instant.now()))
                     .expirationTime(Date.from(Instant.now().plusSeconds(300)));
+            if (!claims.containsKey("resource_access") && claims.get("scope") instanceof String s) {
+                List<String> atsRoles = List.of(s.split(" ")).stream()
+                        .filter(v -> v.startsWith("ats."))
+                        .toList();
+                if (!atsRoles.isEmpty()) {
+                    b.claim("resource_access", Map.of("ats-api", Map.of("roles", atsRoles)));
+                }
+            }
             claims.forEach(b::claim);
             SignedJWT jwt = new SignedJWT(
                     new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(rsaKey.getKeyID()).build(),
