@@ -460,6 +460,122 @@ class TranscriptionServiceTest {
                         && "replay_integrity_mismatch".equals(e.extras().get("reason_code"))));
     }
 
+    /* Codex post-impl blocker testleri: şekil-geçerli ama SEMANTİK-yanlış payload'lar
+       replay üretemez (pointer-bütünlüğü fail-closed). Yardımcı: son transcript.created
+       satırının payload'ını değiştirilmiş kopyayla değiştirir. */
+    private void mutateLastCreatedPayload(java.util.function.UnaryOperator<java.util.Map<String, JsonValue>> mutation) {
+        for (int i = ledger.entries.size() - 1; i >= 0; i--) {
+            EvidenceLedger.LedgerEntry e = ledger.entries.get(i);
+            if (!TranscriptionService.LEDGER_EVENT_TYPE.equals(e.eventType())) continue;
+            java.util.Map<String, JsonValue> vals = new java.util.LinkedHashMap<>(e.payload().values());
+            ledger.entries.set(i, new EvidenceLedger.LedgerEntry(
+                    e.tenantId(), e.actorId(), e.interviewId(), e.eventType(), e.occurredAt(),
+                    e.idempotencyKey(), e.contentHash(), JsonValue.object(mutation.apply(vals)),
+                    e.evidenceId(), e.sequence(), e.previousHash(), e.entryHash()));
+            return;
+        }
+        throw new AssertionError("transcript.created satırı yok");
+    }
+
+    private void assertReplayIntegrityRejected(Outcome<TranscriptionReceipt> replay) {
+        assertInstanceOf(Outcome.Fail.class, replay);
+        assertTrue(((Outcome.Fail<TranscriptionReceipt>) replay).reason().contains("bütünlük"));
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())
+                        && "replay_integrity_mismatch".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void replay_rejected_when_payload_source_key_differs_from_current_call() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("source_object_key", JsonValue.of("i1/rec-" + "f".repeat(64))); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_payload_language_differs() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("language", JsonValue.of("en")); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_on_fractional_segment_count_no_rounding() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("segment_count", JsonValue.of(1.4)); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_segment_count_differs_from_current() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("segment_count", JsonValue.of(2.0)); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_on_unexpected_extra_payload_field() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        // Politika: alan kümesi STRICT (bu payload'ın tek üreticisi servis) — ekstra alan reddedilir.
+        mutateLastCreatedPayload(v -> { v.put("unexpected", JsonValue.of("x")); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_pointed_transcript_hash_differs_from_evidence() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        // AYNI kaynak/dil/segment-sayılı ama FARKLI METİNLİ ikinci transcript (hash farklı):
+        Outcome<TranscriptionReceipt> other = service(new AltTextProvider(), ledger)
+                .transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:30:00Z");
+        String otherKey = ((Outcome.Ok<TranscriptionReceipt>) other).value().transcriptKey();
+        // İLK kanıtın pointer'ını ikinci (mevcut!) transkripte yönlendir — kaynak/dil/sayı
+        // güncel çağrıyla tutarlı kaldığından yalnız LEXICAL-HASH kontrolü yakalayabilir:
+        for (int i = 0; i < ledger.entries.size(); i++) {
+            EvidenceLedger.LedgerEntry e = ledger.entries.get(i);
+            if (TranscriptionService.LEDGER_EVENT_TYPE.equals(e.eventType()) && !e.idempotencyKey().isBlank()
+                    && e.payload().values().get("transcript_key") instanceof JsonValue.JsonString tk
+                    && !tk.value().equals(otherKey)) {
+                java.util.Map<String, JsonValue> vals = new java.util.LinkedHashMap<>(e.payload().values());
+                vals.put("transcript_key", JsonValue.of(otherKey));
+                ledger.entries.set(i, new EvidenceLedger.LedgerEntry(
+                        e.tenantId(), e.actorId(), e.interviewId(), e.eventType(), e.occurredAt(),
+                        e.idempotencyKey(), e.contentHash(), JsonValue.object(vals),
+                        e.evidenceId(), e.sequence(), e.previousHash(), e.entryHash()));
+                break;
+            }
+        }
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    /** FakeProvider ile AYNI yapı (dil + 4 segment) ama farklı metin — hash-mismatch kurgusu. */
+    static final class AltTextProvider implements AIProvider {
+        @Override
+        public Outcome<TranscriptResult> transcribe(String audioRef) {
+            return Outcome.ok(new TranscriptResult("TR-TR", List.of(
+                    new TranscriptSegment("spk_a", 0, 900, "Tamamen farklı bir açılış cümlesi"),
+                    new TranscriptSegment("spk_b", 900, 2000, "Ve tamamen farklı bir cevap"),
+                    new TranscriptSegment("spk_a", 2000, 2400, "Kısa ara"),
+                    new TranscriptSegment("spk_b", 2400, 3000, "Farklı kapanış"))));
+        }
+
+        @Override
+        public Outcome<CitationResult> cite(String claim, String transcriptRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "slice-2 dışı");
+        }
+    }
+
     /**
      * Deterministik yarış-kaybedeni: pre-lookup delegate'ten ÖNCEKİ state'i görür (miss),
      * append idempotency-conflict döner (kazanan satırı çoktan yazdı); recovery re-lookup

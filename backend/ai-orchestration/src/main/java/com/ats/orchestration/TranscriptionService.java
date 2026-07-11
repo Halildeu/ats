@@ -147,7 +147,7 @@ public final class TranscriptionService {
         // idempotent replay. NOT_FOUND normal yol; başka okuma hatası fail-closed.
         Outcome<LedgerEntry> prior = ledger.findByIdempotencyKey(tenantId, idempotencyKey);
         if (prior instanceof Outcome.Ok<LedgerEntry> priorOk) {
-            return replayFromPrior(priorOk.value(), tenantId, actorId, interviewId, contentHash);
+            return replayFromPrior(priorOk.value(), tenantId, actorId, interviewId, contentHash, transcript);
         }
         if (prior instanceof Outcome.Fail<LedgerEntry> priorFail && priorFail.code() != OutcomeCode.NOT_FOUND) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ledger idempotency okuması başarısız (fail-closed)");
@@ -185,7 +185,7 @@ public final class TranscriptionService {
             // ledger arızası — mevcut fail-closed yol.
             Outcome<LedgerEntry> raced = ledger.findByIdempotencyKey(tenantId, idempotencyKey);
             if (raced instanceof Outcome.Ok<LedgerEntry> racedOk) {
-                return replayFromPrior(racedOk.value(), tenantId, actorId, interviewId, contentHash);
+                return replayFromPrior(racedOk.value(), tenantId, actorId, interviewId, contentHash, transcript);
             }
             emitAppendFailed(tenantId, "ledger_unavailable");
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ledger append başarısız (transkript geri alındı)");
@@ -209,35 +209,52 @@ public final class TranscriptionService {
      * rol-kapısı controller'da zaten geçildi); audit için deduplicated olayı GÜNCEL
      * aktörle yazılır, WORM satırının sahipliği/evidenceId'si değişmez.
      */
+    private static final java.util.Set<String> REPLAY_PAYLOAD_KEYS =
+            java.util.Set.of("transcript_key", "source_object_key", "segment_count", "language");
+
     private Outcome<TranscriptionReceipt> replayFromPrior(
-            LedgerEntry prior, TenantId tenantId, ActorId actorId, InterviewId interviewId, String contentHash) {
+            LedgerEntry prior, TenantId tenantId, ActorId actorId, InterviewId interviewId,
+            String contentHash, Transcript current) {
         if (!LEDGER_EVENT_TYPE.equals(prior.eventType())
                 || !interviewId.value().equals(prior.interviewId().value())
                 || !contentHash.equals(prior.contentHash())) {
-            emitAppendFailed(tenantId, "replay_integrity_mismatch");
-            return Outcome.fail(OutcomeCode.INVALID,
-                    "idempotency kaydı beklenen transcript.created kimliğiyle uyuşmuyor (bütünlük hatası; operasyonel müdahale gerekir)");
+            return replayIntegrityFail(tenantId,
+                    "idempotency kaydı beklenen transcript.created kimliğiyle uyuşmuyor");
         }
         Map<String, JsonValue> payload = prior.payload().values();
+        // Codex post-impl blocker: şekil yetmez — SEMANTİK bağ doğrulanır. Payload key
+        // kümesi TAM (strict; bu payload'ın tek üreticisi bu servis), pointer alanları
+        // GÜNCEL çağrının transcript'iyle birebir; segment_count tam-sayı (yuvarlama YOK).
+        if (!REPLAY_PAYLOAD_KEYS.equals(payload.keySet())) {
+            return replayIntegrityFail(tenantId, "idempotency kaydının payload alan-kümesi beklenenden farklı");
+        }
         String priorTranscriptKey = payload.get("transcript_key") instanceof JsonValue.JsonString tk
-                ? tk.value() : null;
-        Double priorSegmentCount = payload.get("segment_count") instanceof JsonValue.JsonNumber sc
+                && !tk.value().isBlank() ? tk.value() : null;
+        String priorSourceKey = payload.get("source_object_key") instanceof JsonValue.JsonString sk
+                ? sk.value() : null;
+        String priorLanguage = payload.get("language") instanceof JsonValue.JsonString lang
+                ? lang.value() : null;
+        Double rawCount = payload.get("segment_count") instanceof JsonValue.JsonNumber sc
                 ? sc.value() : null;
-        if (priorTranscriptKey == null || priorTranscriptKey.isBlank()
-                || !(payload.get("source_object_key") instanceof JsonValue.JsonString)
-                || priorSegmentCount == null || priorSegmentCount < 1
-                || !(payload.get("language") instanceof JsonValue.JsonString)) {
-            emitAppendFailed(tenantId, "replay_integrity_mismatch");
-            return Outcome.fail(OutcomeCode.INVALID,
-                    "idempotency kaydının payload'ı beklenen şekle uymuyor (bütünlük hatası; operasyonel müdahale gerekir)");
+        boolean integralCount = rawCount != null && Double.isFinite(rawCount)
+                && rawCount >= 1 && rawCount == Math.floor(rawCount);
+        if (priorTranscriptKey == null || priorSourceKey == null || priorLanguage == null || !integralCount) {
+            return replayIntegrityFail(tenantId, "idempotency kaydının payload'ı beklenen şekle uymuyor");
+        }
+        int priorCount = (int) (double) rawCount;
+        if (!priorSourceKey.equals(current.sourceObjectKey())
+                || !priorLanguage.equals(current.language())
+                || priorCount != current.segments().size()) {
+            return replayIntegrityFail(tenantId,
+                    "idempotency kaydı güncel çağrının transkript kimliğiyle (kaynak/dil/segment) uyuşmuyor");
         }
         Outcome<TranscriptionReceipt> erased = rejectIfErased(tenantId, prior.evidenceId());
         if (erased != null) {
             return erased;
         }
-        Outcome<Transcript> existing = transcriptStore.find(tenantId, interviewId, priorTranscriptKey);
-        if (!(existing instanceof Outcome.Ok<Transcript>)) {
-            if (existing instanceof Outcome.Fail<Transcript> storeFail
+        Outcome<Transcript> found = transcriptStore.find(tenantId, interviewId, priorTranscriptKey);
+        if (!(found instanceof Outcome.Ok<Transcript> existingOk)) {
+            if (found instanceof Outcome.Fail<Transcript> storeFail
                     && storeFail.code() != OutcomeCode.NOT_FOUND) {
                 return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "transkript deposu okunamadı (fail-closed)");
             }
@@ -245,8 +262,20 @@ public final class TranscriptionService {
             return Outcome.fail(OutcomeCode.INVALID,
                     "ledger kanıtı var ama transkript deposunda karşılığı yok — bütünlük hatası (operasyonel müdahale gerekir)");
         }
+        // Pointer-bütünlüğü: store'daki transcript GERÇEKTEN bu kanıtın içeriği mi?
+        // Lexical hash yeniden hesaplanır ve prior.contentHash ile eşleşmek ZORUNDA
+        // (payload'daki key başka mevcut transkripte yönlendirilmişse burada düşer).
+        Transcript existing = existingOk.value();
+        if (!existing.sourceObjectKey().equals(priorSourceKey)
+                || !existing.language().equals(priorLanguage)
+                || existing.segments().size() != priorCount
+                || !sha256Hex(lexicalConcat(existing)).equals(prior.contentHash())) {
+            return replayIntegrityFail(tenantId,
+                    "store'daki transkript ledger kanıtının içeriğiyle uyuşmuyor (pointer-bütünlük hatası)");
+        }
         // Erase/replay yarışı: store okuması ile receipt arasına giren silme, tombstone
-        // append'iyle görünür olur — receipt öncesi SON authoritative kontrol.
+        // append'iyle görünür olur — receipt öncesi SON authoritative kontrol (dar
+        // pencereyi küçültür; portlar arası mutlak atomiklik iddiası DEĞİLDİR).
         Outcome<TranscriptionReceipt> erasedLate = rejectIfErased(tenantId, prior.evidenceId());
         if (erasedLate != null) {
             return erasedLate;
@@ -254,7 +283,13 @@ public final class TranscriptionService {
         emit(tenantId, APPEND_DEDUPLICATED_EVENT, "evidence", "info", PiiClass.ID_ONLY,
                 Map.of("ledger_entry_ref", prior.evidenceId().value(), "actor_ref", actorId.value()));
         return Outcome.ok(new TranscriptionReceipt(
-                priorTranscriptKey, prior.evidenceId().value(), (int) Math.round(priorSegmentCount)));
+                priorTranscriptKey, prior.evidenceId().value(), existing.segments().size()));
+    }
+
+    private Outcome<TranscriptionReceipt> replayIntegrityFail(TenantId tenantId, String detail) {
+        emitAppendFailed(tenantId, "replay_integrity_mismatch");
+        return Outcome.fail(OutcomeCode.INVALID,
+                detail + " (bütünlük hatası; operasyonel müdahale gerekir)");
     }
 
     /** Tombstone VAR → erased-reject Outcome'u; YOK → null (devam); okuma hatası → fail-closed. */
