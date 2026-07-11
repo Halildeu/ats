@@ -4,6 +4,8 @@ C ATSConnector.exportPacket(dto:TenantContext,dto:EvidencePacketRef,enum:EMAIL|P
 C ATSConnector.writeBack(dto:TenantContext,dto:EvidencePacketRef,dto:WriteBackTarget):outcome:void
 C EvidenceLedger.append(dto:EvidenceEvent):outcome:dto:LedgerEntry
 C EvidenceLedger.appendTombstoneEvent(id:TenantId,id:ActorId,id:InterviewId,id:EvidenceId,string):outcome:dto:LedgerEntry
+C EvidenceLedger.findByIdempotencyKey(id:TenantId,string):outcome:dto:LedgerEntry
+C EvidenceLedger.findTombstoneForEvidence(id:TenantId,id:EvidenceId):outcome:dto:LedgerEntry
 C EvidenceLedger.getById(id:TenantId,id:EvidenceId):outcome:dto:LedgerEntry
 C EvidenceLedger.list(id:TenantId,dto:LedgerListFilter):outcome:array:dto:LedgerEntry
 C IdentityTenant.assertTenantScope(dto:TenantContext,id:TenantId):outcome:void

@@ -57,4 +57,19 @@ export interface EvidenceLedger {
 
   /** Tenant-kapsamlı listeleme. */
   list(tenantId: TenantId, filter?: LedgerListFilter): Outcome<readonly LedgerEntry[]>;
+
+  /**
+   * 39d-7a-fix: tenant-scoped idempotency-key ile TEK satır — servis-katmanı
+   * idempotent replay'in okuma yüzeyi (unique (tenant, idempotencyKey)
+   * kontratının port karşılığı). NOT_FOUND = satır yok (hata değil; çağıran
+   * normal append yoluna devam eder).
+   */
+  findByIdempotencyKey(tenantId: TenantId, idempotencyKey: string): Outcome<LedgerEntry>;
+
+  /**
+   * 39d-7a-fix: hedef evidence için tombstone satırı — AUTHORITATIVE
+   * erasure-durumu sorgusu ("store'da yok = erasure" çıkarımı güvensiz;
+   * tombstone kanıtı açık sorgulanır). NOT_FOUND = tombstone yok.
+   */
+  findTombstoneForEvidence(tenantId: TenantId, targetEvidenceId: EvidenceId): Outcome<LedgerEntry>;
 }

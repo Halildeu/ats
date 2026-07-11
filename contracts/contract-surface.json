@@ -117,6 +117,38 @@
         "returns": "outcome:dto:LedgerEntry"
       },
       {
+        "name": "findByIdempotencyKey",
+        "params": [
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "string",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:LedgerEntry"
+      },
+      {
+        "name": "findTombstoneForEvidence",
+        "params": [
+          {
+            "type": "id:TenantId",
+            "optional": false,
+            "nullable": false
+          },
+          {
+            "type": "id:EvidenceId",
+            "optional": false,
+            "nullable": false
+          }
+        ],
+        "returns": "outcome:dto:LedgerEntry"
+      },
+      {
         "name": "getById",
         "params": [
           {

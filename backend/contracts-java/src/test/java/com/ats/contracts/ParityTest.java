@@ -19,7 +19,8 @@ class ParityTest {
 
     private static final Map<Class<?>, List<String>> CANONICAL = Map.of(
             IdentityTenant.class, List.of("assertTenantScope", "resolveTenant"),
-            EvidenceLedger.class, List.of("append", "appendTombstoneEvent", "getById", "list"),
+            EvidenceLedger.class, List.of("append", "appendTombstoneEvent",
+                    "findByIdempotencyKey", "findTombstoneForEvidence", "getById", "list"),
             AIProvider.class, List.of("cite", "transcribe"),
             ATSConnector.class, List.of("exportPacket", "writeBack"));
 
