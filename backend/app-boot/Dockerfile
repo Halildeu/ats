@@ -20,9 +20,11 @@ COPY . .
 RUN mvn -B -q -pl app-boot -am package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S ats && adduser -S -G ats ats
+# UID/GID 10001 NUMERIK: kubelet runAsNonRoot dogrulamasi isimli
+# kullaniciyi dogrulayamaz ("non-numeric user" CreateContainerConfigError)
+RUN addgroup -g 10001 -S ats && adduser -u 10001 -S -G ats ats
 COPY --from=build /src/app-boot/target/app-boot-*.jar /app/app.jar
-USER ats
+USER 10001:10001
 EXPOSE 8080
 # Bellek sınırı container limitinden türesin (cgroup-aware JVM).
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
