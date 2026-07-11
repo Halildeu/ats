@@ -97,4 +97,29 @@ export class InMemoryEvidenceLedger implements EvidenceLedger {
     });
     return ok(out);
   }
+
+  /** 39d-7a-fix: tenant-scoped idempotency-key ile TEK satır (port aynası). */
+  findByIdempotencyKey(tenantId: TenantId, idempotencyKey: string): Outcome<LedgerEntry> {
+    if (!tenantId || !idempotencyKey) {
+      return fail("INVALID", "tenant/idempotencyKey zorunlu");
+    }
+    const entry = this.#entries.find(
+      (e) => e.tenantId === tenantId && e.idempotencyKey === idempotencyKey,
+    );
+    return entry ? ok(entry) : fail("NOT_FOUND", "ledger entry yok (tenant-scope)");
+  }
+
+  /** 39d-7a-fix: hedef evidence için tombstone satırı (authoritative erasure sorgusu). */
+  findTombstoneForEvidence(tenantId: TenantId, targetEvidenceId: EvidenceId): Outcome<LedgerEntry> {
+    if (!tenantId || !targetEvidenceId) {
+      return fail("INVALID", "tenant/targetEvidenceId zorunlu");
+    }
+    const entry = this.#entries.find(
+      (e) =>
+        e.tenantId === tenantId &&
+        e.eventType === "EVIDENCE_TOMBSTONE" &&
+        (e.payload as { targetEvidenceId?: unknown }).targetEvidenceId === targetEvidenceId,
+    );
+    return entry ? ok(entry) : fail("NOT_FOUND", "tombstone yok (tenant-scope)");
+  }
 }
