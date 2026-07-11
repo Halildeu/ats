@@ -1,8 +1,9 @@
 # ATS app-boot GHCR image push (ATS-0019 39d-1).
 #
-# Zincir sözleşmesi (Codex 019f4c6c):
-#   built digest == scanned digest == SBOM subject == pushed digest
-#   == GitOps pinned digest == pod imageID
+# Zincir sözleşmesi (Codex 019f4c6c + 019f50b7 daraltması):
+#   built local image == scanned local image == SBOM source == pushed image;
+#   pushed digest == GitOps pinned digest == pod imageID.
+#   (Digest-bağlı SBOM subject doğrulaması / OCI attestation follow-up.)
 # "digest:" log satırı downstream (platform-k8s-gitops) için AUTHORITY'dir;
 # sha-<short> tag'i yalnız insan-okunur alias.
 #
