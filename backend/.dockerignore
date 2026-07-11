@@ -8,3 +8,12 @@
 **/*.iml
 **/.DS_Store
 **/settings.xml
+# credential/secret sınıfı (Codex 019f50b7 P2): COPY . . context'ine asla
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/*.keystore
+**/*.truststore

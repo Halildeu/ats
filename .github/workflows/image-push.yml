@@ -47,7 +47,9 @@ jobs:
             -t "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
             backend
 
-      # Push'tan ÖNCE tarama: CRITICAL bulguda job kırmızı, imaj GHCR'a çıkmaz.
+      # Push'tan ÖNCE tarama: HER CRITICAL bulguda (unfixed dahil) job kırmızı,
+      # imaj GHCR'a çıkmaz. ignore-unfixed bilinçli KAPALI (Codex 019f50b7 P1:
+      # "fixable-only" gevşetmesi fail-closed sözleşmesini zayıflatır).
       - name: Trivy scan (CRITICAL fail-closed)
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
@@ -55,9 +57,12 @@ jobs:
           format: table
           exit-code: '1'
           severity: CRITICAL
-          ignore-unfixed: true
 
-      - name: SBOM (syft — taranan lokal imaj)
+      # SBOM iddiası DAR (Codex 019f50b7 P1): bu SPDX, push edilenle AYNI
+      # LOKAL imajdan (aynı tag, aynı runner, push'tan hemen önce) üretilmiştir;
+      # subject==pushed-digest eşitliği ayrıca doğrulanmaz. OCI attestation
+      # (imza + digest-bağlı SBOM) follow-up.
+      - name: SBOM (syft — push edilen lokal imajdan)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: '${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}'
@@ -67,11 +72,23 @@ jobs:
       - name: Login GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
+      # Digest, push ÇIKTISININ kendisinden yakalanır (Codex 019f50b7 P1:
+      # RepoDigests[0] sıra varsayımı kırılgan) + biçim/repo doğrulanır;
+      # doğrulanamazsa job FAIL (yanlış authority yayınlamak yok).
       - name: Push + digest authority
         run: |
-          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}"
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' \
-            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" | cut -d@ -f2)
+          set -euo pipefail
+          IMAGE="${{ steps.meta.outputs.image }}"
+          PUSH_OUT=$(docker push "${IMAGE}:${{ steps.meta.outputs.tag }}" | tee /dev/stderr)
+          DIGEST=$(printf '%s\n' "$PUSH_OUT" | grep -Eo 'sha256:[0-9a-f]{64}' | tail -1)
+          if ! printf '%s' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "FATAL: push çıktısından geçerli digest çıkarılamadı" >&2; exit 1
+          fi
+          # çapraz doğrulama: lokal imajın RepoDigests kümesinde AYNI repo+digest var mı
+          if ! docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' \
+              "${IMAGE}:${{ steps.meta.outputs.tag }}" | grep -Fxq "${IMAGE}@${DIGEST}"; then
+            echo "FATAL: push digest'i lokal RepoDigests ile eşleşmedi (${IMAGE}@${DIGEST})" >&2; exit 1
+          fi
           echo "ATS app-boot image published:"
           echo "  - tag:      ${{ steps.meta.outputs.tag }}"
           echo "  - digest:   ${DIGEST}"
