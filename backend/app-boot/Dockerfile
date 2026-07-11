@@ -1,4 +1,6 @@
-# ATS app-boot imajı (ATS-0019 39d-1) — reproducible artifact.
+# ATS app-boot imajı (ATS-0019 39d-1) — digest-authority artifact.
+# (Base imaj TAG-pinli; tam reproducibility icin base digest-pin follow-up —
+#  guven kaniti her zaman YAYINLANAN imaj digest'idir, tag degil.)
 # Build context = repo'nun backend/ dizini:
 #   docker build -f backend/app-boot/Dockerfile backend
 # Güven kanıtı DIGEST'tir; sha-<short> tag'i insan-okunur alias'tır
