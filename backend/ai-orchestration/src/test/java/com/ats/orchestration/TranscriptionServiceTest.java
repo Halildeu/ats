@@ -536,10 +536,17 @@ class TranscriptionServiceTest {
         grant();
         TranscriptionService svc = service(new FakeProvider(), ledger);
         assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
-        // AYNI kaynak/dil/segment-sayılı ama FARKLI METİNLİ ikinci transcript (hash farklı):
+        TranscriptionReceipt firstReceipt = ((Outcome.Ok<TranscriptionReceipt>) svc
+                .transcribeStored(T1, A2, I1, SRC, "2026-07-02T11:10:00Z")).value(); // replay — kurulum referansı
+        // AYNI kaynak/dil/segment-SAYILI ama FARKLI METİNLİ ikinci gerçek transcript:
         Outcome<TranscriptionReceipt> other = service(new AltTextProvider(), ledger)
                 .transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:30:00Z");
-        String otherKey = ((Outcome.Ok<TranscriptionReceipt>) other).value().transcriptKey();
+        TranscriptionReceipt otherReceipt = ((Outcome.Ok<TranscriptionReceipt>) other).value();
+        String otherKey = otherReceipt.transcriptKey();
+        // Kurulum doğrulaması: sayı EŞİT (hash dışındaki kontroller ayırt EDEMEZ), key farklı.
+        assertEquals(3, firstReceipt.segmentCount());
+        assertEquals(firstReceipt.segmentCount(), otherReceipt.segmentCount());
+        assertNotEquals(firstReceipt.transcriptKey(), otherReceipt.transcriptKey());
         // İLK kanıtın pointer'ını ikinci (mevcut!) transkripte yönlendir — kaynak/dil/sayı
         // güncel çağrıyla tutarlı kaldığından yalnız LEXICAL-HASH kontrolü yakalayabilir:
         for (int i = 0; i < ledger.entries.size(); i++) {
@@ -559,15 +566,19 @@ class TranscriptionServiceTest {
         assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
     }
 
-    /** FakeProvider ile AYNI yapı (dil + 4 segment) ama farklı metin — hash-mismatch kurgusu. */
+    /**
+     * FakeProvider'ın SANITIZE-SONRASI yapısıyla birebir (dil tr + 3 lexical segment,
+     * aynı konuşmacı dizilimi) ama FARKLI metin → yalnız lexical-hash farklı.
+     * (FakeProvider'ın "[alkış]" segmenti sanitizer'da düşer; gerçek sayı 3 —
+     * Codex iter: redirect testi hash kontrolünü İZOLE etmeli.)
+     */
     static final class AltTextProvider implements AIProvider {
         @Override
         public Outcome<TranscriptResult> transcribe(String audioRef) {
             return Outcome.ok(new TranscriptResult("TR-TR", List.of(
                     new TranscriptSegment("spk_a", 0, 900, "Tamamen farklı bir açılış cümlesi"),
                     new TranscriptSegment("spk_b", 900, 2000, "Ve tamamen farklı bir cevap"),
-                    new TranscriptSegment("spk_a", 2000, 2400, "Kısa ara"),
-                    new TranscriptSegment("spk_b", 2400, 3000, "Farklı kapanış"))));
+                    new TranscriptSegment("spk_a", 2000, 2400, "Farklı kapanış cümlesi"))));
         }
 
         @Override
