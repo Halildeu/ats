@@ -65,7 +65,11 @@ class SurfaceParityTest {
             }
             Set<String> seen = new HashSet<>();
             for (Method m : iface.getDeclaredMethods()) {
-                if (m.isSynthetic() || !Modifier.isAbstract(m.getModifiers())) continue;
+                // 39d-7a-fix: default metotlar da ÇAĞRILABİLİR yüzeydir (TS canonical'da
+                // default kavramı yok — parity onları da kapsar); yalnız synthetic/static/
+                // private projeksiyona girmez.
+                if (m.isSynthetic() || Modifier.isStatic(m.getModifiers())
+                        || Modifier.isPrivate(m.getModifiers())) continue;
                 if (!seen.add(m.getName())) {
                     fail("overload not supported: " + iface.getSimpleName() + "." + m.getName());
                 }

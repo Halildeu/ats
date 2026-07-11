@@ -18,7 +18,14 @@ function methodsOf(instance: object): string[] {
 
 const CANONICAL: Record<string, string[]> = {
   IdentityTenant: ["assertTenantScope", "resolveTenant"],
-  EvidenceLedger: ["append", "appendTombstoneEvent", "getById", "list"],
+  EvidenceLedger: [
+    "append",
+    "appendTombstoneEvent",
+    "findByIdempotencyKey",
+    "findTombstoneForEvidence",
+    "getById",
+    "list",
+  ],
   AIProvider: ["cite", "transcribe"],
   ATSConnector: ["exportPacket", "writeBack"],
 };

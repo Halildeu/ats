@@ -24,7 +24,7 @@
 | Sözleşme | Metotlar (kanonik) |
 |---|---|
 | **IdentityTenant** | `resolveTenant`, `assertTenantScope` |
-| **EvidenceLedger** | `append`, `appendTombstoneEvent`, `getById`, `list` |
+| **EvidenceLedger** | `append`, `appendTombstoneEvent`, `findByIdempotencyKey`, `findTombstoneForEvidence`, `getById`, `list` |
 | **AIProvider** | `transcribe`, `cite` |
 | **ATSConnector** | `exportPacket`, `writeBack` |
 

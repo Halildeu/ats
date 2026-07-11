@@ -45,7 +45,8 @@ import javax.sql.DataSource;
 public final class PostgresEvidenceLedger implements EvidenceLedger {
 
     static final String GENESIS = "genesis";
-    static final String TOMBSTONE_EVENT_TYPE = "evidence.tombstoned";
+    // 39d-7a-fix: sabit porta taşındı (EvidenceLedger.TOMBSTONE_EVENT_TYPE); alias korunur.
+    static final String TOMBSTONE_EVENT_TYPE = EvidenceLedger.TOMBSTONE_EVENT_TYPE;
     private static final String[] FORBIDDEN_PAYLOAD_KEY_SUBSTRINGS = {
             "content", "raw_text", "transcript_text", "raw_pii", "secret", "password", "token", "claim_text"
     };
@@ -236,6 +237,33 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
             prev = entry.entryHash();
         }
         return Outcome.ok(ok.value().size());
+    }
+
+    /** 39d-7a-fix: port default'unun indexli override'ı (worm_ledger_tenant_idempotency_uq). */
+    @Override
+    public Outcome<LedgerEntry> findByIdempotencyKey(TenantId tenantId, String idempotencyKey) {
+        if (tenantId == null || isBlank(idempotencyKey)) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenant/idempotencyKey zorunlu");
+        }
+        return findByIdempotency(tenantId, idempotencyKey);
+    }
+
+    /**
+     * 39d-7a-fix: authoritative tombstone sorgusu — {@link #appendTombstoneEvent} deterministik
+     * idempotency-key ({@code tenant:tombstone:<targetEvidenceId>}) yazdığı için hedefli
+     * unique-index sorgusuna çevrilir (payload taraması yok).
+     */
+    @Override
+    public Outcome<LedgerEntry> findTombstoneForEvidence(TenantId tenantId, EvidenceId targetEvidenceId) {
+        if (tenantId == null || targetEvidenceId == null) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenant/targetEvidenceId zorunlu");
+        }
+        Outcome<LedgerEntry> row = findByIdempotency(
+                tenantId, tenantId.value() + ":tombstone:" + targetEvidenceId.value());
+        if (row instanceof Outcome.Fail<LedgerEntry> fail && fail.code() == OutcomeCode.NOT_FOUND) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "tombstone yok (tenant-scope)");
+        }
+        return row;
     }
 
     // ---------- internals ----------

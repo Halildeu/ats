@@ -339,4 +339,298 @@ class TranscriptionServiceTest {
                     new EvidenceId("fail-ing"), -1, "p", "h")));
         }
     }
+
+    /* ------------------------------------------------------------------ */
+    /* 39d-7a-fix — duplicate → idempotent replay (Codex 019f50b7 matrisi)  */
+    /* ------------------------------------------------------------------ */
+
+    private static final ActorId A2 = new ActorId("actor-opaque-2");
+
+    private long transcriptCreatedRows() {
+        return ledger.entries.stream()
+                .filter(e -> TranscriptionService.LEDGER_EVENT_TYPE.equals(e.eventType())).count();
+    }
+
+    @Test
+    void duplicate_transcribe_replays_existing_receipt_without_new_rows_even_for_different_actor() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        Outcome<TranscriptionReceipt> first = svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        TranscriptionReceipt receipt1 = ((Outcome.Ok<TranscriptionReceipt>) first).value();
+        assertEquals(1, transcriptCreatedRows());
+        assertEquals(1, transcriptStore.size());
+
+        // FARKLI aktör, AYNI lexical içerik (FakeProvider deterministik) → replay:
+        Outcome<TranscriptionReceipt> second = svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, second, "duplicate 503'e DÖNÜŞMEMELİ (39d-7a bug'ı)");
+        TranscriptionReceipt receipt2 = ((Outcome.Ok<TranscriptionReceipt>) second).value();
+        assertEquals(receipt1, receipt2, "replay mevcut kanıtın TAM değerleriyle dönmeli");
+        assertEquals(1, transcriptCreatedRows(), "WORM satır sayısı DEĞİŞMEMELİ");
+        assertEquals(1, transcriptStore.size(), "yeni/geçici transcript KALMAMALI");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_DEDUPLICATED_EVENT.equals(e.eventTypeId())
+                        && A2.value().equals(e.extras().get("actor_ref"))
+                        && receipt1.evidenceId().equals(e.extras().get("ledger_entry_ref"))),
+                "deduplicated olayı GÜNCEL aktörle yazılmalı");
+        assertFalse(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())),
+                "başarılı replay'de append.failed ÜRETİLMEMELİ");
+    }
+
+    @Test
+    void race_loser_append_conflict_recovers_via_replay_and_deletes_temp_transcript() {
+        grant();
+        // Kazanan normal yoldan kanıtı yazar:
+        Outcome<TranscriptionReceipt> winner =
+                service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        TranscriptionReceipt winnerReceipt = ((Outcome.Ok<TranscriptionReceipt>) winner).value();
+
+        // Kaybeden perspektifi (iki eşzamanlı lookup-miss, deterministik): pre-lookup
+        // MISS görür, append idempotency-conflict'le düşer; recovery re-lookup gerçek
+        // satırı bulur → replay. Store-put çağrıldı ve GERİ ALINDI olmalı.
+        RaceLoserLedger loser = new RaceLoserLedger(ledger);
+        Outcome<TranscriptionReceipt> second =
+                service(new FakeProvider(), loser).transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, second);
+        assertEquals(winnerReceipt, ((Outcome.Ok<TranscriptionReceipt>) second).value());
+        assertEquals(1, transcriptCreatedRows(), "kaybeden WORM'a satır YAZAMAMALI");
+        assertEquals(1, transcriptStore.size(), "kaybedenin geçici transcript'i SİLİNMİŞ olmalı");
+        assertTrue(loser.appendAttempts >= 1, "kaybeden append'i gerçekten denemiş olmalı (pre-lookup miss)");
+    }
+
+    @Test
+    void replay_rejected_when_target_evidence_tombstoned() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        TranscriptionReceipt receipt = ((Outcome.Ok<TranscriptionReceipt>) svc
+                .transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z")).value();
+        ledger.seeded.add(new EvidenceLedger.LedgerEntry(T1, A1, I1, EvidenceLedger.TOMBSTONE_EVENT_TYPE,
+                "2026-07-02T13:00:00Z", T1.value() + ":tombstone:" + receipt.evidenceId(), "t".repeat(64),
+                JsonValue.object(java.util.Map.of(
+                        "target_evidence_id", JsonValue.of(receipt.evidenceId()),
+                        "reason_code", JsonValue.of("dsar"))),
+                new EvidenceId("fake-tomb-1"), -1, "p", "h"));
+
+        Outcome<TranscriptionReceipt> replay = svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T14:00:00Z");
+        assertInstanceOf(Outcome.Fail.class, replay, "tombstone'lu kanıt replay ile YENİDEN GÖRÜNÜR OLAMAZ");
+        assertTrue(((Outcome.Fail<TranscriptionReceipt>) replay).reason().contains("silme kapsamına alınmış"));
+        assertEquals(1, transcriptCreatedRows(), "reject yolu WORM'a satır yazamaz");
+        assertEquals(1, transcriptStore.size(), "reject yolu store'a yeni kayıt bırakamaz (pre-lookup put'suz)");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())
+                        && "target_erased".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void replay_is_integrity_failure_when_store_missing_without_tombstone() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        TranscriptionReceipt receipt = ((Outcome.Ok<TranscriptionReceipt>) svc
+                .transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z")).value();
+        // Erasure kanıtı OLMADAN store kaydının kaybolması = corruption/tutarsızlık;
+        // "silinmiş" diye yorumlanamaz (Codex şart-4).
+        assertTrue(transcriptStore.delete(T1, receipt.transcriptKey()).isOk());
+
+        Outcome<TranscriptionReceipt> replay = svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T14:00:00Z");
+        assertInstanceOf(Outcome.Fail.class, replay);
+        assertTrue(((Outcome.Fail<TranscriptionReceipt>) replay).reason().contains("bütünlük"));
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())
+                        && "replay_store_missing".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void replay_rejected_on_malformed_prior_payload() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        Outcome<TranscriptionReceipt> first = svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, first);
+        // Aynı idempotency-key'li satırın payload'ını BOZ (typed doğrulama fail-closed):
+        EvidenceLedger.LedgerEntry good = ledger.entries.get(ledger.entries.size() - 1);
+        ledger.entries.set(ledger.entries.size() - 1, new EvidenceLedger.LedgerEntry(
+                good.tenantId(), good.actorId(), good.interviewId(), good.eventType(), good.occurredAt(),
+                good.idempotencyKey(), good.contentHash(),
+                JsonValue.object(java.util.Map.of("bogus", JsonValue.of("x"))),
+                good.evidenceId(), good.sequence(), good.previousHash(), good.entryHash()));
+
+        Outcome<TranscriptionReceipt> replay = svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T14:00:00Z");
+        assertInstanceOf(Outcome.Fail.class, replay, "bozuk prior-payload'dan receipt ÜRETİLEMEZ");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())
+                        && "replay_integrity_mismatch".equals(e.extras().get("reason_code"))));
+    }
+
+    /* Codex post-impl blocker testleri: şekil-geçerli ama SEMANTİK-yanlış payload'lar
+       replay üretemez (pointer-bütünlüğü fail-closed). Yardımcı: son transcript.created
+       satırının payload'ını değiştirilmiş kopyayla değiştirir. */
+    private void mutateLastCreatedPayload(java.util.function.UnaryOperator<java.util.Map<String, JsonValue>> mutation) {
+        for (int i = ledger.entries.size() - 1; i >= 0; i--) {
+            EvidenceLedger.LedgerEntry e = ledger.entries.get(i);
+            if (!TranscriptionService.LEDGER_EVENT_TYPE.equals(e.eventType())) continue;
+            java.util.Map<String, JsonValue> vals = new java.util.LinkedHashMap<>(e.payload().values());
+            ledger.entries.set(i, new EvidenceLedger.LedgerEntry(
+                    e.tenantId(), e.actorId(), e.interviewId(), e.eventType(), e.occurredAt(),
+                    e.idempotencyKey(), e.contentHash(), JsonValue.object(mutation.apply(vals)),
+                    e.evidenceId(), e.sequence(), e.previousHash(), e.entryHash()));
+            return;
+        }
+        throw new AssertionError("transcript.created satırı yok");
+    }
+
+    private void assertReplayIntegrityRejected(Outcome<TranscriptionReceipt> replay) {
+        assertInstanceOf(Outcome.Fail.class, replay);
+        assertTrue(((Outcome.Fail<TranscriptionReceipt>) replay).reason().contains("bütünlük"));
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.APPEND_FAILED_EVENT.equals(e.eventTypeId())
+                        && "replay_integrity_mismatch".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void replay_rejected_when_payload_source_key_differs_from_current_call() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("source_object_key", JsonValue.of("i1/rec-" + "f".repeat(64))); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_payload_language_differs() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("language", JsonValue.of("en")); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_on_fractional_segment_count_no_rounding() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("segment_count", JsonValue.of(1.4)); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_segment_count_differs_from_current() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        mutateLastCreatedPayload(v -> { v.put("segment_count", JsonValue.of(2.0)); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_on_unexpected_extra_payload_field() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        // Politika: alan kümesi STRICT (bu payload'ın tek üreticisi servis) — ekstra alan reddedilir.
+        mutateLastCreatedPayload(v -> { v.put("unexpected", JsonValue.of("x")); return v; });
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    @Test
+    void replay_rejected_when_pointed_transcript_hash_differs_from_evidence() {
+        grant();
+        TranscriptionService svc = service(new FakeProvider(), ledger);
+        assertInstanceOf(Outcome.Ok.class, svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z"));
+        TranscriptionReceipt firstReceipt = ((Outcome.Ok<TranscriptionReceipt>) svc
+                .transcribeStored(T1, A2, I1, SRC, "2026-07-02T11:10:00Z")).value(); // replay — kurulum referansı
+        // AYNI kaynak/dil/segment-SAYILI ama FARKLI METİNLİ ikinci gerçek transcript:
+        Outcome<TranscriptionReceipt> other = service(new AltTextProvider(), ledger)
+                .transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:30:00Z");
+        TranscriptionReceipt otherReceipt = ((Outcome.Ok<TranscriptionReceipt>) other).value();
+        String otherKey = otherReceipt.transcriptKey();
+        // Kurulum doğrulaması: sayı EŞİT (hash dışındaki kontroller ayırt EDEMEZ), key farklı.
+        assertEquals(3, firstReceipt.segmentCount());
+        assertEquals(firstReceipt.segmentCount(), otherReceipt.segmentCount());
+        assertNotEquals(firstReceipt.transcriptKey(), otherReceipt.transcriptKey());
+        // İLK kanıtın pointer'ını ikinci (mevcut!) transkripte yönlendir — kaynak/dil/sayı
+        // güncel çağrıyla tutarlı kaldığından yalnız LEXICAL-HASH kontrolü yakalayabilir:
+        for (int i = 0; i < ledger.entries.size(); i++) {
+            EvidenceLedger.LedgerEntry e = ledger.entries.get(i);
+            if (TranscriptionService.LEDGER_EVENT_TYPE.equals(e.eventType()) && !e.idempotencyKey().isBlank()
+                    && e.payload().values().get("transcript_key") instanceof JsonValue.JsonString tk
+                    && !tk.value().equals(otherKey)) {
+                java.util.Map<String, JsonValue> vals = new java.util.LinkedHashMap<>(e.payload().values());
+                vals.put("transcript_key", JsonValue.of(otherKey));
+                ledger.entries.set(i, new EvidenceLedger.LedgerEntry(
+                        e.tenantId(), e.actorId(), e.interviewId(), e.eventType(), e.occurredAt(),
+                        e.idempotencyKey(), e.contentHash(), JsonValue.object(vals),
+                        e.evidenceId(), e.sequence(), e.previousHash(), e.entryHash()));
+                break;
+            }
+        }
+        assertReplayIntegrityRejected(svc.transcribeStored(T1, A2, I1, SRC, "2026-07-02T12:00:00Z"));
+    }
+
+    /**
+     * FakeProvider'ın SANITIZE-SONRASI yapısıyla birebir (dil tr + 3 lexical segment,
+     * aynı konuşmacı dizilimi) ama FARKLI metin → yalnız lexical-hash farklı.
+     * (FakeProvider'ın "[alkış]" segmenti sanitizer'da düşer; gerçek sayı 3 —
+     * Codex iter: redirect testi hash kontrolünü İZOLE etmeli.)
+     */
+    static final class AltTextProvider implements AIProvider {
+        @Override
+        public Outcome<TranscriptResult> transcribe(String audioRef) {
+            return Outcome.ok(new TranscriptResult("TR-TR", List.of(
+                    new TranscriptSegment("spk_a", 0, 900, "Tamamen farklı bir açılış cümlesi"),
+                    new TranscriptSegment("spk_b", 900, 2000, "Ve tamamen farklı bir cevap"),
+                    new TranscriptSegment("spk_a", 2000, 2400, "Farklı kapanış cümlesi"))));
+        }
+
+        @Override
+        public Outcome<CitationResult> cite(String claim, String transcriptRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "slice-2 dışı");
+        }
+    }
+
+    /**
+     * Deterministik yarış-kaybedeni: pre-lookup delegate'ten ÖNCEKİ state'i görür (miss),
+     * append idempotency-conflict döner (kazanan satırı çoktan yazdı); recovery re-lookup
+     * delegate'in gerçek satırını bulur. Adapter'ın gerçek 23505+identical davranışının
+     * servis-perspektifi aynası.
+     */
+    static final class RaceLoserLedger implements EvidenceLedger {
+        private final FakeLedger delegate;
+        private boolean firstLookupDone;
+        int appendAttempts;
+
+        RaceLoserLedger(FakeLedger delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Outcome<LedgerEntry> findByIdempotencyKey(TenantId t, String key) {
+            if (!firstLookupDone) {
+                firstLookupDone = true;
+                return Outcome.fail(OutcomeCode.NOT_FOUND, "ledger entry yok (yarış: henüz görünmüyor)");
+            }
+            return delegate.findByIdempotencyKey(t, key);
+        }
+
+        @Override
+        public Outcome<LedgerEntry> append(EvidenceEvent e) {
+            appendAttempts++;
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
+        }
+
+        @Override
+        public Outcome<LedgerEntry> appendTombstoneEvent(TenantId t, ActorId a, InterviewId i, EvidenceId target, String reason) {
+            return delegate.appendTombstoneEvent(t, a, i, target, reason);
+        }
+
+        @Override
+        public Outcome<LedgerEntry> getById(TenantId t, EvidenceId id) {
+            return delegate.getById(t, id);
+        }
+
+        @Override
+        public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
+            return delegate.list(t, f);
+        }
+    }
 }

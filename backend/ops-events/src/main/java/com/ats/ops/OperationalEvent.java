@@ -36,6 +36,11 @@ public record OperationalEvent(
                     new EventSpec("evidence", "info", PiiClass.ID_ONLY, java.util.Set.of("ledger_entry_ref"))),
             Map.entry("evidence.append.failed",
                     new EventSpec("evidence", "error", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            // 39d-7a-fix: duplicate append -> mevcut kanitla idempotent replay (append.failed
+            // DEGIL; yan etki yok). actor_ref = replay'i tetikleyen GUNCEL aktor (audit).
+            Map.entry("evidence.append.deduplicated",
+                    new EventSpec("evidence", "info", PiiClass.ID_ONLY,
+                            java.util.Set.of("actor_ref", "ledger_entry_ref"))),
             Map.entry("ai_pipeline.provider.request_rejected",
                     new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code"))),
             Map.entry("ai_pipeline.citation.rejected",
