@@ -2,6 +2,8 @@
 
 > **Contract-only · PRE-G0 · runtime değil.** Bu kayıt P4 kapsamını eksiksiz tarif eder; gerçek connector, tenant, credential, API doğrulaması veya veri aktarımı üretmez. Canonical wire şeması: [`integration-platform.schema.json`](../../contracts/schemas/integration-platform.schema.json), tamamı sentetik fixture: [`integration-platform.sample.json`](../../contracts/samples/integration-platform.sample.json), drift guard: [`check-integration-platform.mjs`](../../scripts/check-integration-platform.mjs).
 
+P4.2 sentetik portability conformance çekirdeği [`csv-portability.ts`](../../contracts/portability/csv-portability.ts) içindedir. Bu çekirdek RFC 4180 CSV mapping/dry-run/apply/export, tenant-scoped idempotency ve reconciliation davranışını deterministik olarak kanıtlar; in-memory store yalnız test harness'ıdır ve gerçek connector, kalıcı persistence veya partner acceptance iddiası değildir. `audit_link` adı tarihsel olsa da bu sözleşmede URL değil `audit.*` biçiminde opaque referanstır. Kalıcı store adaptörü kayıtlar ile apply receipt'ini tek atomik `commit` içinde yazmak zorundadır. Contract testleri [`csv-portability.contract.test.ts`](../../contracts/test/csv-portability.contract.test.ts) dosyasındadır.
+
 ## 0. Sürüm ve mevcut P1 sözleşmesiyle ilişki
 
 `connector-capability/v1` korunur: P1 wedge’in export baseline + dar evidence write-back sınırıdır. `integration-platform/v1` onu sessizce genişletmez veya yeniden yorumlamaz; P4’ün ayrı land-and-expand kontratıdır. Dört ATS-0001 stable interface değişmez. Runtime aktivasyon P4 parent [#115](https://github.com/Halildeu/ats/issues/115) acceptance sınırındadır.
