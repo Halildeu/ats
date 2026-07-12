@@ -12,6 +12,8 @@ import com.ats.contracts.AIProvider.Entailment;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelApprovalRef;
 import com.ats.contracts.governance.ModelGovernanceGate;
+import com.ats.contracts.governance.ModelGovernanceJournal;
+import com.ats.contracts.governance.ModelInvocationId;
 import com.ats.dsr.DsarRequest;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
@@ -290,6 +292,24 @@ class PostgresStoresTest {
         };
     }
 
+    /**
+     * PG-smoke için no-op invocation-journal: gov1-1d journal semantiği burada test EDİLMEZ (adapter +
+     * orkestrasyon testlerinin işi); bu yalnız CitationService constructor-param'ını karşılar.
+     */
+    private static ModelGovernanceJournal noopJournal() {
+        return new ModelGovernanceJournal() {
+            @Override
+            public Outcome<JournalReceipt> recordAuthorized(InvocationContext ctx, ModelInvocationId id, ModelGovernanceGate.Permit permit) {
+                return Outcome.ok(new JournalReceipt("journal-smoke-auth"));
+            }
+
+            @Override
+            public Outcome<JournalReceipt> recordTerminal(InvocationContext ctx, ModelInvocationId id, Terminal terminal) {
+                return Outcome.ok(new JournalReceipt("journal-smoke-term"));
+            }
+        };
+    }
+
     /** Orkestrasyon PG-smoke: CitationService, TAMAMEN PG store'lar + PG WORM ledger ile uçtan uca. */
     @Test
     void citation_service_end_to_end_on_postgres_stores() {
@@ -313,7 +333,7 @@ class PostgresStoresTest {
                         AIProvider.ReportedModelIdentity.notReported()));
             }
         };
-        CitationService service = new CitationService(new ConsentGate(consents, sink), allowAllGate(), scripted,
+        CitationService service = new CitationService(new ConsentGate(consents, sink), allowAllGate(), noopJournal(), scripted,
                 transcripts, citations, ledger, sink);
         CitationService.CitationReceipt receipt = service
                 .citeClaim(T1, HUMAN, iv, trKey, "Aday backend'de bes yil calisti", "2026-07-02T12:00:00Z")

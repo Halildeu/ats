@@ -2,6 +2,7 @@ package com.ats.orchestration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.consent.ConsentGate;
@@ -11,6 +12,7 @@ import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.governance.ModelGovernanceGate;
+import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -39,6 +41,7 @@ class CitationServiceTest {
     private InMemoryCitationStore citationStore;
     private FakeLedger ledger;
     private FakeModelGovernanceGate gate;
+    private FakeModelGovernanceJournal journal;
     private String transcriptKey;
 
     /** Sağlayıcı cevabı test-başına programlanabilir (fail-closed doğrulamalar için). */
@@ -97,6 +100,7 @@ class CitationServiceTest {
         citationStore = new InMemoryCitationStore();
         ledger = new FakeLedger();
         gate = FakeModelGovernanceGate.allowing();
+        journal = FakeModelGovernanceJournal.allowing();
         // SENTETİK transkript (slice-2 çıktısı şekli: S1..Sn takma-ad + lexical-only)
         transcriptKey = transcriptStore.put(new Transcript(T1, I1, "i1/rec-" + "a".repeat(64), "tr", List.of(
                 new Transcript.Segment(0, "S1", 0, 900, "Backend projesinde beş yıl çalıştım"),
@@ -113,8 +117,13 @@ class CitationServiceTest {
     }
 
     private CitationService service(AIProvider provider, EvidenceLedger l, ModelGovernanceGate g) {
+        return service(provider, l, g, journal);
+    }
+
+    private CitationService service(
+            AIProvider provider, EvidenceLedger l, ModelGovernanceGate g, ModelGovernanceJournal j) {
         return new CitationService(
-                new ConsentGate(consentStore, sink), g, provider, transcriptStore, citationStore, l, sink);
+                new ConsentGate(consentStore, sink), g, j, provider, transcriptStore, citationStore, l, sink);
     }
 
     private void grant() {
@@ -428,7 +437,7 @@ class CitationServiceTest {
                 return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
             }
         };
-        CitationService svc = new CitationService(new ConsentGate(consentStore, sink), gate,
+        CitationService svc = new CitationService(new ConsentGate(consentStore, sink), gate, journal,
                 providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())),
                 transcriptStore, failingDelete, ledger, sink);
         Outcome<CitationReceipt> out = svc.citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
@@ -450,5 +459,210 @@ class CitationServiceTest {
         assertTrue(sink.emitted().stream().anyMatch(e ->
                 e.eventTypeId().equals(CitationService.APPEND_FAILED_EVENT)
                         && "ledger_unavailable".equals(e.extras().get("reason_code"))));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* gov1-1d — invocation WORM journal iki-fazlı ordering (call-count)   */
+    /* ------------------------------------------------------------------ */
+
+    /** put() çağrısını paylaşılan sıra-defterine kaydeden delegate store (ordering assert için). */
+    static final class OrderRecordingCitationStore implements CitationStore {
+        private final CitationStore delegate;
+        private final List<String> order;
+
+        OrderRecordingCitationStore(CitationStore delegate, List<String> order) {
+            this.delegate = delegate;
+            this.order = order;
+        }
+
+        @Override
+        public Outcome<String> put(Citation citation) {
+            order.add("store");
+            return delegate.put(citation);
+        }
+
+        @Override
+        public Outcome<Citation> find(TenantId t, InterviewId i, String key) {
+            return delegate.find(t, i, key);
+        }
+
+        @Override
+        public Outcome<Void> delete(TenantId t, String key) {
+            return delegate.delete(t, key);
+        }
+    }
+
+    private CountingCiteProvider supportedProvider() {
+        return new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED,
+                AIProvider.ReportedModelIdentity.notReported()));
+    }
+
+    @Test
+    void journal_authorized_then_attested_recorded_before_store_on_happy_path() {
+        grant();
+        List<String> order = new ArrayList<>();
+        FakeModelGovernanceJournal orderedJournal = new FakeModelGovernanceJournal(order);
+        OrderRecordingCitationStore orderedStore = new OrderRecordingCitationStore(citationStore, order);
+        CitationService svc = new CitationService(new ConsentGate(consentStore, sink), gate, orderedJournal,
+                providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0", "seg-2"),
+                        AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())),
+                transcriptStore, orderedStore, ledger, sink);
+        Outcome<CitationReceipt> out = svc.citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, out);
+        assertEquals(1, orderedJournal.authorizedCalls);
+        assertEquals(1, orderedJournal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, orderedJournal.lastTerminal);
+        // Fail-closed ordering: authorized → attested-terminal → business store (attested store'DAN ÖNCE).
+        assertEquals(List.of("authorized", "terminal:Attested", "store"), order);
+    }
+
+    @Test
+    void journal_record_authorized_fail_skips_provider_and_writes_nothing() {
+        grant();
+        journal.failAuthorized = true;
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, gate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(0, journal.terminalCalls, "authorized append fail → terminal yazılmamalı");
+        assertEquals(0, provider.calls, "authorized append fail → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, citationStore.size());
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_provider_failure_records_provider_rejected_terminal_no_store() {
+        grant();
+        ScriptedProvider failing = new ScriptedProvider();
+        failing.next = Outcome.fail(OutcomeCode.NOT_CONFIGURED, "provider down (test)");
+        Outcome<CitationReceipt> out = service(failing, ledger, gate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.ProviderRejected.class, journal.lastTerminal);
+        assertEquals(0, citationStore.size(), "provider-fail → business store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.PROVIDER_REJECTED_EVENT.equals(e.eventTypeId())));
+    }
+
+    @Test
+    void journal_verify_deny_records_verification_rejected_terminal_no_store() {
+        grant();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingVerify(ModelGovernanceGate.Reason.MODEL_ID_MISMATCH);
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.VerificationRejected.class, journal.lastTerminal);
+        assertEquals(1, provider.calls, "verify için sağlayıcı çağrılmış olmalı (sonra discard)");
+        assertEquals(0, citationStore.size(), "verify DENY → business store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty());
+    }
+
+    @Test
+    void journal_attested_append_fail_discards_business_result_no_store() {
+        grant();
+        journal.failTerminalType = ModelGovernanceJournal.Attested.class;
+        Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
+        assertFalse(out.isOk(), "attested journal append fail → business sonucu TAMAMEN discard (fail-closed)");
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, journal.lastTerminal);
+        assertEquals(0, citationStore.size(), "attested-fail → citation store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty(), "attested-fail → business-WORM'a satır YAZILMAMALI");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_preflight_deny_records_preflight_rejected_terminal_no_authorized() {
+        grant();
+        CountingCiteProvider provider = supportedProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, journal.authorizedCalls, "preflight DENY → authorized yazılmamalı");
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.PreflightRejected.class, journal.lastTerminal);
+        assertEquals(0, provider.calls, "preflight DENY → sağlayıcı çağrılmamalı");
+        assertTrue(ledger.entries.isEmpty());
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex 1d blocker-2 — journal Ok(null) makbuz fail-closed guard'ları  */
+    /* (CitationService'te authorized↔provider arası hazırlık adımı YOK →   */
+    /*  blocker-1 pre-provider terminal gerekmiyor; yalnız Ok(null) guard.) */
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void journal_authorized_ok_null_receipt_fails_closed_before_provider() {
+        grant();
+        journal.nullAuthorizedReceipt = true;
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, gate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(0, provider.calls, "authorized Ok(null) → sağlayıcı HİÇ çağrılmamalı (makbuz-kanıtsız)");
+        assertEquals(0, citationStore.size());
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_attested_ok_null_receipt_discards_business_no_store() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
+        assertFalse(out.isOk(), "attested terminal Ok(null) → makbuz-kanıtsız → business TAMAMEN discard");
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, journal.lastTerminal);
+        assertEquals(0, citationStore.size(), "terminal Ok(null) → citation store'a YAZILMAMALI");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_preflight_terminal_ok_null_receipt_maps_to_audit_unavailable_not_governance_reason() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, journal.authorizedCalls, "preflight DENY → authorized yazılmaz");
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.PreflightRejected.class, journal.lastTerminal);
+        assertEquals(0, provider.calls);
+        // terminal-append kanıtsız (Ok(null)) → AUDIT_UNAVAILABLE; governance-reason SIZMAMALI.
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "APPROVAL_NOT_ACTIVE".equals(e.extras().get("reason_code"))),
+                "terminal-append kanıtsız → governance-reason yerine AUDIT_UNAVAILABLE");
     }
 }

@@ -55,8 +55,8 @@ public interface ModelGovernanceGate {
      * taşır (HTTP/observability haritalaması için). Kapı-adapter'ının ürettiği alt-küme:
      * {@code REGISTRY_UNAVAILABLE, APPROVAL_NOT_FOUND, APPROVAL_NOT_ACTIVE, CAPABILITY_MISMATCH,
      * PERMIT_MISMATCH, REPORTED_IDENTITY_MISSING, REPORTED_IDENTITY_MALFORMED, MODEL_ID_MISMATCH,
-     * MODEL_VERSION_MISMATCH}. {@code PROVIDER_FAILED}/{@code AUDIT_UNAVAILABLE} paylaşımlı
-     * vokabülerdir (orkestrasyon/1d yüzeyi); kapı bunları döndürmez.
+     * MODEL_VERSION_MISMATCH}. {@code PROVIDER_FAILED}/{@code INVOCATION_PREPARATION_FAILED}/
+     * {@code AUDIT_UNAVAILABLE} paylaşımlı vokabülerdir (orkestrasyon/1d yüzeyi); kapı bunları döndürmez.
      */
     enum Reason {
         /** Onaylı-model registry erişilemez (fail-closed). */
@@ -86,6 +86,13 @@ public interface ModelGovernanceGate {
         MODEL_VERSION_MISMATCH(OutcomeCode.DENIED),
         /** Sağlayıcı çağrısı başarısız (orkestrasyon/1d yüzeyi; kapı döndürmez). */
         PROVIDER_FAILED(OutcomeCode.NOT_CONFIGURED),
+        /**
+         * Authorized WORM YAZILDIKTAN sonra ama sağlayıcı çağrılMADAN önce hazırlık başarısız
+         * (ör. ses-erişim grant'i verilemedi). Provider HİÇ çağrılmadı → crash-gap DEĞİL; ayrı
+         * pre-provider terminal yazılır. Orkestrasyon/1d yüzeyi (kapı döndürmez); diğer prep-fail'lerle
+         * tutarlı {@code NOT_CONFIGURED}.
+         */
+        INVOCATION_PREPARATION_FAILED(OutcomeCode.NOT_CONFIGURED),
         /** Denetim/WORM yazımı erişilemez (1d yüzeyi; kapı döndürmez). */
         AUDIT_UNAVAILABLE(OutcomeCode.NOT_CONFIGURED);
 
