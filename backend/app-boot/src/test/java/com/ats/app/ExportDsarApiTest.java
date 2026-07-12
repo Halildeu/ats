@@ -187,10 +187,14 @@ class ExportDsarApiTest {
         ResponseEntity<String> replay = post(tok, "/api/v1/interviews/" + iv + "/export", exportBody);
         assertEquals(200, replay.getStatusCode().value(), "body: " + replay.getBody());
         assertEquals("true", replay.getHeaders().getFirst("X-ATS-Replay"));
-        for (String f : new String[] {"artifactKey", "evidenceId", "packetDigest"}) {
-            assertEquals(field(exp.getBody(), f), field(replay.getBody(), f),
+        JsonNode createdJson = JSON_READER.readTree(exp.getBody());
+        JsonNode replayJson = JSON_READER.readTree(replay.getBody());
+        for (String f : List.of("artifactKey", "evidenceId", "packetDigest", "claimCount")) {
+            assertEquals(createdJson.get(f), replayJson.get(f),
                     "replay makbuz alanı birebir olmalı: " + f);
         }
+        assertTrue(replayJson.path("claimCount").isIntegralNumber());
+        assertTrue(replayJson.path("claimCount").intValue() >= 1);
         assertEquals(wormAfterExport, wormTotal(TENANT), "replay WORM'a satır YAZMAZ");
         // DEĞİŞTİRİLMİŞ gövde (farklı signatureRef) → replay DEĞİL, fail-closed conflict:
         ResponseEntity<String> conflict = post(tok, "/api/v1/interviews/" + iv + "/export",

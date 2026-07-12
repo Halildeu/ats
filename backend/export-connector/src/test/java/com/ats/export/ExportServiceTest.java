@@ -749,9 +749,9 @@ class ExportServiceTest {
                 "farklı gövde eski makbuzu replay EDEMEZ (fail-closed conflict)");
         assertEquals(worm, ledger.entries.size(), "conflict side-effect üretmez");
         assertEquals(1, artifactStore.size());
-        assertFalse(sink.emitted().stream().anyMatch(e ->
-                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())
-                        && sink.emitted().indexOf(e) > 0 && false), "placeholder");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())),
+                "request_digest conflict replay audit'i ÜRETEMEZ");
     }
 
     @Test
@@ -771,6 +771,8 @@ class ExportServiceTest {
                 T1, HUMAN, I1, caseKey, List.of(citationKey, cit2), c, "2026-07-02T15:00:00Z");
         assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
                 && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI export isteği"));
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())));
     }
 
     @Test
@@ -902,6 +904,44 @@ class ExportServiceTest {
         assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
                 && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI export isteği"),
                 "yarışı farklı istek kazandıysa makbuz SIZDIRILMAZ");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())),
+                "yanlış replay audit'i de üretilmez");
+    }
+
+    @Test
+    void rollback_fail_never_returns_replay_even_when_winner_is_visible() {
+        // R1 şartı (Codex): telafi silmesi BAŞARISIZSA kazanan görünür olsa bile
+        // replay/success dönülmez — öksüz-artifact alarmı gizlenmez.
+        String digest = ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx());
+        ExportArtifactStore stickyStore = new ExportArtifactStore() {
+            @Override
+            public Outcome<String> put(TenantId t, InterviewId i, String pk) {
+                return artifactStore.put(t, i, pk);
+            }
+
+            @Override
+            public Outcome<String> find(TenantId t, InterviewId i, String k) {
+                return artifactStore.find(t, i, k);
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String k) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "delete down (test)");
+            }
+        };
+        ExportService raced = new ExportService(reviewStore, citationStore, stickyStore,
+                humanReview, raceLedger(winnerRow(digest, "artifact-win"),
+                        () -> humanReview.markExported(T1, I1, caseKey, "artifact-win")), sink);
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.NOT_CONFIGURED
+                && f.reason().contains("telafi silmesi başarısız"),
+                "rollback-fail'de kazanan GÖRÜNSE BİLE replay dönülmez; body: " + out);
+        assertEquals(1, artifactStore.size(), "öksüz artifact store'da kaldı (R1 sinyali)");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())));
     }
 
     @Test
