@@ -466,4 +466,56 @@ class RestApiSecurityTest {
                 HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class);
         assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
     }
+
+    // ---- 39d-9: export/artifact GET matcher (EXPORT_READ|EXPORT_WRITE; HEAD YOK) ----
+
+    @Test
+    void export_artifact_without_token_is_401() {
+        assertEquals(401, rest.exchange(
+                "/api/v1/interviews/iv-1/export/artifact?caseKey=case-1",
+                HttpMethod.GET, HttpEntity.EMPTY, String.class).getStatusCode().value());
+    }
+
+    @Test
+    void unrelated_role_cannot_read_export_artifact() {
+        assertEquals(403, rest.exchange(
+                "/api/v1/interviews/iv-1/export/artifact?caseKey=case-1",
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.review.read", "reviewer-1"))),
+                String.class).getStatusCode().value());
+    }
+
+    @Test
+    void export_artifact_read_scope_passes_matcher_and_reaches_service() {
+        // Vaka fixture'da yok — 404 = filter GEÇİLDİ kanıtı (matcher-kayıp = 403).
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-missing/export/artifact?caseKey=case-missing",
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.export.read", "auditor-1"))),
+                String.class);
+        assertEquals(404, r.getStatusCode().value());
+        assertEquals("no-store", r.getHeaders().getFirst("Cache-Control"));
+        assertEquals("no-cache", r.getHeaders().getFirst("Pragma"));
+    }
+
+    @Test
+    void export_artifact_head_is_denied_by_design() {
+        // HEAD BİLEREK desteklenmez (artifact-existence oracle'ı): matcher GET-only,
+        // HEAD anyRequest denyAll'a düşer → 403 (yetkili read-scope'ta bile).
+        assertEquals(403, rest.exchange(
+                "/api/v1/interviews/iv-1/export/artifact?caseKey=case-1",
+                HttpMethod.HEAD, new HttpEntity<>(bearer(roleToken("ats.export.read", "auditor-1"))),
+                String.class).getStatusCode().value());
+    }
+
+    @Test
+    void export_artifact_rejects_blank_case_key_with_contract_body_and_no_store() {
+        ResponseEntity<String> bad = rest.exchange(
+                URI.create("/api/v1/interviews/iv-1/export/artifact?caseKey=%20"),
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.export.read", "auditor-1"))),
+                String.class);
+        assertEquals(400, bad.getStatusCode().value());
+        assertTrue(bad.getBody() != null && bad.getBody().contains("\"error\":\"INVALID\""),
+                "hata gövdesi {error,reason} kontratında olmalı: " + bad.getBody());
+        assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
+        assertEquals("no-cache", bad.getHeaders().getFirst("Pragma"));
+    }
 }

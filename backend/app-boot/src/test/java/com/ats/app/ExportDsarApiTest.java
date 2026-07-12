@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
@@ -204,6 +205,25 @@ class ExportDsarApiTest {
         assertEquals(1, claimCount.intValue());
         java.time.Instant.parse(receiptJson.path("ledgerRecordedAt").asText());
 
+        // 39d-9: artifact-read 200 — salt-okuma scope + no-store + VERBATIM kanıtı:
+        // HTTP gövdesinin sha256'sı ledger payload'ındaki artifact_digest'e eşitse
+        // HTTP katmanı re-serialize ETMEMİŞTİR (depolanan tam string aynen döndü).
+        ResponseEntity<String> art = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/artifact?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(200, art.getStatusCode().value(), "body: " + art.getBody());
+        assertEquals("no-store", art.getHeaders().getCacheControl());
+        assertEquals("no-cache", art.getHeaders().getFirst("Pragma"));
+        assertTrue(String.valueOf(art.getHeaders().getContentType()).startsWith("application/json"));
+        String ledgerArtifactDigest = ledgerPayloadField(TENANT, "evidence_packet.exported", "artifact_digest");
+        assertTrue(ledgerArtifactDigest.matches("[0-9a-f]{64}"));
+        assertEquals(ledgerArtifactDigest, sha256Hex(art.getBody()),
+                "verbatim ihlali: HTTP gövdesi depolanan string'le birebir değil");
+        JsonNode packetJson = JSON_READER.readTree(art.getBody());
+        assertEquals(receiptJson.path("packetDigest").asText(),
+                packetJson.path("integrity").path("packet_digest").asText(),
+                "iki-kaynak doğrulama: packet.integrity.packet_digest == receipt.packetDigest");
+
         // DSAR + ERASURE (tombstone hedefi: citation kanıtı)
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
                 "{\"subjectRef\":\"s-1\",\"reasonCode\":\"kvkk_talep\"}");
@@ -245,6 +265,16 @@ class ExportDsarApiTest {
             assertEquals(receiptJson.get(f), afterJson.get(f),
                     "erasure sonrası ledger receipt alanı değişmemeli: " + f);
         }
+
+        // 39d-9: erasure'ın content-plane silmesi ARTIK API'DAN kanıtlı —
+        // artifact GET 404 (makbuz 200 kalırken) + hata cevabı da no-store.
+        ResponseEntity<String> artGone = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/artifact?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(404, artGone.getStatusCode().value(),
+                "erasure sonrası artifact content-plane'den GERÇEKTEN silinmiş olmalı; body: " + artGone.getBody());
+        assertEquals("no-store", artGone.getHeaders().getCacheControl());
+        assertEquals("no-cache", artGone.getHeaders().getFirst("Pragma"));
     }
 
     @Test
@@ -309,6 +339,40 @@ class ExportDsarApiTest {
                 return rs.getInt(1);
             }
         } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String sha256Hex(String s) {
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(s.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(d.length * 2);
+            for (byte b : d) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** worm_ledger payload'ından tek alan (jsonb ->> ; en son satır). */
+    private String ledgerPayloadField(String tenant, String eventType, String field) {
+        try (Connection c = dataSource.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT payload ->> ? FROM worm_ledger"
+                                + " WHERE tenant_id = ? AND event_type = ? ORDER BY seq DESC LIMIT 1")) {
+            ps.setString(1, field);
+            ps.setString(2, tenant);
+            ps.setString(3, eventType);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next() || rs.getString(1) == null) {
+                    throw new IllegalStateException("ledger payload alanı yok: " + field);
+                }
+                return rs.getString(1);
+            }
+        } catch (SQLException e) {
             throw new IllegalStateException(e);
         }
     }

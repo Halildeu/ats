@@ -51,6 +51,8 @@ public record OperationalEvent(
                     new EventSpec("security", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref"))),
             Map.entry("security.audit_export.receipt_recovered",
                     new EventSpec("security", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "target_ref"))),
+            Map.entry("security.audit_export.artifact_read",
+                    new EventSpec("security", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "target_ref"))),
             Map.entry("evidence.tombstone.appended",
                     new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "reason_code"))),
             Map.entry("privacy.dsar.received",

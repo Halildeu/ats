@@ -95,9 +95,12 @@ class SecurityConfig {
                                 "/api/v1/interviews/*/review-case/transition",
                                 "/api/v1/interviews/*/review-case/finalize")
                             .hasAuthority("REVIEW_WRITE")
-                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/export/receipt")
-                            // Salt-okuma recovery: read YA DA write (yazan okuyabilir;
-                            // ops/audit'e write vermeden recovery — least-privilege).
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/export/receipt",
+                                "/api/v1/interviews/*/export/artifact")
+                            // Salt-okuma recovery + artifact-read: read YA DA write (yazan
+                            // okuyabilir; ops/audit'e write vermeden — least-privilege).
+                            // BİLEREK yalnız GET: HEAD desteklenmez (artifact-existence
+                            // oracle'ı açılmaz) — HEAD anyRequest denyAll'a düşer.
                             .hasAnyAuthority("EXPORT_READ", "EXPORT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/export")
                             .hasAuthority("EXPORT_WRITE")

@@ -528,4 +528,164 @@ class ExportServiceTest {
                 && f.code() == OutcomeCode.NOT_FOUND && f.reason().contains("export ledger"),
                 "T2 sorgusu T1 satırına ULAŞAMAZ (ledger-yok NOT_FOUND)");
     }
+
+    // ---- 39d-9 exportArtifact (ledger-bağlı content-plane read; Codex plan-şartları) ----
+
+    private static String sha256Hex(String s) {
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(d.length * 2);
+            for (byte b : d) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** 39d-9 satırı: artifact_digest'Lİ ledger entry (makeExportEntry = legacy, digest'siz). */
+    private EvidenceLedger.LedgerEntry makeArtifactEntry(String ck, String artifactRef,
+            String packetDigest, String artifactDigest, String evidenceId) {
+        String key = ExportService.exportIdempotencyKey(T1, I1, ck);
+        EvidenceLedger.LedgerEntry entry = new EvidenceLedger.LedgerEntry(T1, HUMAN, I1,
+                ExportService.LEDGER_EVENT_TYPE, "2026-07-02T15:00:00Z", key, packetDigest,
+                JsonValue.object(Map.of(
+                        "export_artifact_ref", JsonValue.of(artifactRef),
+                        "case_key", JsonValue.of(ck),
+                        "packet_digest", JsonValue.of(packetDigest),
+                        "artifact_digest", JsonValue.of(artifactDigest),
+                        "claim_count", new JsonValue.JsonNumber(1.0))),
+                new EvidenceId(evidenceId), ledger.entries.size() + 1, "p", "h");
+        ledger.entries.add(entry);
+        return entry;
+    }
+
+    @Test
+    void artifact_read_happy_path_is_verbatim_and_ledger_digest_bound() {
+        ExportReceipt exported = export().asOptional().orElseThrow();
+        String stored = artifactStore.find(T1, I1, exported.artifactKey()).asOptional().orElseThrow();
+
+        // exportPacket ledger payload'ı: artifact_digest 64-hex lowercase, depolanan
+        // TAM string'in digest'i ve packet_digest'ten (body digest'i) FARKLI.
+        JsonValue.JsonObject payload = (JsonValue.JsonObject) ledger.entries.get(0).payload();
+        String artifactDigest = ((JsonValue.JsonString) payload.values().get("artifact_digest")).value();
+        assertTrue(artifactDigest.matches("[0-9a-f]{64}"), "artifact_digest lowercase 64-hex olmalı");
+        assertEquals(sha256Hex(stored), artifactDigest, "digest depolanan TAM string'i bağlamalı");
+        assertFalse(artifactDigest.equals(exported.packetDigest()),
+                "artifact_digest (integrity-dahil tam string) != packet_digest (body); contentHash packet_digest KALIR");
+        assertEquals(exported.packetDigest(), ledger.entries.get(0).contentHash());
+
+        var out = service.exportArtifact(T1, HUMAN, I1, caseKey).asOptional().orElseThrow();
+        assertEquals(exported.artifactKey(), out.artifactKey());
+        assertEquals(stored, out.packetJson(), "verbatim: servis store string'ini AYNEN döndürür");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                ExportService.ARTIFACT_READ_EVENT.equals(e.eventTypeId())
+                        && HUMAN.value().equals(e.extras().get("actor_ref"))
+                        && exported.artifactKey().equals(e.extras().get("target_ref"))),
+                "başarılı read audit sinyali: target_ref=artifactKey");
+        // yeni payload alanı receipt-recovery'yi BOZMAZ (geriye-uyum):
+        assertTrue(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk());
+    }
+
+    @Test
+    void artifact_read_legacy_row_without_artifact_digest_fails_closed_but_receipt_survives() {
+        makeExportEntry(T1, I1, caseKey, "9".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-l");
+        assertTrue(humanReview.markExported(T1, I1, caseKey, "artifact-x").isOk());
+        assertTrue(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(),
+                "legacy satır receipt-recovery'yi DÜŞÜRMEZ");
+        Outcome<ExportService.ExportArtifactContent> out = service.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("legacy"),
+                "digest'siz satırda artifact-read fail-closed");
+    }
+
+    @Test
+    void artifact_read_r4_incomplete_is_denied_even_if_artifact_exists_in_store() {
+        String content = "{\"r4\":\"icerik-store-da-var\"}";
+        String key = artifactStore.put(T1, I1, content).asOptional().orElseThrow();
+        makeArtifactEntry(caseKey, key, "a".repeat(64), sha256Hex(content), "ev-r4a");
+        // vaka FINALIZED kalır (markExported yok) → receipt INCOMPLETE, artifact READ YOK
+        assertEquals("INCOMPLETE",
+                service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow().transitionStatus());
+        Outcome<ExportService.ExportArtifactContent> out = service.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("repair"),
+                "R4'te artifact store'da DURSA BİLE verilmez (repair önce)");
+        assertFalse(sink.emitted().stream().anyMatch(e ->
+                ExportService.ARTIFACT_READ_EVENT.equals(e.eventTypeId())));
+    }
+
+    @Test
+    void artifact_read_digest_mismatch_never_returns_content_and_emits_no_success_audit() {
+        String tampered = "{\"tampered\":true}";
+        String key = artifactStore.put(T1, I1, tampered).asOptional().orElseThrow();
+        makeArtifactEntry(caseKey, key, "b".repeat(64), sha256Hex("{\"original\":true}"), "ev-tam");
+        assertTrue(humanReview.markExported(T1, I1, caseKey, key).isOk());
+        Outcome<ExportService.ExportArtifactContent> out = service.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("bütünlük"),
+                "digest uyuşmazlığında içerik cevaba çıkmaz");
+        assertFalse(sink.emitted().stream().anyMatch(e ->
+                ExportService.ARTIFACT_READ_EVENT.equals(e.eventTypeId())),
+                "bütünlük ihlalinde başarı audit'i üretilmez");
+    }
+
+    @Test
+    void artifact_read_missing_artifact_is_not_found_while_receipt_stays_completed() {
+        ExportReceipt exported = export().asOptional().orElseThrow();
+        assertTrue(artifactStore.delete(T1, exported.artifactKey()).isOk());
+        Outcome<ExportService.ExportArtifactContent> out = service.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.NOT_FOUND && f.reason().contains("content-plane"),
+                "erasure-sonrası yokluk NOT_FOUND (meşru)");
+        assertEquals("COMPLETED",
+                service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow().transitionStatus(),
+                "WORM makbuz gerçeği content yokluğundan etkilenmez");
+    }
+
+    @Test
+    void artifact_read_store_operational_error_is_not_flattened_to_not_found() {
+        export().asOptional().orElseThrow();
+        ExportArtifactStore broken = new ExportArtifactStore() {
+            @Override
+            public Outcome<String> put(TenantId t, InterviewId i, String p) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
+            }
+
+            @Override
+            public Outcome<String> find(TenantId t, InterviewId i, String k) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String k) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
+            }
+        };
+        ExportService degraded = new ExportService(reviewStore, citationStore, broken,
+                humanReview, ledger, sink);
+        Outcome<ExportService.ExportArtifactContent> out = degraded.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.NOT_CONFIGURED && f.reason().contains("operasyonel"),
+                "store kesintisi 404'e EZİLMEZ (kesinti ≠ silinme)");
+    }
+
+    @Test
+    void artifact_read_rejects_blank_case_key_and_blank_actor() {
+        assertFalse(service.exportArtifact(T1, HUMAN, I1, " ").isOk());
+        assertFalse(service.exportArtifact(T1, new ActorId(" "), I1, caseKey).isOk());
+    }
+
+    @Test
+    void artifact_read_rejects_malformed_artifact_digest_in_ledger() {
+        String content = "{\"x\":1}";
+        String key = artifactStore.put(T1, I1, content).asOptional().orElseThrow();
+        makeArtifactEntry(caseKey, key, "c".repeat(64), "BOZUK-DIGEST", "ev-bad");
+        assertTrue(humanReview.markExported(T1, I1, caseKey, key).isOk());
+        // format-pin base doğrulamada: bozuk digest hem receipt hem artifact yolunu düşürür
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk());
+        assertFalse(service.exportArtifact(T1, HUMAN, I1, caseKey).isOk());
+    }
 }
