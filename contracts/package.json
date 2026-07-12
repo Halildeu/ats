@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./integration-platform-v1": "./wire/integration-platform.ts",
+    "./csv-portability-v1": "./portability/csv-portability.ts",
     "./deployment-profile-v1": "./wire/deployment-profile.ts",
     "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
   },
