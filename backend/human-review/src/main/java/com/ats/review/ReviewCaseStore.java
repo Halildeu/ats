@@ -20,4 +20,21 @@ public interface ReviewCaseStore {
 
     /** Geçiş sonrası aynı anahtara yazım; ledger-fail telafisinde önceki state'e geri dönüş için de kullanılır. */
     Outcome<Void> save(TenantId tenantId, String caseKey, ReviewCase reviewCase);
+
+    /** 39d-11 CAS sonucu — repair yolunun ayırt etmesi gereken üç başarı/çatışma hali. */
+    enum ExportTransitionResult {
+        TRANSITIONED,
+        ALREADY_EXPORTED_SAME_ARTIFACT,
+        INTEGRITY_CONFLICT
+    }
+
+    /**
+     * 39d-11 (Codex blocker-2): FINALIZED→EXPORTED geçişini ATOMİK compare-and-set
+     * ile yapar (read-then-save yarışına kapalı). updated=0 ise yeniden okunur:
+     * EXPORTED+AYNI artifactRef → ALREADY_EXPORTED_SAME_ARTIFACT (idempotent);
+     * EXPORTED+farklı ref → INTEGRITY_CONFLICT; başka state → INVALID fail;
+     * vaka yok → NOT_FOUND; store hatası kodu AYNEN taşınır (düzlenmez).
+     */
+    Outcome<ExportTransitionResult> markExportedIfFinalized(
+            TenantId tenantId, InterviewId interviewId, String caseKey, String exportArtifactRef);
 }

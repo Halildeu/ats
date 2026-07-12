@@ -24,6 +24,8 @@ import com.ats.orchestration.Citation;
 import com.ats.orchestration.InMemoryCitationStore;
 import com.ats.review.HumanReviewService;
 import com.ats.review.InMemoryReviewCaseStore;
+import com.ats.review.ReviewCase;
+import com.ats.review.ReviewCaseStore;
 import com.ats.review.ReviewState;
 import java.util.ArrayList;
 import java.util.List;
@@ -966,6 +968,164 @@ class ExportServiceTest {
         assertEquals(ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx()), rd,
                 "payload digest'i aynı girdilerin yeniden-hesabıyla birebir");
         assertFalse(rd.equals(((JsonValue.JsonString) payload.values().get("packet_digest")).value()));
+    }
+
+    // ---- 39d-11 repairExportTransition (Codex plan-şartları) ----
+
+    private String r4Fixture(String content) {
+        String key = artifactStore.put(T1, I1, content).asOptional().orElseThrow();
+        makeArtifactEntry(caseKey, key, "b".repeat(64), sha256Hex(content), "ev-r4h");
+        return key;
+    }
+
+    @Test
+    void repair_intent_key_is_actor_bound_and_digest_encoded() {
+        String a = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:a/x"));
+        String b = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:b"));
+        String a2 = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:a/x"));
+        assertEquals(a, a2, "aynı actor deterministik aynı key");
+        assertFalse(a.equals(b), "farklı actor FARKLI intent key (takeover kilidi yok)");
+        assertFalse(a.contains("op:a/x"), "raw actor ref key'e GİRMEZ (tuple-collision)");
+        assertTrue(a.matches(".*:export-repair-intent:c-1:[0-9a-f]{64}$"));
+    }
+
+    @Test
+    void repair_happy_path_appends_intent_then_cas_then_emits() {
+        String artKey = r4Fixture("{\"r4\":\"heal\"}");
+        int wormBefore = ledger.entries.size();
+        ExportService.ExportRepairResult r = service.repairExportTransition(
+                T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z").asOptional().orElseThrow();
+        assertEquals(ExportService.RepairStatus.REPAIRED, r.status());
+        assertEquals(artKey, r.receipt().artifactKey());
+        assertEquals(wormBefore + 1, ledger.entries.size(), "kalıcı repair-INTENT satırı yazıldı");
+        EvidenceLedger.LedgerEntry intent = ledger.entries.get(ledger.entries.size() - 1);
+        assertEquals(ExportService.REPAIR_INTENT_EVENT, intent.eventType());
+        assertTrue(intent.idempotencyKey().contains(":export-repair-intent:"));
+        assertEquals(ReviewState.EXPORTED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
+        assertEquals(artKey,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().exportArtifactRef());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())
+                        && artKey.equals(e.extras().get("target_ref"))));
+        // tekrar-repair: EXPORTED dalı → ALREADY; yeni intent YOK
+        ExportService.ExportRepairResult again = service.repairExportTransition(
+                T1, HUMAN, I1, caseKey, "2026-07-12T17:01:00Z").asOptional().orElseThrow();
+        assertEquals(ExportService.RepairStatus.ALREADY_EXPORTED, again.status());
+        assertEquals(wormBefore + 1, ledger.entries.size(), "ikinci çağrı intent ÇOĞALTMAZ");
+    }
+
+    @Test
+    void repair_precondition_failures_never_write_intent() {
+        // legacy (artifact_digest yok)
+        makeExportEntry(T1, I1, caseKey, "9".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-lg");
+        int worm = ledger.entries.size();
+        Outcome<ExportService.ExportRepairResult> legacy =
+                service.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(legacy instanceof Outcome.Fail<ExportService.ExportRepairResult> f1
+                && f1.code() == OutcomeCode.INVALID && f1.reason().contains("legacy"));
+        assertEquals(worm, ledger.entries.size());
+        ledger.entries.clear();
+        // artifact yok
+        makeArtifactEntry(caseKey, "art-YOK", "b".repeat(64), sha256Hex("x"), "ev-a1");
+        Outcome<ExportService.ExportRepairResult> gone =
+                service.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(gone instanceof Outcome.Fail<ExportService.ExportRepairResult> f2
+                && f2.code() == OutcomeCode.NOT_FOUND);
+        assertEquals(1, ledger.entries.size(), "intent yazılmadı");
+        ledger.entries.clear();
+        // digest mismatch
+        String k = artifactStore.put(T1, I1, "{\"gercek\":1}").asOptional().orElseThrow();
+        makeArtifactEntry(caseKey, k, "b".repeat(64), sha256Hex("{\"farkli\":1}"), "ev-a2");
+        Outcome<ExportService.ExportRepairResult> bad =
+                service.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(bad instanceof Outcome.Fail<ExportService.ExportRepairResult> f3
+                && f3.code() == OutcomeCode.INVALID && f3.reason().contains("bütünlük"));
+        assertEquals(1, ledger.entries.size(), "intent yazılmadı");
+        assertEquals(ReviewState.FINALIZED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())));
+    }
+
+    @Test
+    void repair_intent_append_fail_means_no_repair_at_all() {
+        r4Fixture("{\"r4\":\"x\"}");
+        ledger.failAppend = true;
+        Outcome<ExportService.ExportRepairResult> out =
+                service.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportRepairResult> f
+                && f.reason().contains("audit'siz repair olmaz"),
+                "intent yazılamadıysa repair YAPILMAZ; body: " + out);
+        assertEquals(ReviewState.FINALIZED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state(),
+                "CAS çağrılmadı — state değişmedi");
+    }
+
+    @Test
+    void repair_cas_integrity_conflict_after_intent_is_invalid_and_intent_persists() {
+        String artKey = r4Fixture("{\"r4\":\"y\"}");
+        // CAS anında yarış: markExportedIfFinalized çağrısından hemen önce vaka
+        // FARKLI ref'le EXPORTED'a düşer (verify FINALIZED görmüştü).
+        ReviewCaseStore racing = new ReviewCaseStore() {
+            @Override
+            public Outcome<String> put(ReviewCase c) { return reviewStore.put(c); }
+
+            @Override
+            public Outcome<ReviewCase> find(TenantId t, InterviewId i, String k) {
+                return reviewStore.find(t, i, k);
+            }
+
+            @Override
+            public Outcome<java.util.List<CaseSummary>> listByInterview(TenantId t, InterviewId i) {
+                return reviewStore.listByInterview(t, i);
+            }
+
+            @Override
+            public Outcome<Void> save(TenantId t, String k, ReviewCase rc) {
+                return reviewStore.save(t, k, rc);
+            }
+
+            @Override
+            public Outcome<ExportTransitionResult> markExportedIfFinalized(
+                    TenantId t, InterviewId i, String k, String ref) {
+                ReviewCase cur = reviewStore.find(t, i, k).asOptional().orElseThrow();
+                reviewStore.save(t, k, cur.withExportArtifact("BAŞKA-art").with(ReviewState.EXPORTED));
+                return reviewStore.markExportedIfFinalized(t, i, k, ref);
+            }
+        };
+        HumanReviewService racingHr = new HumanReviewService(
+                new ConsentGate(consentStore, sink), racing, ledger, sink);
+        ExportService racedSvc = new ExportService(reviewStore, citationStore, artifactStore,
+                racingHr, ledger, sink);
+        int worm = ledger.entries.size();
+        Outcome<ExportService.ExportRepairResult> out =
+                racedSvc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportRepairResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI artifact"),
+                "body: " + out);
+        assertEquals(worm + 1, ledger.entries.size(), "intent NİYET-kaydı olarak kalır");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())));
+        assertEquals(artKey, artKey); // fixture ref'i kullanılmadı-uyarısı bastırma
+    }
+
+    @Test
+    void repair_already_exported_requires_case_ledger_ref_match() {
+        String artKey = r4Fixture("{\"r4\":\"z\"}");
+        assertTrue(humanReview.markExported(T1, I1, caseKey, artKey).isOk());
+        int worm = ledger.entries.size();
+        ExportService.ExportRepairResult ok = service.repairExportTransition(
+                T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z").asOptional().orElseThrow();
+        assertEquals(ExportService.RepairStatus.ALREADY_EXPORTED, ok.status());
+        assertEquals(worm, ledger.entries.size(), "already yolunda intent YAZILMAZ");
+        // ref uyuşmazlığı → INVALID
+        ReviewCase cur = reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow();
+        assertTrue(reviewStore.save(T1, caseKey, cur.withExportArtifact("BAŞKA")).isOk());
+        Outcome<ExportService.ExportRepairResult> bad =
+                service.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T17:00:00Z");
+        assertTrue(bad instanceof Outcome.Fail<ExportService.ExportRepairResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("uyuşmuyor"));
     }
 
     @Test

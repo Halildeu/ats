@@ -56,6 +56,39 @@ public final class InMemoryReviewCaseStore implements ReviewCaseStore {
         return Outcome.ok(null);
     }
 
+    @Override
+    public Outcome<ExportTransitionResult> markExportedIfFinalized(
+            TenantId tenantId, InterviewId interviewId, String caseKey, String exportArtifactRef) {
+        if (exportArtifactRef == null || exportArtifactRef.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "export_artifact_ref zorunlu");
+        }
+        String k = scoped(tenantId, caseKey);
+        // ConcurrentHashMap.compute = per-key atomik (PG CAS'ının in-memory aynası).
+        final Object[] verdict = new Object[1];
+        cases.compute(k, (key, current) -> {
+            if (current == null || !current.interviewId().equals(interviewId)) {
+                verdict[0] = Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
+                return current;
+            }
+            if (current.state() == ReviewState.FINALIZED) {
+                verdict[0] = Outcome.ok(ExportTransitionResult.TRANSITIONED);
+                return current.withExportArtifact(exportArtifactRef).with(ReviewState.EXPORTED);
+            }
+            if (current.state() == ReviewState.EXPORTED) {
+                verdict[0] = exportArtifactRef.equals(current.exportArtifactRef())
+                        ? Outcome.ok(ExportTransitionResult.ALREADY_EXPORTED_SAME_ARTIFACT)
+                        : Outcome.ok(ExportTransitionResult.INTEGRITY_CONFLICT);
+                return current;
+            }
+            verdict[0] = Outcome.fail(OutcomeCode.INVALID,
+                    "geçersiz repair-geçişi: " + current.state() + " → EXPORTED (fail-closed)");
+            return current;
+        });
+        @SuppressWarnings("unchecked")
+        Outcome<ExportTransitionResult> out = (Outcome<ExportTransitionResult>) verdict[0];
+        return out;
+    }
+
     public int size() {
         return cases.size();
     }

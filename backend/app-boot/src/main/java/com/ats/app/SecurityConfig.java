@@ -62,6 +62,7 @@ class SecurityConfig {
             Map.entry("ats.review.read", "REVIEW_READ"),
             // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
             Map.entry("ats.export.read", "EXPORT_READ"),
+            Map.entry("ats.export.repair", "EXPORT_REPAIR"),
             Map.entry("ats.export.write", "EXPORT_WRITE"),
             Map.entry("ats.dsar.write", "DSAR_WRITE"),
             // yıkıcı content-silme AYRI yetki sınıfı (Codex #66 blocker-1): intake ≠ execute
@@ -104,6 +105,10 @@ class SecurityConfig {
                             .hasAnyAuthority("EXPORT_READ", "EXPORT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/export")
                             .hasAuthority("EXPORT_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/export/repair")
+                            // 39d-11: AYRI onay-kapısı — EXPORT_WRITE repair YAPAMAZ
+                            // (runbook 'onaylı repair' disiplini rol-atamasıyla).
+                            .hasAuthority("EXPORT_REPAIR")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar")
                             .hasAuthority("DSAR_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar/erasure")

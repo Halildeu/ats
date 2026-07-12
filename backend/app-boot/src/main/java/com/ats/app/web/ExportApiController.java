@@ -6,6 +6,7 @@ import com.ats.export.ExportService;
 import com.ats.export.ExportService.ExportArtifactContent;
 import com.ats.export.ExportService.ExportDisposition;
 import com.ats.export.ExportService.ExportPacketResult;
+import com.ats.export.ExportService.ExportRepairResult;
 import com.ats.export.ExportService.ExportReceipt;
 import com.ats.export.ExportService.ExportReceiptRecovery;
 import com.ats.kernel.Ids.InterviewId;
@@ -184,6 +185,40 @@ class ExportApiController {
         }
         return noStore(ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON))
                 .body(((Outcome.Ok<ExportArtifactContent>) out).value().packetJson());
+    }
+
+    record RepairBody(String caseKey) {}
+
+    /**
+     * 39d-11 R4 repair yüzeyi — AYRI yetki (ats.export.repair; EXPORT_WRITE
+     * YETMEZ — runbook onay-kapısı rol-atamasıyla). Yeni artifact üretmez;
+     * repairStatus: REPAIRED | ALREADY_EXPORTED. no-store TÜM cevaplarda.
+     */
+    @PostMapping("/api/v1/interviews/{interviewId}/export/repair")
+    ResponseEntity<?> repairExport(Authentication auth,
+            @PathVariable("interviewId") String interviewId,
+            @RequestBody RepairBody body) {
+        String caseKey = body == null ? null : body.caseKey();
+        if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
+                || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            return noStore(ResponseEntity.badRequest()).body(Map.of("error", "INVALID",
+                    "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512 karakterden uzun değer reddedilir)"));
+        }
+        Outcome<ExportRepairResult> out = exportService.repairExportTransition(
+                tenantAccess.tenant(auth), tenantAccess.actor(auth),
+                new InterviewId(interviewId), caseKey, Instant.now().toString());
+        if (out instanceof Outcome.Fail<ExportRepairResult> fail) {
+            ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
+            return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
+        }
+        ExportRepairResult r = ((Outcome.Ok<ExportRepairResult>) out).value();
+        return noStore(ResponseEntity.ok()).body(Map.of(
+                "caseKey", caseKey,
+                "artifactKey", r.receipt().artifactKey(),
+                "evidenceId", r.receipt().evidenceId(),
+                "packetDigest", r.receipt().packetDigest(),
+                "claimCount", r.receipt().claimCount(),
+                "repairStatus", r.status().name()));
     }
 
     private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder b) {

@@ -80,6 +80,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **security.audit_export.receipt_recovered** | security | notice | id-only | actor_ref, target_ref | enforced (repo-test) |
 | **security.audit_export.artifact_read** | security | notice | id-only | actor_ref, target_ref | enforced (repo-test) |
 | **security.audit_export.replayed** | security | notice | id-only | actor_ref, target_ref | enforced (repo-test) |
+| **security.audit_export.r4_repaired** | security | notice | id-only | actor_ref, target_ref | enforced (repo-test) |
 | **security.key.rotation.succeeded** | security | notice | none | reason_code | gate-locked |
 | **security.key.rotation.failed** | security | critical | none | reason_code | gate-locked |
 | **security.ratelimit.tripped** | security | warning | id-only | reason_code | gate-locked |

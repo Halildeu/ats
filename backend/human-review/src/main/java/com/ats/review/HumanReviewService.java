@@ -227,6 +227,15 @@ public final class HumanReviewService {
         return store.save(tenantId, caseKey, current.withExportArtifact(exportArtifactRef).with(ReviewState.EXPORTED));
     }
 
+    /**
+     * 39d-11 repair yolu: CAS'lı FINALIZED→EXPORTED (markExported'ın read-then-save
+     * yarışına AÇIK yolu değil). Sonuç ayrımı çağırana aynen taşınır.
+     */
+    public Outcome<ReviewCaseStore.ExportTransitionResult> repairMarkExported(
+            TenantId tenantId, InterviewId interviewId, String caseKey, String exportArtifactRef) {
+        return store.markExportedIfFinalized(tenantId, interviewId, caseKey, exportArtifactRef);
+    }
+
     /** Rıza-geri-çekme/erasure — terminal olmayan HER state'ten; terminal'den ÇIKIŞSIZ (standart §2). */
     public Outcome<Void> withdraw(TenantId tenantId, InterviewId interviewId, String caseKey, String reasonCode) {
         if (isBlank(reasonCode)) {

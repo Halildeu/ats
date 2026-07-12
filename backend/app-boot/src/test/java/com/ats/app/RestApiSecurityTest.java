@@ -467,6 +467,41 @@ class RestApiSecurityTest {
         assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
     }
 
+    // ---- 39d-11: export/repair POST matcher (AYRI yetki — EXPORT_WRITE YETMEZ) ----
+
+    @Test
+    void export_repair_requires_dedicated_authority_not_write_or_read() {
+        HttpHeaders wh = bearer(roleToken("ats.export.write", "exporter-1"));
+        wh.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\"c\"}", wh), String.class)
+                .getStatusCode().value(), "EXPORT_WRITE repair YAPAMAZ (onay-kapısı)");
+        HttpHeaders rh = bearer(roleToken("ats.export.read", "auditor-1"));
+        rh.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\"c\"}", rh), String.class)
+                .getStatusCode().value());
+        assertEquals(401, rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, HttpEntity.EMPTY, String.class).getStatusCode().value());
+    }
+
+    @Test
+    void export_repair_scope_passes_matcher_and_cannot_do_normal_export() {
+        HttpHeaders h = bearer(roleToken("ats.export.repair", "repair-op-1"));
+        h.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> r = rest.exchange("/api/v1/interviews/iv-missing/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\"case-missing\"}", h), String.class);
+        assertEquals(404, r.getStatusCode().value(), "fixture yok → 404 = filter GEÇİLDİ kanıtı");
+        assertEquals("no-store", r.getHeaders().getFirst("Cache-Control"));
+        assertEquals(403, rest.exchange("/api/v1/interviews/iv-1/export",
+                HttpMethod.POST, new HttpEntity<>("{}", h), String.class).getStatusCode().value(),
+                "repair-token normal export ÜRETEMEZ (least-privilege)");
+        ResponseEntity<String> bad = rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\" \"}", h), String.class);
+        assertEquals(400, bad.getStatusCode().value());
+        assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
+    }
+
     // ---- 39d-9: export/artifact GET matcher (EXPORT_READ|EXPORT_WRITE; HEAD YOK) ----
 
     @Test
