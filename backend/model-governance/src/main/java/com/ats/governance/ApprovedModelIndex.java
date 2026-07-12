@@ -84,6 +84,14 @@ final class ApprovedModelIndex {
         return new ApprovedModelIndex(Map.copyOf(byRef), Map.copyOf(byConfigKey));
     }
 
+    /**
+     * READ-ONLY discovery: yüklü spec'lerin değişmez kopyası (yükleme-anı doğrulanmış küme).
+     * Çözüm/gate semantiğini DEĞİŞTİRMEZ — yalnız keşif (operatör onay-ref keşfi + test drift-safety).
+     */
+    List<ApprovedModelSpec> approvedSpecs() {
+        return List.copyOf(byRef.values());
+    }
+
     ApprovedModelSpec byRef(ModelApprovalRef ref) {
         return byRef.get(ref);
     }

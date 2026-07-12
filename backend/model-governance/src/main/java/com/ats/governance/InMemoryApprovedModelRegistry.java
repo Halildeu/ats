@@ -7,7 +7,9 @@ import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelApprovalRef;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * In-memory onaylı-model registry (test + composition-varsayılan). Yükleme-anı
@@ -83,5 +85,35 @@ public final class InMemoryApprovedModelRegistry implements ApprovedModelRegistr
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    // --- READ-ONLY discovery yüzeyi (PORT DIŞI — yalnız concrete adapter) ---
+    // Operatör onay-ref keşfi (ADR-0020 §8) + test drift-safety içindir. resolve/gate semantiğini
+    // DEĞİŞTİRMEZ; ApprovedModelRegistry PORT interface'i genişletilMEZ (ai-orchestration keşfe bağlanamaz).
+
+    /**
+     * Yüklü spec'lerin değişmez kopyası. Registry erişilemez (unavailable) ise boş liste
+     * (fail-closed keşif: erişilemez registry hiçbir onaylı-politika açığa çıkarmaz).
+     */
+    public List<ApprovedModelSpec> approvedSpecs() {
+        return index == null ? List.of() : index.approvedSpecs();
+    }
+
+    /**
+     * Belirli bir {@code configuredProviderRef} için capability→onay-ref eşlemesi (keşif). Aynı
+     * (provider, capability) için birden çok spec bulunursa fail-closed (belirsiz keşif reddedilir).
+     * Registry erişilemez ise boş harita.
+     */
+    public Map<Capability, ModelApprovalRef> approvalRefsFor(String configuredProviderRef) {
+        Map<Capability, ModelApprovalRef> out = new EnumMap<>(Capability.class);
+        for (ApprovedModelSpec spec : approvedSpecs()) {
+            if (spec.configuredProviderRef().equals(configuredProviderRef)
+                    && out.putIfAbsent(spec.capability(), spec.approvalRef()) != null) {
+                throw new IllegalStateException("onaylı-model keşif: aynı provider+capability için "
+                        + "birden çok spec (belirsiz onay-ref keşfi, fail-closed): "
+                        + configuredProviderRef + "/" + spec.capability());
+            }
+        }
+        return out;
     }
 }

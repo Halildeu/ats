@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -144,5 +145,15 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
             Capability capability, String configuredProviderRef,
             String requestedModelId, String requestedModelVersion) {
         return delegate.resolveConfigured(capability, configuredProviderRef, requestedModelId, requestedModelVersion);
+    }
+
+    /** READ-ONLY discovery (PORT DIŞI): yüklü spec'lerin değişmez kopyası — delegate'e devreder. */
+    public List<ApprovedModelSpec> approvedSpecs() {
+        return delegate.approvedSpecs();
+    }
+
+    /** READ-ONLY discovery (PORT DIŞI): provider-ref için capability→onay-ref eşlemesi — delegate'e devreder. */
+    public Map<Capability, ModelApprovalRef> approvalRefsFor(String configuredProviderRef) {
+        return delegate.approvalRefsFor(configuredProviderRef);
     }
 }

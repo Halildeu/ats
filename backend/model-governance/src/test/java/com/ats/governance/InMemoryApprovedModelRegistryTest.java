@@ -2,6 +2,7 @@ package com.ats.governance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.contracts.governance.ApprovalStatus;
@@ -12,6 +13,7 @@ import com.ats.contracts.governance.ModelScope;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -102,5 +104,42 @@ class InMemoryApprovedModelRegistryTest {
         var registry = InMemoryApprovedModelRegistry.of(List.of(transcribe("m", "v", ApprovalStatus.APPROVED)));
         assertEquals(OutcomeCode.INVALID, code(registry.resolve(null, Capability.TRANSCRIBE)));
         assertEquals(OutcomeCode.INVALID, code(registry.resolveConfigured(Capability.TRANSCRIBE, " ", "m", "v")));
+    }
+
+    // --- READ-ONLY discovery yüzeyi (PORT DIŞI concrete adapter metotları) ---
+
+    @Test
+    void approved_specs_returns_all_loaded_specs_immutable_and_empty_when_unavailable() {
+        ApprovedModelSpec a = transcribe("m-a", "v1", ApprovalStatus.APPROVED);
+        ApprovedModelSpec b = transcribe("m-b", "v1", ApprovalStatus.APPROVED);
+        List<ApprovedModelSpec> specs = InMemoryApprovedModelRegistry.of(List.of(a, b)).approvedSpecs();
+        assertEquals(2, specs.size());
+        assertTrue(specs.contains(a) && specs.contains(b));
+        assertThrows(UnsupportedOperationException.class, () -> specs.add(a), "keşif kopyası değişmez olmalı");
+        // erişilemez/boş registry → boş keşif (fail-closed: hiçbir politika açığa çıkmaz)
+        assertTrue(InMemoryApprovedModelRegistry.unavailable().approvedSpecs().isEmpty());
+        assertTrue(InMemoryApprovedModelRegistry.empty().approvedSpecs().isEmpty());
+    }
+
+    @Test
+    void approval_refs_for_maps_capability_to_ref_and_fails_closed_on_ambiguity() {
+        // aynı provider altında TRANSCRIBE + CITE (farklı capability) → belirsizlik YOK
+        ApprovedModelSpec t = transcribe("m-t", "v1", ApprovalStatus.APPROVED);
+        ApprovedModelSpec c = ApprovedModelSpec.of(Capability.CITE, "prov-a", "m-c", "v1",
+                Set.of(), Set.of(), "endpoint-a", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+        var registry = InMemoryApprovedModelRegistry.of(List.of(t, c));
+        Map<Capability, ModelApprovalRef> refs = registry.approvalRefsFor("prov-a");
+        assertEquals(t.approvalRef(), refs.get(Capability.TRANSCRIBE));
+        assertEquals(c.approvalRef(), refs.get(Capability.CITE));
+        // başka provider → boş; erişilemez registry → boş
+        assertTrue(registry.approvalRefsFor("prov-yok").isEmpty());
+        assertTrue(InMemoryApprovedModelRegistry.unavailable().approvalRefsFor("prov-a").isEmpty());
+
+        // aynı (provider, capability) için İKİ farklı model → belirsiz keşif fail-closed
+        var ambiguous = InMemoryApprovedModelRegistry.of(
+                List.of(t, transcribe("m-t2", "v1", ApprovalStatus.APPROVED)));
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> ambiguous.approvalRefsFor("prov-a"));
+        assertTrue(ex.getMessage().contains("belirsiz"), ex.getMessage());
     }
 }

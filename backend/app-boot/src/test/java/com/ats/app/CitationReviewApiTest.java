@@ -112,6 +112,8 @@ class CitationReviewApiTest {
         registry.add("ats.security.jwks-uri", JWT::jwksUri);
         registry.add("ats.security.issuer", () -> JwtTestSupport.ISSUER);
         registry.add("ats.security.audience", () -> JwtTestSupport.AUDIENCE);
+        // P3-gov0 (Codex REVISE): yaml default'u kaldırılan 3 güven girdisi — shipped kayıttan türet (drift-safe).
+        AiGovernanceTestSupport.registerHttpJson(registry);
     }
 
     @Autowired private TestRestTemplate rest;

@@ -17,15 +17,19 @@ ats:
     base-url: ${ATS_AI_BASE_URL:}
     # P3-gov0 boot-gate: opak deploy endpoint-referansı (URL DEĞİL). Onaylı-model kaydının
     # endpointRef'i ile TAM eşleşmeli; endpointRef→baseUrl eşlemesi deployment-authoritative.
-    endpoint-ref: ${ATS_AI_ENDPOINT_REF:http-json-generic-endpoint}
+    # DEFAULT YOK (fail-closed; Codex REVISE): deployment AÇIKÇA beyan ETMELİ. Sessiz geçerli-default
+    # verilirse bir deployment YALNIZ base-url'le boot eder, bundled http-json-generic onayı otomatik
+    # seçilir ve KEYFİ base-url generic-onaylı sayılır → endpointRef→baseUrl invariant'ı baypas olur.
+    endpoint-ref: ${ATS_AI_ENDPOINT_REF:}
     # P3-gov0 boot-gate: capability-başına onaylı-model ref'i (mapr_<64hex>, içerik-adresli).
-    # Default provider=http-json {TRANSCRIBE, CITE} → İKİSİ DE zorunlu (biri eksik → boot FAIL).
-    # live-stt'e geçişte: transcribe-ref'i live-stt kaydına çevir + cite-ref'i BOŞALT (live-stt
+    # DEFAULT YOK (fail-closed; Codex REVISE): deployment AÇIKÇA beyan ETMELİ (biri eksik/boş → boot FAIL).
+    # Default provider=http-json {TRANSCRIBE, CITE} → İKİSİ DE zorunlu.
+    # live-stt'e geçişte: transcribe-ref'i live-stt kaydına çevir + cite-ref'i BOŞ bırak (live-stt
     # cite çalıştırmaz; beyan edilirse boot FAIL) + endpoint-ref'i live-stt endpoint'ine çevir.
     # Ref hesabı: kayıt kaynağından ApprovedModelSpec.of(...).approvalRef().value() (ATS-0020).
     approvals:
-      transcribe-ref: ${ATS_AI_APPROVAL_TRANSCRIBE_REF:mapr_0db783774bf0616f9fb7ca0483008aee94529d41a464b7f3e63083a5652ef57c}
-      cite-ref: ${ATS_AI_APPROVAL_CITE_REF:mapr_4dc0a8f55f2c7d49d737a4393d041e12e904470ecded9056bd6062ac72255f85}
+      transcribe-ref: ${ATS_AI_APPROVAL_TRANSCRIBE_REF:}
+      cite-ref: ${ATS_AI_APPROVAL_CITE_REF:}
     bearer: ${ATS_AI_BEARER:}
     timeout: ${ATS_AI_TIMEOUT:30s}
     language: ${ATS_AI_LANGUAGE:tr}

@@ -122,8 +122,10 @@ final class ModelGovernanceBoot {
                         + " onaylı=" + spec.configuredProviderRef());
             }
             if (!spec.endpointRef().equals(endpointRef)) {
+                // wired = operatör-girdisi (deploy-props, opak) → REDAKTE (yanlışlıkla secret/URL
+                // yapıştırılırsa startup log'una sızmasın); onaylı = registry-policy kimliği → açık.
                 throw new IllegalStateException("model-governance boot: " + cap + " endpointRef uyuşmazlığı "
-                        + "(fail-closed): wired=" + endpointRef + " onaylı=" + spec.endpointRef());
+                        + "(fail-closed): wired=" + redact(endpointRef) + " onaylı=" + spec.endpointRef());
             }
             if (!spec.invocationProfileVersion().equals(profile.invocationProfileVersion())) {
                 throw new IllegalStateException("model-governance boot: " + cap + " invocationProfileVersion "
@@ -149,8 +151,12 @@ final class ModelGovernanceBoot {
         try {
             return new ModelApprovalRef(raw);
         } catch (IllegalArgumentException ex) {
+            // ex.getMessage() geçersiz RAW config değerini yansıtır (yanlışlıkla secret/URL
+            // yapıştırılırsa Spring startup exception log'una sızar) → operatör-girdisi REDAKTE,
+            // format-beklentisi açık. Not: geçerli biçimli mapr_ ref = içerik-adresli policy
+            // kimliği (secret değil) ve yalnız resolve-yolunda gösterilir.
             throw new IllegalStateException("model-governance boot: " + cap + " onay-ref biçimi geçersiz "
-                    + "(beklenen mapr_<64-küçük-hex>; fail-closed): " + ex.getMessage());
+                    + "(beklenen mapr_<64-küçük-hex>; fail-closed): " + redact(raw));
         }
     }
 
@@ -170,5 +176,18 @@ final class ModelGovernanceBoot {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /**
+     * Operatör-girdisi (wired ref / endpointRef — opak deploy-referansları) hata mesajlarında REDAKTE
+     * edilir: yanlışlıkla secret/URL yapıştırılırsa Spring startup exception log'una düşmemeli. Yalnız
+     * uzunluk ipucu taşınır (teşhis için yeter, gizli değer açığa çıkmaz). ONAYLI/BEKLENEN değerler
+     * (resolved spec alanları, expected profile) registry-policy kimliğidir — secret değil, redakte EDİLMEZ.
+     */
+    private static String redact(String raw) {
+        if (raw == null) {
+            return "<redacted:null>";
+        }
+        return "<redacted:len=" + raw.length() + ">";
     }
 }
