@@ -5,11 +5,14 @@ import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
+import com.ats.contracts.governance.ApprovedModelRegistry;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.ExportArtifactStore;
 import com.ats.export.ExportService;
+import com.ats.governance.FileBackedApprovedModelRegistry;
+import com.ats.governance.InMemoryApprovedModelRegistry;
 import com.ats.ingest.InMemoryObjectStore;
 import com.ats.ingest.IngestService;
 import com.ats.ingest.LocalPatternScanAdapter;
@@ -224,6 +227,38 @@ class WiringConfig {
             TranscriptStore transcriptStore, CitationStore citationStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
         return new CitationService(gate, provider, transcriptStore, citationStore, ledger, sink);
+    }
+
+    // --- model governance (P3-gov0): onaylı-model registry + fail-closed boot-doğrulama ---
+
+    /**
+     * Onaylı-model registry: konfig'te kaynak verilmişse dosya-destekli (yükleme-anı
+     * fail-closed), yoksa boş in-memory. Adapter model-governance modülünde; port
+     * contracts-java'da (ArchUnit boundary).
+     */
+    @Bean
+    ApprovedModelRegistry approvedModelRegistry(ModelGovernanceProperties gov) {
+        String resource = gov.approvedModelsResource();
+        if (resource == null) {
+            LOG.warn("model-governance: onaylı-model kaynağı verilmedi — BOŞ registry "
+                    + "(wire'lanmış capability doğrulanamaz; wiring varsa boot fail-closed düşer).");
+            return InMemoryApprovedModelRegistry.empty();
+        }
+        return FileBackedApprovedModelRegistry.fromClasspath(resource);
+    }
+
+    /**
+     * Fail-closed boot-doğrulama: wire'lanmış her enabled-capability APPROVED onaya çözülmezse
+     * bu @Bean fırlatır → composition kalkamaz. Wiring listesi boşsa no-op (default-off).
+     */
+    @Bean
+    ModelGovernanceBoot.Validation modelGovernanceValidation(
+            ApprovedModelRegistry registry, ModelGovernanceProperties gov) {
+        ModelGovernanceBoot.Validation result =
+                ModelGovernanceBoot.validateWiredConfig(registry, gov.wirings());
+        LOG.info("model-governance boot-doğrulama tamam: {} wire'lanmış capability APPROVED onaylı.",
+                result.validatedWirings());
+        return result;
     }
 
     // --- review / export / DSR ---

@@ -36,6 +36,7 @@
     <module>export-connector</module>
     <module>retention-dsr</module>
     <module>ai-provider-faz24</module>
+    <module>model-governance</module>
     <module>persistence-postgres</module>
     <module>app-boot</module>
     <!--

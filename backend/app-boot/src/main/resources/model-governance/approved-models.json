@@ -1,0 +1,16 @@
+{
+  "approvedModels": [
+    {
+      "capability": "TRANSCRIBE",
+      "configuredProviderRef": "faz24-live-stt",
+      "requestedModelId": "whisper-tr",
+      "requestedModelVersion": "v0.1.0",
+      "allowedReportedModelIdAliases": ["whisper-large-v3-tr"],
+      "allowedReportedModelVersionAliases": [],
+      "endpointRef": "denetim-stt-internal",
+      "invocationProfileVersion": "ip-1",
+      "status": "APPROVED",
+      "scope": "GLOBAL"
+    }
+  ]
+}

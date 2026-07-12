@@ -29,6 +29,16 @@ ats:
     issuer: ${ATS_JWT_ISSUER:}
     audience: ${ATS_JWT_AUDIENCE:}
     tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
+  model-governance:
+    # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry.
+    approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
+    # wirings: bu deployment'ın wire'ladığı enabled-capability'ler (provider/model/versiyon).
+    # DEFAULT BOŞ (opt-in; burada beyan EDİLMEZ → List.of()). Boot-doğrulama yalnız beyan edilen
+    # capability'ler için koşar; onaysız wiring boot'u fail-closed düşürür. Deployment örneği:
+    #   ats.model-governance.wirings[0].capability=TRANSCRIBE
+    #   ats.model-governance.wirings[0].provider-ref=faz24-live-stt
+    #   ats.model-governance.wirings[0].model-id=whisper-tr
+    #   ats.model-governance.wirings[0].model-version=v0.1.0
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
   retention:
