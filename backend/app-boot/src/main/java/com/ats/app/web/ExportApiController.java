@@ -108,21 +108,22 @@ class ExportApiController {
     ResponseEntity<?> exportReceipt(Authentication auth,
             @PathVariable("interviewId") String interviewId,
             @RequestParam(name = "caseKey", required = false) String caseKey) {
+        // no-store TÜM receipt cevaplarında (39d-8c): hata gövdeleri de opak ref/
+        // reason taşıyabilir — shared-cache'e hiçbir varyant yazılmaz.
         if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
                 || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "INVALID",
+            return noStore(ResponseEntity.badRequest()).body(Map.of("error", "INVALID",
                     "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512 karakterden uzun değer reddedilir)"));
         }
         Outcome<ExportReceiptRecovery> out = exportService.exportReceipt(
                 tenantAccess.tenant(auth), tenantAccess.actor(auth),
                 new InterviewId(interviewId), caseKey);
         if (out instanceof Outcome.Fail<ExportReceiptRecovery> fail) {
-            return OutcomeHttp.fail(fail);
+            ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
+            return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
         }
         ExportReceiptRecovery r = ((Outcome.Ok<ExportReceiptRecovery>) out).value();
-        return ResponseEntity.ok()
-                .header("Cache-Control", "no-store")
-                .header("Pragma", "no-cache")
+        return noStore(ResponseEntity.ok())
                 .body(Map.of(
                         "caseKey", r.caseKey(),
                         "caseState", r.caseState(),
@@ -132,5 +133,9 @@ class ExportApiController {
                         "packetDigest", r.packetDigest(),
                         "claimCount", r.claimCount(),
                         "ledgerRecordedAt", r.ledgerRecordedAt()));
+    }
+
+    private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder b) {
+        return b.header("Cache-Control", "no-store").header("Pragma", "no-cache");
     }
 }

@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -406,5 +407,63 @@ class RestApiSecurityTest {
                 "/api/v1/interviews/iv-1/export",
                 HttpMethod.POST, new HttpEntity<>("{}", h), String.class);
         assertEquals(403, r.getStatusCode().value(), "salt-okuma rolü export ÜRETEMEZ");
+    }
+
+    // ---- 39d-8c: receipt controller-contract hijyeni (Codex backlog) ----
+
+    @Test
+    void export_receipt_rejects_blank_oversize_and_control_char_case_keys_with_contract_body() {
+        String token = roleToken("ats.export.read", "auditor-1");
+        ResponseEntity<String> blank = rest.exchange(
+                URI.create("/api/v1/interviews/iv-1/export/receipt?caseKey=%20"),
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class);
+        assertEquals(400, blank.getStatusCode().value());
+        assertTrue(blank.getBody() != null && blank.getBody().contains("\"error\":\"INVALID\""),
+                "hata gövdesi {error,reason} kontratında olmalı: " + blank.getBody());
+        assertEquals(400, rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt",
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class)
+                .getStatusCode().value());
+        assertEquals(400, rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt?caseKey=" + "a".repeat(513),
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class)
+                .getStatusCode().value());
+        // 512 karakter length-gate'i GEÇER (vaka yok → 404; sınır exact 512):
+        assertEquals(404, rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt?caseKey=" + "a".repeat(512),
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class)
+                .getStatusCode().value());
+        assertEquals(400, rest.exchange(
+                URI.create("/api/v1/interviews/iv-1/export/receipt?caseKey=ab%01cd"),
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class)
+                .getStatusCode().value());
+    }
+
+    @Test
+    void export_receipt_decodes_slash_case_key_and_reaches_service() {
+        // '/' içeren opak caseKey encode'lu query-param'la SERVICE'e ulaşır
+        // (404 = decode + lookup çalıştı; 400 preflight'a TAKILMADI):
+        ResponseEntity<String> r = rest.exchange(
+                URI.create("/api/v1/interviews/iv-1/export/receipt?caseKey=i1%2Fcase-77"),
+                HttpMethod.GET,
+                new HttpEntity<>(bearer(roleToken("ats.export.read", "auditor-1"))),
+                String.class);
+        assertEquals(404, r.getStatusCode().value());
+    }
+
+    @Test
+    void export_receipt_error_responses_are_no_store() {
+        // Hata gövdeleri de opak ref/reason taşır — HİÇBİR varyant cache'lenmez:
+        String token = roleToken("ats.export.read", "auditor-1");
+        ResponseEntity<String> notFound = rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt?caseKey=case-yok",
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class);
+        assertEquals(404, notFound.getStatusCode().value());
+        assertEquals("no-store", notFound.getHeaders().getFirst("Cache-Control"));
+        assertEquals("no-cache", notFound.getHeaders().getFirst("Pragma"));
+        ResponseEntity<String> bad = rest.exchange(
+                URI.create("/api/v1/interviews/iv-1/export/receipt?caseKey=%20"),
+                HttpMethod.GET, new HttpEntity<>(bearer(token)), String.class);
+        assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
     }
 }
