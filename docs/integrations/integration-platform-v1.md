@@ -6,6 +6,17 @@ P4.2 sentetik portability conformance çekirdeği [`csv-portability.ts`](../../c
 
 P4.3 sentetik delivery conformance çekirdeği [`delivery-conformance.ts`](../../contracts/delivery/delivery-conformance.ts) içindedir. HMAC webhook doğrulama, timestamp/nonce replay savunması, tenant idempotency ve transactional-outbox retry/DLQ/redrive state machine davranışını deterministik saatle kanıtlar. Gerçek HTTP/broker/credential saklama yapmaz; key value yalnız verifier çağrı argümanıdır, receipt/store içine girmez. Kalıcı outbox adaptörü her public state mutation'ını tek transaction içinde uygulamak zorundadır. Contract testleri [`delivery-conformance.contract.test.ts`](../../contracts/test/delivery-conformance.contract.test.ts) dosyasındadır.
 
+P4.4 sentetik adapter conformance çekirdeği [`adapter-sandbox.ts`](../../contracts/adapters/adapter-sandbox.ts) içindedir. OIDC metadata, SCIM lifecycle, calendar availability/invite ve email notification profilleri ayrı allowlist'lerle yürür. `NOT_CONFIGURED → DISCOVERY_BLOCKED|DISCOVERED → CONFIGURED → REVOKED` zincirinde `VERIFIED` durumu yoktur; discovery ve operasyon receipt'leri daima `UNVERIFIED`, `apiVerified=false`, `providerCallMade=false` taşır. `REVOKED` terminaldir: aynı adapter kaydı yeniden canlandırılmaz; yeniden aktivasyon yeni versioned adapter ID ve yeni discovery/configuration acceptance gerektirir. Credential değeri kabul edilmez veya evidence yüzeyine yazılmaz; yalnız `secret.synthetic.*` referansı private harness map'inde tutulur ve revocation ile silinir.
+
+Standart profilleri fail-closed ve tam eşleşmelidir:
+
+- OAuth/OIDC: RFC 6749, PKCE RFC 7636, metadata RFC 8414, OAuth Security BCP RFC 9700 ve OIDC Discovery 1.0.
+- SCIM: RFC 7643/7644 + least-privilege OAuth reference.
+- Calendar: RFC 3339 zaman, RFC 5545 iCalendar ve ayrı read/send scope'ları.
+- Email: RFC 5322 zarf standardı ve yalnız human-approved notification scope'u.
+
+Rakip sınırı: Ashby/SmartRecruiters benzeri katalog açıklığı ve Workday/Greenhouse düzeyindeki enterprise identity/integration beklentisi hedeflenir; ancak connector sayısı veya provider uyumluluğu simüle edilmez. Bizim acceptance farkımız capability, discovery failure, exact scope, tenant isolation, approval, revocation ve audit receipt'inin aynı kanıt zincirinde görünmesidir. Gerçek provider sertifikasyonu ve partner acceptance P4.5'te kalır. Contract testleri [`adapter-sandbox.contract.test.ts`](../../contracts/test/adapter-sandbox.contract.test.ts) dosyasındadır.
+
 ## 0. Sürüm ve mevcut P1 sözleşmesiyle ilişki
 
 `connector-capability/v1` korunur: P1 wedge’in export baseline + dar evidence write-back sınırıdır. `integration-platform/v1` onu sessizce genişletmez veya yeniden yorumlamaz; P4’ün ayrı land-and-expand kontratıdır. Dört ATS-0001 stable interface değişmez. Runtime aktivasyon P4 parent [#115](https://github.com/Halildeu/ats/issues/115) acceptance sınırındadır.
