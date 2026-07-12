@@ -76,7 +76,8 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
     }
 
     public record Ai(String provider, String baseUrl, String bearer, Duration timeout,
-                     String language, Duration grantTtl, Mtls mtls) {
+                     String language, Duration grantTtl, Mtls mtls,
+                     String endpointRef, Approvals approvals) {
         public Ai {
             // slice-36: kapalı küme — bilinmeyen değer BOOT'ta düşürür (fail-closed).
             if (provider == null || provider.isBlank()) {
@@ -87,6 +88,14 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
                         "ats.ai.provider kapalı küme: http-json|live-stt (fail-closed boot); verilen: " + provider);
             }
             require(baseUrl, "ats.ai.base-url (env ATS_AI_BASE_URL)");
+            // P3-gov0 boot-gate girdileri (Codex durable-fix): endpointRef opak deploy-referansı,
+            // approvals capability-başına onay-ref'i. BURADA yalnız blank→null normalize edilir;
+            // provider-bağımlı zorunluluk + registry-çözümü + cross-check ModelGovernanceBoot
+            // .authorizeProvider'da fail-closed uygulanır (provider semantiği orada canonical).
+            endpointRef = blankToNull(endpointRef);
+            if (approvals == null) {
+                approvals = new Approvals(null, null);
+            }
             if (timeout == null || timeout.isZero() || timeout.isNegative()) {
                 timeout = Duration.ofSeconds(30);
             }
@@ -118,6 +127,19 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
         }
     }
 
+    /**
+     * P3-gov0 capability-başına onay-ref'i (Codex durable-fix): gerçek çalıştırılacak
+     * yeteneğin ({@code TRANSCRIBE}/{@code CITE}) hangi onaylı-model politikasına ({@code
+     * mapr_<hex>}) bağlandığını beyan eder. Enabled-capability GERÇEK provider'dan türetilir
+     * ({@code ModelGovernanceBoot}); ilgisiz/eksik ref fail-closed reddedilir. Blank→null.
+     */
+    public record Approvals(String transcribeRef, String citeRef) {
+        public Approvals {
+            transcribeRef = blankToNull(transcribeRef);
+            citeRef = blankToNull(citeRef);
+        }
+    }
+
     /** slice-38 mTLS materyali (PKCS12-only; mode kapalı küme required|disabled). */
     public record Mtls(String mode, String keyStorePath, String keyStorePassword,
                        String trustStorePath) {
@@ -140,5 +162,9 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
             throw new IllegalStateException("eksik zorunlu konfig: " + name
                     + " — fail-closed: default yok, açıkça verilmeli");
         }
+    }
+
+    private static String blankToNull(String v) {
+        return (v == null || v.isBlank()) ? null : v;
     }
 }

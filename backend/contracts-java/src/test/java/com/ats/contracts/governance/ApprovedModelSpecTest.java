@@ -75,11 +75,13 @@ class ApprovedModelSpecTest {
         assertFalse(s.matchesReported("gpt", "other"), "listelenmeyen versiyon mismatch");
         // id-alias versiyon için KULLANILAMAZ (yapısal ayrım)
         assertFalse(s.matchesReported("gpt", "gpt-alias"), "id-alias versiyon eşleşmesi vermez");
-        // absent (null/boş) alan mismatch DEĞİL
-        assertTrue(s.matchesReported(null, "v1"));
-        assertTrue(s.matchesReported("gpt", null));
-        assertTrue(s.matchesReported(null, null));
-        assertTrue(s.matchesReported("  ", "v1-alias"));
+        // P3-gov0 HARD-REQUIRED (Codex durable-fix): absent (null/boş) alan artık MISMATCH
+        assertFalse(s.matchesReported(null, "v1"), "absent id → mismatch (hard-required)");
+        assertFalse(s.matchesReported("gpt", null), "absent versiyon → mismatch (hard-required)");
+        assertFalse(s.matchesReported(null, null), "iki alan absent → mismatch");
+        assertFalse(s.matchesReported("  ", "v1-alias"), "blank id → mismatch (hard-required)");
+        // her iki alan present + eşleşiyor → hâlâ match (absent olmayan pozitif yol korunur)
+        assertTrue(s.matchesReported("gpt", "v1"), "present+eşleşen alanlar hâlâ match");
         // TAM eşleşme: case-fold/contains YOK
         assertFalse(s.matchesReported("GPT", "v1"));
         assertFalse(s.matchesReported("gp", "v1"));

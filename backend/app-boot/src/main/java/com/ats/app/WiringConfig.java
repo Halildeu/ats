@@ -184,7 +184,16 @@ class WiringConfig {
      * client-CA denetim-PC tarafında — test-CA ≠ canlı-CA).
      */
     @Bean
-    AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore) {
+    AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore,
+            AuthorizedModelBindings authorizedModelBindings) {
+        // authorizedModelBindings PARAMETRE bağımlılığı = "gate-then-construct" garantisi (Codex
+        // durable-fix): Spring bu provider bean'ini yalnız governance boot-gate GEÇTİKTEN sonra kurar;
+        // authorizeProvider patlarsa bu metot HİÇ çağrılmaz (governance artık dekoratif değil).
+        return buildAiProvider(props, grants, objectStore);
+    }
+
+    /** slice-36 provider-seçim çekirdeği (governance gate'ten bağımsız test edilebilir birim). */
+    AIProvider buildAiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore) {
         return switch (props.ai().provider()) {
             case "live-stt" -> liveSttProvider(props, grants, objectStore);
             default -> new HttpAIProvider(props.ai().baseUrl(), props.ai().timeout(), props.ai().bearer());
@@ -248,17 +257,22 @@ class WiringConfig {
     }
 
     /**
-     * Fail-closed boot-doğrulama: wire'lanmış her enabled-capability APPROVED onaya çözülmezse
-     * bu @Bean fırlatır → composition kalkamaz. Wiring listesi boşsa no-op (default-off).
+     * Fail-closed boot-gate (Codex durable-fix): GERÇEK provider'ın enabled-capability kümesinin her
+     * üyesi beyan edilen onaylı-politikaya çözülüp cross-check'lerden geçmezse bu @Bean fırlatır →
+     * composition kalkamaz. {@code AIProvider} bean'i bu bean'e depend eder (gate-then-construct):
+     * provider yalnız gate geçtikten sonra kurulur. Boot-log yalnız approvalRef+capability+
+     * providerRef+endpointRef taşır (secret/URL YOK).
      */
     @Bean
-    ModelGovernanceBoot.Validation modelGovernanceValidation(
-            ApprovedModelRegistry registry, ModelGovernanceProperties gov) {
-        ModelGovernanceBoot.Validation result =
-                ModelGovernanceBoot.validateWiredConfig(registry, gov.wirings());
-        LOG.info("model-governance boot-doğrulama tamam: {} wire'lanmış capability APPROVED onaylı.",
-                result.validatedWirings());
-        return result;
+    AuthorizedModelBindings authorizedModelBindings(ApprovedModelRegistry registry, AppProperties props) {
+        AuthorizedModelBindings bindings = ModelGovernanceBoot.authorizeProvider(
+                registry, props.ai().provider(), props.ai().endpointRef(), props.ai().approvals());
+        bindings.bindings().forEach((cap, spec) -> LOG.info(
+                "model-governance boot-gate APPROVED: capability={} providerRef={} endpointRef={} approvalRef={}",
+                cap, spec.configuredProviderRef(), spec.endpointRef(), spec.approvalRef().value()));
+        LOG.info("model-governance boot-gate tamam: provider={} enabled-capabilities={} (hepsi APPROVED onaylı).",
+                bindings.provider(), bindings.bindings().keySet());
+        return bindings;
     }
 
     // --- review / export / DSR ---

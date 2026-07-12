@@ -119,16 +119,19 @@ public record ApprovedModelSpec(
 
     /**
      * Sağlayıcının RAPORLADIĞI model-id/versiyon bu onaya UYUYOR mu (alan-bazlı, TAM eşleşme).
-     * Var olan raporlanan id: {@code == requestedModelId} VEYA id-alias'larda olmalı; versiyon aynı
-     * kural. YOK (null/boş) alan uyuşmazlık DEĞİLDİR. Normalizasyon/contains/prefix/case-fold YOK.
+     * Raporlanan id: {@code == requestedModelId} VEYA id-alias'larda olmalı; versiyon aynı kural.
+     * P3-gov0 HARD-REQUIRED (Codex durable-fix): YOK (null/boş) alan artık UYUŞMAZLIK'tır
+     * (absent → default-deny; sağlayıcı model kimliğini beyan etmezse eşleşme VERİLMEZ) — böylece
+     * "provider kimlik beyan etmedi" durumu sessizce onaylı sayılmaz. Opsiyonel-politika alanı gov0'da
+     * YOK (erken standardizasyon değil). Normalizasyon/contains/prefix/case-fold YOK.
      */
     public boolean matchesReported(String reportedModelId, String reportedModelVersion) {
-        boolean idMatch = isAbsent(reportedModelId)
-                || reportedModelId.equals(requestedModelId)
-                || allowedReportedModelIdAliases.contains(reportedModelId);
-        boolean versionMatch = isAbsent(reportedModelVersion)
-                || reportedModelVersion.equals(requestedModelVersion)
-                || allowedReportedModelVersionAliases.contains(reportedModelVersion);
+        boolean idMatch = !isAbsent(reportedModelId)
+                && (reportedModelId.equals(requestedModelId)
+                        || allowedReportedModelIdAliases.contains(reportedModelId));
+        boolean versionMatch = !isAbsent(reportedModelVersion)
+                && (reportedModelVersion.equals(requestedModelVersion)
+                        || allowedReportedModelVersionAliases.contains(reportedModelVersion));
         return idMatch && versionMatch;
     }
 

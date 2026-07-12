@@ -15,6 +15,17 @@ ats:
   ai:
     provider: ${ATS_AI_PROVIDER:http-json}
     base-url: ${ATS_AI_BASE_URL:}
+    # P3-gov0 boot-gate: opak deploy endpoint-referansı (URL DEĞİL). Onaylı-model kaydının
+    # endpointRef'i ile TAM eşleşmeli; endpointRef→baseUrl eşlemesi deployment-authoritative.
+    endpoint-ref: ${ATS_AI_ENDPOINT_REF:http-json-generic-endpoint}
+    # P3-gov0 boot-gate: capability-başına onaylı-model ref'i (mapr_<64hex>, içerik-adresli).
+    # Default provider=http-json {TRANSCRIBE, CITE} → İKİSİ DE zorunlu (biri eksik → boot FAIL).
+    # live-stt'e geçişte: transcribe-ref'i live-stt kaydına çevir + cite-ref'i BOŞALT (live-stt
+    # cite çalıştırmaz; beyan edilirse boot FAIL) + endpoint-ref'i live-stt endpoint'ine çevir.
+    # Ref hesabı: kayıt kaynağından ApprovedModelSpec.of(...).approvalRef().value() (ATS-0020).
+    approvals:
+      transcribe-ref: ${ATS_AI_APPROVAL_TRANSCRIBE_REF:mapr_0db783774bf0616f9fb7ca0483008aee94529d41a464b7f3e63083a5652ef57c}
+      cite-ref: ${ATS_AI_APPROVAL_CITE_REF:mapr_4dc0a8f55f2c7d49d737a4393d041e12e904470ecded9056bd6062ac72255f85}
     bearer: ${ATS_AI_BEARER:}
     timeout: ${ATS_AI_TIMEOUT:30s}
     language: ${ATS_AI_LANGUAGE:tr}
@@ -30,15 +41,10 @@ ats:
     audience: ${ATS_JWT_AUDIENCE:}
     tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
   model-governance:
-    # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry.
+    # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry (o durumda boot-gate,
+    # aktif provider'ın enabled-capability'lerini APPROVED'a çözemez → fail-closed düşer).
+    # Boot-gate girdileri artık ats.ai.provider + ats.ai.endpoint-ref + ats.ai.approvals.* (yukarıda).
     approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
-    # wirings: bu deployment'ın wire'ladığı enabled-capability'ler (provider/model/versiyon).
-    # DEFAULT BOŞ (opt-in; burada beyan EDİLMEZ → List.of()). Boot-doğrulama yalnız beyan edilen
-    # capability'ler için koşar; onaysız wiring boot'u fail-closed düşürür. Deployment örneği:
-    #   ats.model-governance.wirings[0].capability=TRANSCRIBE
-    #   ats.model-governance.wirings[0].provider-ref=faz24-live-stt
-    #   ats.model-governance.wirings[0].model-id=whisper-tr
-    #   ats.model-governance.wirings[0].model-version=v0.1.0
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
   retention:
