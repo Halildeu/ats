@@ -27,6 +27,7 @@
 
 ## Güvenlik (public, living)
 - [security/release-evidence-manifest.md](./security/release-evidence-manifest.md) — supply-chain/air-gap doğrulanabilir kanıt manifesti (digest-pin + SBOM + cosign + SLSA + vuln-disposition; drift-guard `release-evidence-guard`).
+  - P5.2 `contracts/release/offline-bundle-verifier.ts` — sentetik bundle byte-integrity, exact inventory, subject/SBOM/provenance/signature coverage ve offline trust receipt verifier; production/deploy-ready kanıtı değildir.
 - [security/control-map.md](./security/control-map.md) — ISO 27001:2022/SOC 2 TSC/OWASP kontrol alanları → threat-register ID cross-doc eşlemesi (drift-guard `control-map-guard`; sertifika beyanı DEĞİL).
 - [security/threat-register.md](./security/threat-register.md) — STRIDE + LINDDUN → kontrol → test matrisi (ATS-0007 register'ı; bugün enforced guard'lar + gate-locked kontroller).
 
