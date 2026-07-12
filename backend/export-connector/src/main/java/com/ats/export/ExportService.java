@@ -107,15 +107,22 @@ public final class ExportService {
      * yalnız digest yazılır (pointer-only disiplin).
      */
     /**
-     * 39d-11 (Codex blocker): intent-key ACTOR-BAĞLIDIR — farklı yetkili operatör
-     * devralırken ilk operatörün yarım girişimi idempotency-conflict kilidi
-     * YARATMAZ (aynı actor retry'ı ise birebir idempotent replay olur). Raw actor
-     * ref key'e girmez (':'/'/' tuple-collision riski) — sha256 digest'i girer.
+     * 39d-11 (Codex blocker×2): intent-key ACTOR-BAĞLI + TUPLE-SAFE — farklı
+     * yetkili operatör devralırken ilk operatörün yarım girişimi idempotency
+     * kilidi YARATMAZ (aynı actor retry'ı birebir idempotent replay olur).
+     * HİÇBİR raw ref key'e girmez: caseKey/interview ':' içerebilir →
+     * delimiter-birleşimi collision üretebilirdi; canonical-JSON tuple'ının
+     * sha256'sı kullanılır (delimiter-shift yapısal olarak imkânsız).
      */
     static String exportRepairIntentKey(TenantId tenantId, InterviewId interviewId,
             String caseKey, ActorId actorId) {
-        return tenantId.value() + ":" + interviewId.value() + ":export-repair-intent:" + caseKey
-                + ":" + sha256Hex(actorId.value());
+        JsonValue tuple = JsonValue.object(Map.of(
+                "schema", JsonValue.of("export-repair-intent-key/v1"),
+                "tenant", JsonValue.of(tenantId.value()),
+                "interview", JsonValue.of(interviewId.value()),
+                "case_key", JsonValue.of(caseKey),
+                "actor_ref", JsonValue.of(actorId.value())));
+        return "export-repair-intent:v1:" + sha256Hex(PacketJson.canonical(tuple));
     }
 
     static String exportRequestDigest(TenantId tenantId, InterviewId interviewId, String caseKey,

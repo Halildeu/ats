@@ -502,6 +502,29 @@ class RestApiSecurityTest {
         assertEquals("no-store", bad.getHeaders().getFirst("Cache-Control"));
     }
 
+    @Test
+    void export_repair_pre_controller_error_paths_are_no_store_too() {
+        // Codex 39d-11 iter-1: 'no-store TÜM cevaplarda' iddiası converter-öncesi
+        // yollarda da kanıtlanmalı. Gövde-yok → required=false ile kendi INVALID
+        // kontratımız; bozuk JSON → converter 400'ü (Security default header'ları
+        // no-store içerir — assert ile PİNLENİR, varsayım değil).
+        HttpHeaders h = bearer(roleToken("ats.export.repair", "repair-op-1"));
+        h.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> noBody = rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, new HttpEntity<Void>(null, h), String.class);
+        assertEquals(400, noBody.getStatusCode().value());
+        assertTrue(String.valueOf(noBody.getHeaders().getFirst("Cache-Control")).contains("no-store"),
+                "gövde-yok cevabı no-store olmalı: " + noBody.getHeaders());
+        assertTrue(noBody.getBody() != null && noBody.getBody().contains("\"error\":\"INVALID\""));
+        ResponseEntity<String> malformed = rest.exchange("/api/v1/interviews/iv-1/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{bozuk-json", h), String.class);
+        assertEquals(400, malformed.getStatusCode().value());
+        assertTrue(malformed.getBody() != null && malformed.getBody().contains("geçerli JSON değil"),
+                "bozuk-JSON kendi deterministik kontratımıza düşmeli: " + malformed.getBody());
+        assertTrue(String.valueOf(malformed.getHeaders().getFirst("Cache-Control")).contains("no-store"),
+                "malformed-JSON cevabı no-store olmalı: " + malformed.getHeaders());
+    }
+
     // ---- 39d-9: export/artifact GET matcher (EXPORT_READ|EXPORT_WRITE; HEAD YOK) ----
 
     @Test

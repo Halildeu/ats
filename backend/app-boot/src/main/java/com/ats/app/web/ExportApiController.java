@@ -187,18 +187,29 @@ class ExportApiController {
                 .body(((Outcome.Ok<ExportArtifactContent>) out).value().packetJson());
     }
 
-    record RepairBody(String caseKey) {}
-
     /**
      * 39d-11 R4 repair yüzeyi — AYRI yetki (ats.export.repair; EXPORT_WRITE
      * YETMEZ — runbook onay-kapısı rol-atamasıyla). Yeni artifact üretmez;
-     * repairStatus: REPAIRED | ALREADY_EXPORTED. no-store TÜM cevaplarda.
+     * repairStatus: REPAIRED | ALREADY_EXPORTED. no-store TÜM cevaplarda —
+     * gövde raw-String alınıp BURADA parse edilir (Codex 39d-11 iter-1):
+     * gövde-yok/bozuk-JSON converter'a düşmeden kendi deterministik
+     * no-store'lu 400 INVALID kontratımızı alır (converter-yolu davranışı
+     * container/sıra-duyarlıydı — kontrat kendi elimizde).
      */
     @PostMapping("/api/v1/interviews/{interviewId}/export/repair")
     ResponseEntity<?> repairExport(Authentication auth,
             @PathVariable("interviewId") String interviewId,
-            @RequestBody RepairBody body) {
-        String caseKey = body == null ? null : body.caseKey();
+            @RequestBody(required = false) String rawBody) {
+        String caseKey = null;
+        if (rawBody != null && !rawBody.isBlank()) {
+            try {
+                com.fasterxml.jackson.databind.JsonNode node = REPAIR_BODY_READER.readTree(rawBody);
+                caseKey = node.path("caseKey").isTextual() ? node.path("caseKey").asText() : null;
+            } catch (com.fasterxml.jackson.core.JacksonException e) {
+                return noStore(ResponseEntity.badRequest()).body(Map.of("error", "INVALID",
+                        "reason", "gövde geçerli JSON değil"));
+            }
+        }
         if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
                 || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
             return noStore(ResponseEntity.badRequest()).body(Map.of("error", "INVALID",
@@ -220,6 +231,9 @@ class ExportApiController {
                 "claimCount", r.receipt().claimCount(),
                 "repairStatus", r.status().name()));
     }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper REPAIR_BODY_READER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
 
     private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder b) {
         return b.header("Cache-Control", "no-store").header("Pragma", "no-cache");

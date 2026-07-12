@@ -979,14 +979,162 @@ class ExportServiceTest {
     }
 
     @Test
-    void repair_intent_key_is_actor_bound_and_digest_encoded() {
-        String a = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:a/x"));
-        String b = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:b"));
-        String a2 = ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:a/x"));
-        assertEquals(a, a2, "aynı actor deterministik aynı key");
-        assertFalse(a.equals(b), "farklı actor FARKLI intent key (takeover kilidi yok)");
-        assertFalse(a.contains("op:a/x"), "raw actor ref key'e GİRMEZ (tuple-collision)");
-        assertTrue(a.matches(".*:export-repair-intent:c-1:[0-9a-f]{64}$"));
+    void repair_intent_key_is_tuple_safe_actor_bound_canonical_hash() {
+        ActorId opA = new ActorId("op:a/x");
+        String a = ExportService.exportRepairIntentKey(T1, I1, "c-1", opA);
+        assertEquals(a, ExportService.exportRepairIntentKey(T1, I1, "c-1", opA),
+                "aynı tuple deterministik aynı key");
+        assertTrue(a.matches("^export-repair-intent:v1:[0-9a-f]{64}$"), a);
+        assertFalse(a.contains("op:a") || a.contains("c-1") || a.contains(I1.value()),
+                "HİÇBİR raw ref key'e girmez");
+        // boyut-farkları:
+        assertFalse(a.equals(ExportService.exportRepairIntentKey(T1, I1, "c-1", new ActorId("op:b"))));
+        assertFalse(a.equals(ExportService.exportRepairIntentKey(T1, I1, "c-2", opA)));
+        assertFalse(a.equals(ExportService.exportRepairIntentKey(T1, new InterviewId("i2"), "c-1", opA)));
+        assertFalse(a.equals(ExportService.exportRepairIntentKey(T2, I1, "c-1", opA)));
+        // delimiter-shift collision vektörü (eski ':'-birleşiminde AYNI string olurdu):
+        String v1 = ExportService.exportRepairIntentKey(T1,
+                new InterviewId("x"), "a:export-repair-intent:b", opA);
+        String v2 = ExportService.exportRepairIntentKey(T1,
+                new InterviewId("x:export-repair-intent:a"), "b", opA);
+        assertFalse(v1.equals(v2), "delimiter-shift yapısal olarak imkânsız olmalı");
+    }
+
+    /** PG idempotency semantiğinin repair-test aynası: aynı key + birebir içerik
+     *  → mevcut satır döner; farklı içerik → fail-closed conflict. */
+    private EvidenceLedger idempotentLedger() {
+        return new EvidenceLedger() {
+            @Override
+            public Outcome<LedgerEntry> append(EvidenceEvent e) {
+                for (LedgerEntry prior : ledger.entries) {
+                    if (prior.idempotencyKey().equals(e.idempotencyKey())
+                            && prior.tenantId().value().equals(e.tenantId().value())) {
+                        boolean identical = prior.eventType().equals(e.eventType())
+                                && prior.actorId().value().equals(e.actorId().value())
+                                && prior.interviewId().value().equals(e.interviewId().value())
+                                && prior.contentHash().equals(e.contentHash())
+                                && PacketJson.canonical(prior.payload())
+                                        .equals(PacketJson.canonical(e.payload()));
+                        return identical ? Outcome.ok(prior)
+                                : Outcome.fail(OutcomeCode.INVALID,
+                                        "idempotency conflict (test-mirror, fail-closed)");
+                    }
+                }
+                return ledger.append(e);
+            }
+
+            @Override
+            public Outcome<LedgerEntry> appendTombstoneEvent(TenantId t, ActorId a, InterviewId i,
+                    EvidenceId target, String reason) {
+                return ledger.appendTombstoneEvent(t, a, i, target, reason);
+            }
+
+            @Override
+            public Outcome<LedgerEntry> getById(TenantId t, EvidenceId id) {
+                return ledger.getById(t, id);
+            }
+
+            @Override
+            public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
+                return ledger.list(t, f);
+            }
+        };
+    }
+
+    /** İlk CAS çağrısı geçici hata; sonrakiler gerçek store'a delege. */
+    private ReviewCaseStore transientCasStore() {
+        return new ReviewCaseStore() {
+            int calls = 0;
+
+            @Override
+            public Outcome<String> put(ReviewCase c) { return reviewStore.put(c); }
+
+            @Override
+            public Outcome<ReviewCase> find(TenantId t, InterviewId i, String k) {
+                return reviewStore.find(t, i, k);
+            }
+
+            @Override
+            public Outcome<java.util.List<CaseSummary>> listByInterview(TenantId t, InterviewId i) {
+                return reviewStore.listByInterview(t, i);
+            }
+
+            @Override
+            public Outcome<Void> save(TenantId t, String k, ReviewCase rc) {
+                return reviewStore.save(t, k, rc);
+            }
+
+            @Override
+            public Outcome<ExportTransitionResult> markExportedIfFinalized(
+                    TenantId t, InterviewId i, String k, String ref) {
+                calls++;
+                if (calls == 1) {
+                    return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (transient test)");
+                }
+                return reviewStore.markExportedIfFinalized(t, i, k, ref);
+            }
+        };
+    }
+
+    private ExportService repairServiceWith(ReviewCaseStore casStore) {
+        HumanReviewService hr = new HumanReviewService(
+                new ConsentGate(consentStore, sink), casStore, ledger, sink);
+        return new ExportService(reviewStore, citationStore, artifactStore, hr,
+                idempotentLedger(), sink);
+    }
+
+    @Test
+    void repair_transient_cas_fail_then_same_actor_retry_is_idempotent() {
+        r4Fixture("{\"r4\":\"retry\"}");
+        ExportService svc = repairServiceWith(transientCasStore());
+        int worm = ledger.entries.size();
+        Outcome<ExportService.ExportRepairResult> first =
+                svc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T18:00:00Z");
+        assertTrue(first instanceof Outcome.Fail<ExportService.ExportRepairResult> f
+                && f.code() == OutcomeCode.NOT_CONFIGURED
+                && f.reason().contains("intent kayıtlı"), "body: " + first);
+        assertEquals(worm + 1, ledger.entries.size(), "intent yazıldı, CAS düştü");
+        assertEquals(ReviewState.FINALIZED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())));
+        // AYNI actor retry: intent idempotent-replay (satır ÇOĞALMAZ) + CAS tamamlanır
+        ExportService.ExportRepairResult second =
+                svc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T18:00:00Z")
+                        .asOptional().orElseThrow();
+        assertEquals(ExportService.RepairStatus.REPAIRED, second.status());
+        assertEquals(worm + 1, ledger.entries.size(), "aynı-actor retry intent ÇOĞALTMAZ");
+        assertEquals(ReviewState.EXPORTED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
+        assertEquals(1, sink.emitted().stream().filter(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())).count(),
+                "başarı sinyali TAM BİR kez");
+    }
+
+    @Test
+    void repair_takeover_by_second_actor_is_not_locked_by_first_actors_intent() {
+        String artKey = r4Fixture("{\"r4\":\"takeover\"}");
+        ExportService svc = repairServiceWith(transientCasStore());
+        ActorId actorB = new ActorId("repair-op-B");
+        // Actor A: intent-A yazılır, CAS düşer
+        assertFalse(svc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T18:00:00Z").isOk());
+        int wormAfterA = ledger.entries.size();
+        // Actor B devralır: FARKLI intent-key → conflict YOK; CAS tamamlanır
+        ExportService.ExportRepairResult b =
+                svc.repairExportTransition(T1, actorB, I1, caseKey, "2026-07-12T18:05:00Z")
+                        .asOptional().orElseThrow();
+        assertEquals(ExportService.RepairStatus.REPAIRED, b.status());
+        assertEquals(wormAfterA + 1, ledger.entries.size(), "actor-B kendi intent satırını yazar");
+        java.util.List<EvidenceLedger.LedgerEntry> intents = ledger.entries.stream()
+                .filter(e -> ExportService.REPAIR_INTENT_EVENT.equals(e.eventType())).toList();
+        assertEquals(2, intents.size(), "iki NİYET satırı (A + B); tek terminal geçiş");
+        assertFalse(intents.get(0).idempotencyKey().equals(intents.get(1).idempotencyKey()));
+        assertEquals(ReviewState.EXPORTED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())
+                        && actorB.value().equals(e.extras().get("actor_ref"))
+                        && artKey.equals(e.extras().get("target_ref"))));
     }
 
     @Test
@@ -1000,7 +1148,7 @@ class ExportServiceTest {
         assertEquals(wormBefore + 1, ledger.entries.size(), "kalıcı repair-INTENT satırı yazıldı");
         EvidenceLedger.LedgerEntry intent = ledger.entries.get(ledger.entries.size() - 1);
         assertEquals(ExportService.REPAIR_INTENT_EVENT, intent.eventType());
-        assertTrue(intent.idempotencyKey().contains(":export-repair-intent:"));
+        assertTrue(intent.idempotencyKey().matches("^export-repair-intent:v1:[0-9a-f]{64}$"));
         assertEquals(ReviewState.EXPORTED,
                 reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state());
         assertEquals(artKey,
