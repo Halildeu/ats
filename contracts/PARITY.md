@@ -45,6 +45,8 @@ EvidenceLedger'da `update`/`delete`/`overwrite`/`purge`/`replace`/`remove` (WORM
 | `LedgerEntry` | **flat** = EvidenceEvent alanları **+** evidenceId, sequence, previousHash, entryHash (TS `extends EvidenceEvent` ↔ Java düz record — nesting YOK) |
 | `LedgerListFilter` | interviewId?, eventType? (ikisi de **optional** — snapshot'ta `optional:true`, `nullable:false`) |
 | `list()` imzası | `(tenantId, filter?)` — TS opsiyonel filter ↔ Java nullable `LedgerListFilter` (interviewId + eventType) |
+| `ReportedModelIdentity` (gov1-1b) | reportedModelId, reportedModelVersion — **ikisi de nullable** (`nullable:true`; sağlayıcı raporlamadı → null). Provider-BEYANI zarf, kripto/attestation değil; enforcement gov1-1c'de. |
+| `TranscriptResult` / `CitationResult` | +`modelIdentity: ReportedModelIdentity` (**non-null zarf**; iç alanlar nullable). TS `string \| null` ↔ Java `String` (null = raporlanmadı). |
 
 > Codex WS-3 tespitiyle hizalandı: Java `list` eskiden yalnız `eventType` alıyordu (interviewId yoktu) + `LedgerEntry` nested'di → ikisi de TS-flat canonical'a çekildi.
 

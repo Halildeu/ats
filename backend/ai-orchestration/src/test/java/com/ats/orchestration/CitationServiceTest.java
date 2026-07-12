@@ -134,7 +134,7 @@ class CitationServiceTest {
     void happy_path_supported_with_resolvable_refs() {
         grant();
         CitationReceipt receipt = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0", "seg-2"), AIProvider.Entailment.SUPPORTED))).asOptional().orElseThrow();
+                CLAIM, List.of("seg-0", "seg-2"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()))).asOptional().orElseThrow();
         assertEquals(AIProvider.Entailment.SUPPORTED, receipt.entailment());
         assertEquals(2, receipt.resolvedRefCount());
         assertEquals(1, citationStore.size());
@@ -147,7 +147,7 @@ class CitationServiceTest {
     void fabricated_ref_rejected_with_taxonomy_event() {
         grant();
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0", "seg-7"), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of("seg-0", "seg-7"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk(), "stored segment'e çözülmeyen ref (uydurma kaynak) reddedilmeli");
         assertTrue(rejectedWith("fabricated_ref"));
         assertEquals(0, citationStore.size());
@@ -158,7 +158,7 @@ class CitationServiceTest {
     void supported_without_source_rejected() {
         grant();
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of(), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of(), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk(), "kaynaksız SUPPORTED sunulamaz (ATS-0004)");
         assertTrue(rejectedWith("unsupported_without_source"));
     }
@@ -167,7 +167,7 @@ class CitationServiceTest {
     void provider_claim_swap_rejected() {
         grant();
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                "Aday 10 yil yoneticilik yapti", List.of("seg-0"), AIProvider.Entailment.SUPPORTED)));
+                "Aday 10 yil yoneticilik yapti", List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk(), "sağlayıcı claim'i değiştiremez");
         assertTrue(rejectedWith("claim_mismatch"));
     }
@@ -176,7 +176,8 @@ class CitationServiceTest {
     void insufficient_recorded_honestly_not_upgraded() {
         grant();
         CitationReceipt receipt = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of(), AIProvider.Entailment.INSUFFICIENT))).asOptional().orElseThrow();
+                CLAIM, List.of(), AIProvider.Entailment.INSUFFICIENT,
+                AIProvider.ReportedModelIdentity.notReported()))).asOptional().orElseThrow();
         assertEquals(AIProvider.Entailment.INSUFFICIENT, receipt.entailment(), "belirsizlik yukarı yuvarlanmaz");
         assertEquals(0, receipt.resolvedRefCount());
         assertEquals(1, ledger.entries.size());
@@ -186,7 +187,8 @@ class CitationServiceTest {
     void not_supported_with_optional_resolvable_ref_ok() {
         grant();
         CitationReceipt receipt = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-1"), AIProvider.Entailment.NOT_SUPPORTED))).asOptional().orElseThrow();
+                CLAIM, List.of("seg-1"), AIProvider.Entailment.NOT_SUPPORTED,
+                AIProvider.ReportedModelIdentity.notReported()))).asOptional().orElseThrow();
         assertEquals(AIProvider.Entailment.NOT_SUPPORTED, receipt.entailment());
         assertEquals(1, receipt.resolvedRefCount());
     }
@@ -201,7 +203,7 @@ class CitationServiceTest {
                 List.of("seg-0/../seg-2"),
                 java.util.Arrays.asList((String) null))) {
             Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                    CLAIM, badRefs, AIProvider.Entailment.SUPPORTED)));
+                    CLAIM, badRefs, AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
             assertFalse(out.isOk(), "geçersiz ref şekli reddedilmeli: " + badRefs);
         }
         assertTrue(rejectedWith("invalid_refs"));
@@ -215,7 +217,7 @@ class CitationServiceTest {
         nullResult.next = Outcome.ok(null);
         assertFalse(cite(nullResult).isOk(), "Ok(null) fail-closed reddedilmeli");
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), null)));
+                CLAIM, List.of("seg-0"), null, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk(), "null entailment fail-closed reddedilmeli");
         assertTrue(rejectedWith("invalid_provider_result"));
     }
@@ -224,7 +226,7 @@ class CitationServiceTest {
     void consent_withdrawal_blocks_citation() {
         consentStore.put(new RecordingPermission(T1, I1, "subj-opaque", PermissionState.WITHDRAWN, "2026-07-02T00:00:00Z"));
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk(), "rıza geri çekildiyse citation üretimi de durmalı (ATS-0003)");
         assertEquals(0, citationStore.size());
         assertTrue(ledger.entries.isEmpty());
@@ -245,7 +247,7 @@ class CitationServiceTest {
     void unknown_transcript_and_cross_tenant_access_blocked() {
         grant();
         CitationService svc = service(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(svc.citeClaim(T1, A1, I1, "i1/tr-999", CLAIM, "2026-07-02T12:00:00Z").isOk());
         // cross-tenant: T2, T1'in transkript anahtarına yapısal olarak erişemez
         consentStore.put(new RecordingPermission(T2, I1, "subj-opaque", PermissionState.GRANTED, "2026-07-02T00:00:00Z"));
@@ -258,7 +260,7 @@ class CitationServiceTest {
     void blank_and_oversized_claim_rejected() {
         grant();
         AIProvider p = providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED));
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
         assertFalse(service(p).citeClaim(T1, A1, I1, transcriptKey, "   ", "2026-07-02T12:00:00Z").isOk());
         assertFalse(service(p).citeClaim(T1, A1, I1, transcriptKey, "x".repeat(501), "2026-07-02T12:00:00Z").isOk());
     }
@@ -267,7 +269,7 @@ class CitationServiceTest {
     void claim_text_and_claim_hash_never_enter_ledger_payload() {
         grant();
         cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertEquals(1, ledger.entries.size());
         var entry = ledger.entries.get(0);
         var keys = entry.payload().values().keySet();
@@ -300,7 +302,7 @@ class CitationServiceTest {
             }
         };
         CitationService svc = new CitationService(new ConsentGate(consentStore, sink),
-                providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)),
+                providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())),
                 transcriptStore, failingDelete, ledger, sink);
         Outcome<CitationReceipt> out = svc.citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
         assertFalse(out.isOk());
@@ -315,7 +317,7 @@ class CitationServiceTest {
         grant();
         ledger.failAppend = true;
         Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
-                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED)));
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
         assertFalse(out.isOk());
         assertEquals(0, citationStore.size(), "fail-closed telafi: kanıtsız citation kalmamalı");
         assertTrue(sink.emitted().stream().anyMatch(e ->

@@ -47,7 +47,8 @@ class TranscriptionServiceTest {
                     new TranscriptSegment("spk_a", 0, 900, "Merhaba, hoş geldiniz [gülüşme]"),
                     new TranscriptSegment("spk_b", 900, 2000, "(iç çeker) Teşekkür ederim, memnun oldum"),
                     new TranscriptSegment("spk_a", 2000, 2400, "[alkış]"),
-                    new TranscriptSegment("spk_b", 2400, 3000, "Projeden bahsedeyim"))));
+                    new TranscriptSegment("spk_b", 2400, 3000, "Projeden bahsedeyim")),
+                    AIProvider.ReportedModelIdentity.notReported()));
         }
 
         @Override
@@ -174,7 +175,8 @@ class TranscriptionServiceTest {
         public Outcome<TranscriptResult> transcribe(String audioRef) {
             lastAudioRef = audioRef;
             return Outcome.ok(new TranscriptResult("tr", List.of(
-                    new TranscriptSegment("spk_a", 0, 900, "Merhaba"))));
+                    new TranscriptSegment("spk_a", 0, 900, "Merhaba")),
+                    AIProvider.ReportedModelIdentity.notReported()));
         }
         @Override
         public Outcome<CitationResult> cite(String claim, String transcriptRef) {
@@ -188,7 +190,8 @@ class TranscriptionServiceTest {
         public Outcome<AIProvider.TranscriptResult> transcribe(String audioRef) {
             calls++;
             return Outcome.ok(new AIProvider.TranscriptResult("tr", List.of(
-                    new AIProvider.TranscriptSegment("Konusmaci 1", 0, 100, "x"))));
+                    new AIProvider.TranscriptSegment("Konusmaci 1", 0, 100, "x")),
+                    AIProvider.ReportedModelIdentity.notReported()));
         }
         @Override
         public Outcome<AIProvider.CitationResult> cite(String claim, String transcriptRef) {
@@ -578,7 +581,8 @@ class TranscriptionServiceTest {
             return Outcome.ok(new TranscriptResult("TR-TR", List.of(
                     new TranscriptSegment("spk_a", 0, 900, "Tamamen farklı bir açılış cümlesi"),
                     new TranscriptSegment("spk_b", 900, 2000, "Ve tamamen farklı bir cevap"),
-                    new TranscriptSegment("spk_a", 2000, 2400, "Farklı kapanış cümlesi"))));
+                    new TranscriptSegment("spk_a", 2000, 2400, "Farklı kapanış cümlesi")),
+                    AIProvider.ReportedModelIdentity.notReported()));
         }
 
         @Override

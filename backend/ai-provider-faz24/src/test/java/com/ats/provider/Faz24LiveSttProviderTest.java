@@ -138,6 +138,11 @@ class Faz24LiveSttProviderTest {
         for (AIProvider.TranscriptSegment seg : result.segments()) {
             assertEquals(Faz24LiveSttProvider.UNDIARIZED_STREAM, seg.speaker());
         }
+        // gov1-1b: sağlayıcının RAPORLADIĞI model kimliği zarfa taşınır (HAPPY_BODY "model":"medium").
+        // Versiyon SUNULMAZ → null. Enforcement gov1-1c'de; burada yalnız envelope.
+        assertEquals("medium", result.modelIdentity().reportedModelId());
+        assertEquals(null, result.modelIdentity().reportedModelVersion(),
+                "live-stt model-versiyonu sunmaz → null");
         assertEquals(1, CALLS.get());
         assertEquals("language=tr", lastQuery);
         ParsedPart part = parseSinglePart(lastRequestBody, lastContentTypeHeader);
@@ -180,6 +185,29 @@ class Faz24LiveSttProviderTest {
         responseBody = "{\"language\":\"tr\",\"segments\":[]}";
         Outcome<AIProvider.TranscriptResult> out = provider(null, okSource()).transcribe("rec-1");
         assertEquals(0, ((Outcome.Ok<AIProvider.TranscriptResult>) out).value().segments().size());
+    }
+
+    // ---- gov1-1b: sağlayıcı-raporlu model kimliği zarfı (envelope-only; enforcement 1c) ----
+
+    @Test
+    void missing_model_field_yields_not_reported_identity() {
+        // "model" alanı yoksa → raporlanmadı (iki alan da null); transcript geçerli kalır
+        responseBody = "{\"language\":\"tr\",\"segments\":[]}";
+        AIProvider.TranscriptResult result = ((Outcome.Ok<AIProvider.TranscriptResult>)
+                provider(null, okSource()).transcribe("rec-1")).value();
+        assertEquals(null, result.modelIdentity().reportedModelId(), "model yoksa raporlanmadı → null");
+        assertEquals(null, result.modelIdentity().reportedModelVersion());
+    }
+
+    @Test
+    void malformed_model_value_reduced_to_null_transcript_survives() {
+        // present-ama-malformed (boşluk + '://' → allowlist-dışı) → GÜVENLİ temsil (null'a indir);
+        // iyi transcript FAIL edilMEZ (envelope-only) ve ham değer taşınmaz.
+        responseBody = "{\"language\":\"tr\",\"model\":\"bad model://x\",\"segments\":[]}";
+        Outcome<AIProvider.TranscriptResult> out = provider(null, okSource()).transcribe("rec-1");
+        assertInstanceOf(Outcome.Ok.class, out, "malformed model transcript'i düşürmemeli: " + out);
+        AIProvider.TranscriptResult result = ((Outcome.Ok<AIProvider.TranscriptResult>) out).value();
+        assertEquals(null, result.modelIdentity().reportedModelId(), "malformed reported model → null'a indirilmeli");
     }
 
     // ---- fail-closed cevap-map vakaları ----

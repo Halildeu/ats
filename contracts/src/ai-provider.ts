@@ -23,10 +23,25 @@ export interface TranscriptSegment {
   readonly text: string;
 }
 
+/**
+ * Sağlayıcının RAPORLADIĞI (untrusted) model kimliği — provider-BEYANI, kripto/
+ * attestation DEĞİL (ad bilinçli "ReportedModelIdentity", "Attestation" değil).
+ * gov1-1b: yalnız ZARF (envelope); enforcement (resolve/matchesReported/reject)
+ * gov1-1c'dedir. Her iki alan da wire'da {@code null} olabilir: sağlayıcı raporlamadıysa
+ * alan null → "raporlanmadı" açıkça temsil edilir. Nesnenin KENDİSİ (modelIdentity)
+ * sonuçlarda non-null'dır (zarf her zaman vardır).
+ */
+export interface ReportedModelIdentity {
+  readonly reportedModelId: string | null;
+  readonly reportedModelVersion: string | null;
+}
+
 export interface TranscriptResult {
   /** ISO 639-1, ör. "tr" (per-meeting language — ADR-0030 hattı). */
   readonly language: string;
   readonly segments: readonly TranscriptSegment[];
+  /** Sağlayıcı-raporlu model kimliği zarfı (gov1-1b; non-null nesne, alanlar nullable). */
+  readonly modelIdentity: ReportedModelIdentity;
 }
 
 /** Claim → kaynak alıntı entailment sonucu (fail-closed). */
@@ -36,6 +51,8 @@ export interface CitationResult {
   readonly sourceSegmentRefs: readonly string[];
   /** Üç-değerli entailment; belirsizse INSUFFICIENT (fail-closed). */
   readonly entailment: "SUPPORTED" | "NOT_SUPPORTED" | "INSUFFICIENT";
+  /** Sağlayıcı-raporlu model kimliği zarfı (gov1-1b; non-null nesne, alanlar nullable). */
+  readonly modelIdentity: ReportedModelIdentity;
 }
 
 export interface AIProvider {
