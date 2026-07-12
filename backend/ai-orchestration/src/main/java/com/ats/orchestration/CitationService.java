@@ -103,9 +103,13 @@ public final class CitationService {
         // sağlayıcıya HİÇ çıkılmaz (fail-closed).
         Outcome<ModelGovernanceGate.Permit> preflight = governanceGate.preflight(Capability.CITE);
         if (!(preflight instanceof Outcome.Ok<ModelGovernanceGate.Permit> permitOk)) {
-            return governanceDenied(tenantId, ((Outcome.Fail<ModelGovernanceGate.Permit>) preflight).reason());
+            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Permit>) preflight));
         }
         ModelGovernanceGate.Permit permit = permitOk.value();
+        if (permit == null) {
+            // Fail-closed: gate Ok verdi ama Permit null (sözleşme-ihlali) → sağlayıcıya HİÇ çıkma.
+            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        }
 
         Outcome<CitationResult> cited = provider.cite(canonicalClaim, transcriptKey);
         if (!(cited instanceof Outcome.Ok<CitationResult> citedOk) || citedOk.value() == null) {
@@ -120,10 +124,17 @@ public final class CitationService {
         // (citation-store/WORM'a GİRMEZ). ALLOW kararı = Decision.allowed() (isOk() tek başına YETMEZ).
         Outcome<ModelGovernanceGate.Decision> verified = governanceGate.verify(permit, result.modelIdentity());
         if (!(verified instanceof Outcome.Ok<ModelGovernanceGate.Decision> decisionOk)) {
-            return governanceDenied(tenantId, "governance_verify_unavailable");
+            // verify yalnız permit==null'da Fail döner (buraya ulaşılmaz) — yine de fail-closed
+            // KAPALI Reason ile (ham string değil).
+            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Decision>) verified));
         }
-        if (!decisionOk.value().allowed()) {
-            return governanceDenied(tenantId, decisionOk.value().reasonCode().name());
+        ModelGovernanceGate.Decision decision = decisionOk.value();
+        if (decision == null) {
+            // Fail-closed: gate Ok verdi ama Decision null (sözleşme-ihlali) → discard (store/WORM'a girmez).
+            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        }
+        if (!decision.allowed()) {
+            return governanceDenied(tenantId, decision.reasonCode());
         }
 
         if (result.entailment() == null) {
@@ -226,10 +237,32 @@ public final class CitationService {
      * reported-identity TAŞIMAZ) + fail-closed Outcome. WORM invocation-journal 1d'ye aittir —
      * burada yazılmaz. {@code reasonCode} = tipli {@link ModelGovernanceGate.Reason} token'ı.
      */
-    private Outcome<CitationReceipt> governanceDenied(TenantId tenantId, String reasonCode) {
+    private Outcome<CitationReceipt> governanceDenied(TenantId tenantId, ModelGovernanceGate.Reason reason) {
+        // reason_code = KAPALI enum adı (ham/serbest string ASLA); business code = reason.outcomeCode()
+        // (sürekli NOT_CONFIGURED değil — DENIED governance reddi 403'e, REGISTRY_UNAVAILABLE 503'e eşlenir).
         emit(tenantId, MODEL_GOVERNANCE_DENIED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
-                Map.of("reason_code", reasonCode));
-        return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "model-governance reddi (fail-closed)");
+                Map.of("reason_code", reason.name()));
+        return Outcome.fail(reason.outcomeCode(), "model-governance reddi (fail-closed)");
+    }
+
+    /**
+     * Gate'ten dönen serbest-string Fail token'ını KAPALI {@link ModelGovernanceGate.Reason}'a
+     * güvenli çevirir: bilinmeyen token VEYA OutcomeCode-tutarsız (bozuk/alternatif gate) →
+     * fail-closed {@link ModelGovernanceGate.Reason#REGISTRY_UNAVAILABLE}. Böylece OperationalEvent
+     * reason_code'una ham string (newline/secret/enjekte) ASLA girmez (kapalı enum invariant'ı).
+     */
+    private static ModelGovernanceGate.Reason safeGateReason(Outcome.Fail<?> fail) {
+        String token = fail.reason();
+        if (token == null) {
+            return ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        }
+        try {
+            ModelGovernanceGate.Reason reason = ModelGovernanceGate.Reason.valueOf(token);
+            return reason.outcomeCode() == fail.code()
+                    ? reason : ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        } catch (IllegalArgumentException e) {
+            return ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        }
     }
 
     private void emit(TenantId tenantId, String eventTypeId, String category, String severity,

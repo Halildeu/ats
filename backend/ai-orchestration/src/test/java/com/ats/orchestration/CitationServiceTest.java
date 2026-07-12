@@ -308,6 +308,68 @@ class CitationServiceTest {
                         && "MODEL_ID_MISMATCH".equals(e.extras().get("reason_code"))));
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Codex REVISE — fail-closed null-Ok guard'ları + typed-reason (kapalı)*/
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void governance_preflight_ok_but_null_permit_fails_closed_before_provider() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate nullPermit = FakeModelGovernanceGate.allowingNullPermit();
+        Outcome<CitationReceipt> out = service(provider, ledger, nullPermit)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "permit==null → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, citationStore.size(), "permit==null → citation store'a yazılmamalı");
+        assertEquals(0, nullPermit.verifyCalls, "permit==null → verify çağrılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "permit==null → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_verify_ok_but_null_decision_fails_closed_no_store() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate nullDecision = FakeModelGovernanceGate.allowingNullDecision();
+        Outcome<CitationReceipt> out = service(provider, ledger, nullDecision)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, provider.calls, "verify öncesi sağlayıcı çağrılır (sonra null-Decision discard)");
+        assertEquals(0, citationStore.size(), "verify Ok(null) → discard, store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "verify Ok(null) → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void malformed_gate_raw_reason_string_never_leaks_into_event_reason_code() {
+        grant();
+        // Bozuk/alternatif gate ham serbest-string (newline + secret) döndürürse reason_code'a SIZMAMALI;
+        // KAPALI enum fallback (REGISTRY_UNAVAILABLE) emit edilmeli.
+        String raw = "arbitrary\nsecret=sk-EVIL not-a-reason";
+        FakeModelGovernanceGate rawGate =
+                FakeModelGovernanceGate.denyingPreflightRaw(OutcomeCode.NOT_CONFIGURED, raw);
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        Outcome<CitationReceipt> out = service(provider, ledger, rawGate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight ham-deny → sağlayıcı çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))),
+                "ham token KAPALI enum fallback'e çevrilmeli");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                        e.extras().values().stream().anyMatch(v -> v.contains("secret") || v.contains("\n"))),
+                "ham string/secret hiçbir event alanına SIZMAMALI");
+    }
+
     @Test
     void unknown_transcript_and_cross_tenant_access_blocked() {
         grant();

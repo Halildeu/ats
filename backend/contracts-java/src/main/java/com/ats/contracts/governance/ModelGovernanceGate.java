@@ -39,10 +39,13 @@ public interface ModelGovernanceGate {
     Outcome<Permit> preflight(Capability capability);
 
     /**
-     * Sonuç-sonrası kapı: {@code permit}'in onayı YENİDEN çözülür (çağrı sırasında REVOKED olmuş
-     * olabilir — TOCTOU) ve sağlayıcının RAPORLADIĞI kimliği ({@code reported}) onaylı spec ile
-     * HARD-REQUIRED eşleşir. ALLOW → {@code Outcome.Ok(Decision.allow(...))}; DENY →
-     * {@code Outcome.Ok(Decision.deny(reason))} (fail-closed: çağıran {@link Decision#allowed()}
+     * Sonuç-sonrası kapı: {@code permit} önce deployment'ın configured binding'ine BAĞLANIR
+     * (forged/unbound permit reddi: {@link Reason#PERMIT_MISMATCH} — public {@code Permit} record'u
+     * herkes üretebilir, bu yüzden yeteneğe bağlı authoritative ref + resolved spec alanlarıyla
+     * EXACT eşleşme zorunludur; başka bir APPROVED model kabul EDİLMEZ), sonra onay YENİDEN çözülür
+     * (çağrı sırasında REVOKED olmuş olabilir — TOCTOU) ve sağlayıcının RAPORLADIĞI kimliği
+     * ({@code reported}) onaylı spec ile HARD-REQUIRED eşleşir. ALLOW → {@code Outcome.Ok(Decision.allow(...))};
+     * DENY → {@code Outcome.Ok(Decision.deny(reason))} (fail-closed: çağıran {@link Decision#allowed()}
      * KONTROL ETMELİ). {@code permit==null} → {@code Outcome.Fail(INVALID)}.
      */
     Outcome<Decision> verify(Permit permit, AIProvider.ReportedModelIdentity reported);
@@ -51,7 +54,7 @@ public interface ModelGovernanceGate {
      * KAPALI red-gerekçesi vokabüleri (serbest string YOK). Her değer bir kernel {@link OutcomeCode}
      * taşır (HTTP/observability haritalaması için). Kapı-adapter'ının ürettiği alt-küme:
      * {@code REGISTRY_UNAVAILABLE, APPROVAL_NOT_FOUND, APPROVAL_NOT_ACTIVE, CAPABILITY_MISMATCH,
-     * REPORTED_IDENTITY_MISSING, REPORTED_IDENTITY_MALFORMED, MODEL_ID_MISMATCH,
+     * PERMIT_MISMATCH, REPORTED_IDENTITY_MISSING, REPORTED_IDENTITY_MALFORMED, MODEL_ID_MISMATCH,
      * MODEL_VERSION_MISMATCH}. {@code PROVIDER_FAILED}/{@code AUDIT_UNAVAILABLE} paylaşımlı
      * vokabülerdir (orkestrasyon/1d yüzeyi); kapı bunları döndürmez.
      */
@@ -64,6 +67,15 @@ public interface ModelGovernanceGate {
         APPROVAL_NOT_ACTIVE(OutcomeCode.DENIED),
         /** Çözülen spec'in yeteneği istenen yetenekle uyuşmuyor (savunma-derinliği). */
         CAPABILITY_MISMATCH(OutcomeCode.DENIED),
+        /**
+         * Sunulan {@link Permit} deployment'ın configured binding'ine BAĞLANMIYOR (authorization):
+         * yeteneğe bağlı authoritative ref ile eşleşmeyen ref, VEYA ref eşleşse de resolved onaylı
+         * spec'in downstream alanlarıyla (provider/model/versiyon/endpoint/invocation-profile)
+         * uyuşmayan forged/tamperlanmış permit. Public {@code Permit} record'unun herhangi bir
+         * çağrıyı authorize etmesini engelleyen fail-closed kapı (audit-bütünlüğü: 1d WORM'a yalnız
+         * deployment-authoritative kimlik yazılır).
+         */
+        PERMIT_MISMATCH(OutcomeCode.DENIED),
         /** Sağlayıcı model kimliğini (id ve/veya versiyon) raporlamadı (absent → default-deny). */
         REPORTED_IDENTITY_MISSING(OutcomeCode.DENIED),
         /** Reported-kimlik zarfı yapısal olarak bozuk (ör. null zarf) — savunma-derinliği. */

@@ -2,6 +2,7 @@ package com.ats.governance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -300,6 +301,66 @@ class RegistryBackedModelGovernanceGateTest {
                 new FixedResolveRegistry(Outcome.ok(citeSpec)), Capability.TRANSCRIBE, transcribeSpec.approvalRef());
         assertVerifyDeny(gate.verify(permitFrom(transcribeSpec), reported("whisper-tr", "v0.1.0")),
                 Reason.CAPABILITY_MISMATCH);
+    }
+
+    // ---------------- verify: permit ↔ binding authorization (Codex REVISE blocker) ----------------
+
+    @Test
+    void verify_forged_permit_from_other_approved_ref_denies_permit_mismatch() {
+        // Binding TRANSCRIBE→A; registry'de A ve B (BAŞKA APPROVED TRANSCRIBE) var. Caller B'den
+        // forged permit üretir (ref=B, cap=TRANSCRIBE) + B'nin modelini raporlar. Authorization
+        // fix'i OLMADAN: resolve(B)=APPROVED + matchesReported → ALLOW (bypass). Fix'li: boundRef(A) != B
+        // → PERMIT_MISMATCH (deployment'ın seçtiği model A; başka APPROVED B kabul edilmez).
+        ApprovedModelSpec specA = transcribe("whisper-tr", "v0.1.0", ApprovalStatus.APPROVED, Set.of(), Set.of());
+        ApprovedModelSpec specB = transcribe("whisper-en", "v0.2.0", ApprovalStatus.APPROVED, Set.of(), Set.of());
+        assertNotEquals(specA.approvalRef(), specB.approvalRef(), "kurulum: A ve B farklı içerik-adresli ref");
+        ModelGovernanceGate gate = gate(
+                InMemoryApprovedModelRegistry.of(List.of(specA, specB)), Capability.TRANSCRIBE, specA.approvalRef());
+        assertVerifyDeny(gate.verify(permitFrom(specB), reported("whisper-en", "v0.2.0")), Reason.PERMIT_MISMATCH);
+    }
+
+    @Test
+    void verify_permit_with_correct_ref_but_tampered_downstream_field_denies_permit_mismatch() {
+        // Doğru ref (A) ama downstream metadata alanları AYRI AYRI tamperlanmış → hepsi PERMIT_MISMATCH.
+        // (matchesReported yalnız id/version bakar; provider/endpoint/profile sahtelemesini yalnız
+        // permit↔spec EXACT-match kapısı yakalar — 1d WORM audit-bütünlüğü.)
+        ApprovedModelSpec spec = approvedTranscribe(); // prov-a / whisper-tr / v0.1.0 / endpoint-a / ip-1
+        ModelApprovalRef ref = spec.approvalRef();
+        ModelGovernanceGate gate = gate(
+                InMemoryApprovedModelRegistry.of(List.of(spec)), Capability.TRANSCRIBE, ref);
+        List<Permit> tampered = List.of(
+                new Permit(Capability.TRANSCRIBE, ref, "prov-EVIL", "whisper-tr", "v0.1.0", EP, IP),
+                new Permit(Capability.TRANSCRIBE, ref, PROV, "whisper-EVIL", "v0.1.0", EP, IP),
+                new Permit(Capability.TRANSCRIBE, ref, PROV, "whisper-tr", "v9.9.9", EP, IP),
+                new Permit(Capability.TRANSCRIBE, ref, PROV, "whisper-tr", "v0.1.0", "endpoint-EVIL", IP),
+                new Permit(Capability.TRANSCRIBE, ref, PROV, "whisper-tr", "v0.1.0", EP, "ip-EVIL"));
+        for (Permit p : tampered) {
+            assertVerifyDeny(gate.verify(p, reported("whisper-tr", "v0.1.0")), Reason.PERMIT_MISMATCH);
+        }
+    }
+
+    @Test
+    void verify_no_binding_for_permit_capability_denies_approval_not_found() {
+        // Gate CITE için binding'li ama permit TRANSCRIBE der → o yeteneğe bağlı authoritative ref yok.
+        ApprovedModelSpec citeSpec = ApprovedModelSpec.of(Capability.CITE, PROV, "cite-m", "v1",
+                Set.of(), Set.of(), EP, IP, ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+        ApprovedModelSpec transcribeSpec = approvedTranscribe();
+        ModelGovernanceGate gate = gate(
+                InMemoryApprovedModelRegistry.of(List.of(citeSpec, transcribeSpec)), Capability.CITE, citeSpec.approvalRef());
+        assertVerifyDeny(gate.verify(permitFrom(transcribeSpec), reported("whisper-tr", "v0.1.0")),
+                Reason.APPROVAL_NOT_FOUND);
+    }
+
+    @Test
+    void preflight_then_verify_with_issued_permit_allows() {
+        // İSSUED (forged değil) permit binding + resolved spec'e tam bağlı → yeni kapılardan geçer, ALLOW.
+        ApprovedModelSpec spec = approvedTranscribe();
+        ModelGovernanceGate gate = gate(
+                InMemoryApprovedModelRegistry.of(List.of(spec)), Capability.TRANSCRIBE, spec.approvalRef());
+        Permit permit = okValue(gate.preflight(Capability.TRANSCRIBE));
+        Decision decision = okValue(gate.verify(permit, reported("whisper-tr", "v0.1.0")));
+        assertTrue(decision.allowed(), "issued permit authorization kapılarından geçmeli (normal ALLOW korunur)");
+        assertEquals(spec.approvalRef(), decision.approvalRef());
     }
 
     @Test
