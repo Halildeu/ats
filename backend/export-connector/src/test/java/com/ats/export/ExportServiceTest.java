@@ -466,4 +466,66 @@ class ExportServiceTest {
         assertFalse(service.exportReceipt(T1, HUMAN, I1, "  ").isOk());
         assertFalse(service.exportReceipt(T1, new ActorId(" "), I1, caseKey).isOk());
     }
+
+    @Test
+    void receipt_recovery_rejects_open_or_inreview_case_with_export_ledger_as_integrity_violation() {
+        // OPEN vaka + export-ledger satırı = bütünlük ihlali (R4 değil; fail-closed INVALID):
+        String openCase = humanReview.open(T1, I1, List.of(citationKey), "aiout-v2")
+                .asOptional().orElseThrow();
+        makeExportEntry(T1, I1, openCase, "6".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-o");
+        Outcome<ExportService.ExportReceiptRecovery> open =
+                service.exportReceipt(T1, HUMAN, I1, openCase);
+        assertTrue(open instanceof Outcome.Fail<ExportService.ExportReceiptRecovery> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("state"));
+        // IN_REVIEW:
+        humanReview.startReview(T1, I1, openCase, "human-opaque-1", "role-x").asOptional();
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, openCase).isOk());
+    }
+
+    @Test
+    void receipt_recovery_rejects_missing_or_mistyped_payload_fields() {
+        EvidenceLedger.LedgerEntry base = makeExportEntry(T1, I1, caseKey, "7".repeat(64), 1.0,
+                "2026-07-02T15:00:00Z", "ev-p");
+        // Payload'dan alan DÜŞÜREREK varyantlar (root aynı kalır — Map kopyalanıp key silinir):
+        java.util.function.BiFunction<String, JsonValue, EvidenceLedger.LedgerEntry> variant =
+                (dropKey, replaceWith) -> {
+                    java.util.Map<String, JsonValue> m =
+                            new java.util.HashMap<>(((JsonValue.JsonObject) base.payload()).values());
+                    if (replaceWith == null) m.remove(dropKey); else m.put(dropKey, replaceWith);
+                    return new EvidenceLedger.LedgerEntry(base.tenantId(), base.actorId(),
+                            base.interviewId(), base.eventType(), base.occurredAt(),
+                            base.idempotencyKey(), base.contentHash(), JsonValue.object(m),
+                            base.evidenceId(), base.sequence(), base.previousHash(), base.entryHash());
+                };
+        record Case(String name, String key, JsonValue value) {}
+        for (Case c : List.of(
+                new Case("artifact_ref eksik", "export_artifact_ref", null),
+                new Case("artifact_ref boş", "export_artifact_ref", JsonValue.of("  ")),
+                new Case("digest eksik", "packet_digest", null),
+                new Case("digest non-string", "packet_digest", new JsonValue.JsonNumber(1.0)),
+                new Case("claim_count eksik", "claim_count", null),
+                new Case("claim_count non-number", "claim_count", JsonValue.of("2")))) {
+            ledger.entries.clear();
+            ledger.entries.add(variant.apply(c.key(), c.value()));
+            assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), c.name());
+        }
+    }
+
+    @Test
+    void receipt_recovery_ledger_lookup_is_tenant_scoped_even_with_same_case_key() {
+        // T2'de AYNI caseKey'li vaka + T1'de geçerli export-satırı: T2 sorgusu T1
+        // satırını GÖREMEZ (deterministik key tenant'ı içerir + entry.tenant bağı).
+        consentStore.put(new RecordingPermission(T2, I1, "subj-2", PermissionState.GRANTED,
+                "2026-07-02T00:00:00Z"));
+        String cit2 = citationStore.put(new Citation(T2, I1, "i1/tr-1", CLAIM_TEXT,
+                List.of(0), Entailment.SUPPORTED)).asOptional().orElseThrow();
+        String sameKeyCase = humanReview.open(T2, I1, List.of(cit2), "aiout-v1")
+                .asOptional().orElseThrow();
+        makeExportEntry(T1, I1, sameKeyCase, "8".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-x1");
+        Outcome<ExportService.ExportReceiptRecovery> out =
+                service.exportReceipt(T2, HUMAN, I1, sameKeyCase);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportReceiptRecovery> f
+                && f.code() == OutcomeCode.NOT_FOUND && f.reason().contains("export ledger"),
+                "T2 sorgusu T1 satırına ULAŞAMAZ (ledger-yok NOT_FOUND)");
+    }
 }

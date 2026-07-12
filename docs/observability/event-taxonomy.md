@@ -77,7 +77,7 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **admin.config.changed** | admin | notice | id-only | actor_ref, reason_code | gate-locked |
 | **security.audit_log.read** | security | notice | id-only | actor_ref | gate-locked |
 | **security.audit_export.generated** | security | notice | id-only | actor_ref | gate-locked |
-| `security.audit_export.receipt_recovered` | security | notice | ID_ONLY | Ledger-bağlı export makbuzunun salt-okuma KURTARILMASI (39d-8 R2 recovery; domain side-effect yok — `actor_ref`, `case_ref`). |
+| **security.audit_export.receipt_recovered** | security | notice | id-only | actor_ref, target_ref | enforced (repo-test) |
 | **security.key.rotation.succeeded** | security | notice | none | reason_code | gate-locked |
 | **security.key.rotation.failed** | security | critical | none | reason_code | gate-locked |
 | **security.ratelimit.tripped** | security | warning | id-only | reason_code | gate-locked |

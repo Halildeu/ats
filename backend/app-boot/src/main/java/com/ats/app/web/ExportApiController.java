@@ -111,7 +111,7 @@ class ExportApiController {
         if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
                 || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID",
-                    "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512+ uzunluk reddedilir)"));
+                    "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512 karakterden uzun değer reddedilir)"));
         }
         Outcome<ExportReceiptRecovery> out = exportService.exportReceipt(
                 tenantAccess.tenant(auth), tenantAccess.actor(auth),

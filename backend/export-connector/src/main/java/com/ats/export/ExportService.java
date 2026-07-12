@@ -419,9 +419,19 @@ public final class ExportService {
             return Outcome.fail(OutcomeCode.INVALID, "ledger occurredAt ISO-8601 değil (operasyonel inceleme gerekir)");
         }
         ReviewState state = caseOk.value().state();
-        String transition = state == ReviewState.EXPORTED ? "COMPLETED" : "INCOMPLETE";
+        final String transition;
+        if (state == ReviewState.EXPORTED) {
+            transition = "COMPLETED";
+        } else if (state == ReviewState.FINALIZED) {
+            transition = "INCOMPLETE"; // R4: artifact+ledger var, markExported düşmüş
+        } else {
+            // OPEN/IN_REVIEW (+ gelecekteki state'ler) export-ledger'la BİRLİKTE var
+            // olamaz — bu sıradan R4 değil state/ledger bütünlük ihlalidir (fail-closed).
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "export ledger kaydı vaka state'iyle uyuşmuyor (yalnız FINALIZED/EXPORTED; operasyonel inceleme gerekir)");
+        }
         emit(tenantId, RECEIPT_RECOVERED_EVENT, "security", "notice", PiiClass.ID_ONLY,
-                Map.of("actor_ref", actorId.value(), "case_ref", caseKey));
+                Map.of("actor_ref", actorId.value(), "target_ref", caseKey));
         return Outcome.ok(new ExportReceiptRecovery(caseKey, state.name(), transition,
                 artifactKey, evidenceId, packetDigest, claimCount, recordedAt));
     }
