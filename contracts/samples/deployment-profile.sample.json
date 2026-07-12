@@ -1,0 +1,406 @@
+{
+  "schema_version": "deployment-profile/v1",
+  "activation_gate": "PRE_G0_CONTRACT_ONLY",
+  "profiles": [
+    {
+      "profile_id": "profile:managed:synthetic",
+      "topology": "MANAGED",
+      "synthetic": true,
+      "readiness_state": "NOT_CONFIGURED",
+      "controls": {
+        "control_plane_owner": "PLATFORM",
+        "data_plane_owner": "PLATFORM",
+        "isolation": "LOGICAL_TENANT",
+        "residency": "PLATFORM_APPROVED_REGION",
+        "egress": "ALLOWLIST_ONLY",
+        "identity": "PLATFORM_FEDERATED_OIDC_SAML",
+        "secrets": "PLATFORM_KMS_ROTATED",
+        "storage": "ENCRYPTED_LOGICAL_TENANT",
+        "ai_provider": "SELF_HOSTED_PRIMARY",
+        "support": "PLATFORM_OPERATED"
+      },
+      "release_evidence_manifest_ref": "release-evidence:synthetic:v1",
+      "release_evidence_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release_evidence_manifest_verified": false,
+      "recovery_objectives": {
+        "targets_defined": false,
+        "rollback_window_hours": 72,
+        "immutable_artifacts_required": true,
+        "signed_release_required": true,
+        "approval_required": true
+      },
+      "minimum_paid_partners": 0,
+      "paid_partner_count": 0,
+      "partner_evidence_verified": false,
+      "owner_accepted": false,
+      "production_eligible": false,
+      "release_allowed": false,
+      "gates": [
+        {
+          "kind": "SUPPLY_CHAIN",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "PROFILE_RENDER",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "IDENTITY",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "EGRESS",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "SECRET_ROTATION",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "BACKUP_RESTORE",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "UPGRADE_ROLLBACK",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "AUDIT_EXPORT",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        }
+      ]
+    },
+    {
+      "profile_id": "profile:dedicated:synthetic",
+      "topology": "DEDICATED",
+      "synthetic": true,
+      "readiness_state": "NOT_CONFIGURED",
+      "controls": {
+        "control_plane_owner": "PLATFORM",
+        "data_plane_owner": "PLATFORM",
+        "isolation": "DEDICATED_TENANT",
+        "residency": "CUSTOMER_SELECTED_REGION",
+        "egress": "DENY_BY_DEFAULT",
+        "identity": "CUSTOMER_FEDERATED_OIDC_SAML",
+        "secrets": "PLATFORM_KMS_ROTATED",
+        "storage": "ENCRYPTED_DEDICATED",
+        "ai_provider": "SELF_HOSTED_PRIMARY",
+        "support": "PLATFORM_OPERATED"
+      },
+      "release_evidence_manifest_ref": "release-evidence:synthetic:v1",
+      "release_evidence_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release_evidence_manifest_verified": false,
+      "recovery_objectives": {
+        "targets_defined": false,
+        "rollback_window_hours": 72,
+        "immutable_artifacts_required": true,
+        "signed_release_required": true,
+        "approval_required": true
+      },
+      "minimum_paid_partners": 1,
+      "paid_partner_count": 0,
+      "partner_evidence_verified": false,
+      "owner_accepted": false,
+      "production_eligible": false,
+      "release_allowed": false,
+      "gates": [
+        {
+          "kind": "SUPPLY_CHAIN",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "PROFILE_RENDER",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "IDENTITY",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "EGRESS",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "SECRET_ROTATION",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "BACKUP_RESTORE",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "UPGRADE_ROLLBACK",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "AUDIT_EXPORT",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        }
+      ]
+    },
+    {
+      "profile_id": "profile:byo-region:synthetic",
+      "topology": "BYO_REGION",
+      "synthetic": true,
+      "readiness_state": "NOT_CONFIGURED",
+      "controls": {
+        "control_plane_owner": "SHARED",
+        "data_plane_owner": "CUSTOMER",
+        "isolation": "DEDICATED_REGION",
+        "residency": "CUSTOMER_SELECTED_REGION",
+        "egress": "DENY_BY_DEFAULT",
+        "identity": "CUSTOMER_FEDERATED_OIDC_SAML",
+        "secrets": "CUSTOMER_KMS_BYOK",
+        "storage": "CUSTOMER_MANAGED_ENCRYPTED",
+        "ai_provider": "CUSTOMER_APPROVED_PROVIDER",
+        "support": "SHARED_RESPONSIBILITY"
+      },
+      "release_evidence_manifest_ref": "release-evidence:synthetic:v1",
+      "release_evidence_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release_evidence_manifest_verified": false,
+      "recovery_objectives": {
+        "targets_defined": false,
+        "rollback_window_hours": 72,
+        "immutable_artifacts_required": true,
+        "signed_release_required": true,
+        "approval_required": true
+      },
+      "minimum_paid_partners": 1,
+      "paid_partner_count": 0,
+      "partner_evidence_verified": false,
+      "owner_accepted": false,
+      "production_eligible": false,
+      "release_allowed": false,
+      "gates": [
+        {
+          "kind": "SUPPLY_CHAIN",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "PROFILE_RENDER",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "IDENTITY",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "EGRESS",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "SECRET_ROTATION",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "BACKUP_RESTORE",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "UPGRADE_ROLLBACK",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "AUDIT_EXPORT",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        }
+      ]
+    },
+    {
+      "profile_id": "profile:sovereign-on-prem:synthetic",
+      "topology": "SOVEREIGN_ON_PREM",
+      "synthetic": true,
+      "readiness_state": "NOT_CONFIGURED",
+      "controls": {
+        "control_plane_owner": "CUSTOMER",
+        "data_plane_owner": "CUSTOMER",
+        "isolation": "CUSTOMER_CONTROLLED_BOUNDARY",
+        "residency": "CUSTOMER_CONTROLLED_RESIDENCY",
+        "egress": "AIR_GAPPED_OR_CUSTOMER_ALLOWLIST",
+        "identity": "CUSTOMER_CONTROLLED_SSO_SCIM_METADATA",
+        "secrets": "CUSTOMER_MANAGED_OFFLINE_KEYS",
+        "storage": "CUSTOMER_MANAGED_ENCRYPTED",
+        "ai_provider": "OFFLINE_SELF_HOSTED_ONLY",
+        "support": "CUSTOMER_OPERATED_SIGNED_BUNDLE"
+      },
+      "release_evidence_manifest_ref": "release-evidence:synthetic:v1",
+      "release_evidence_manifest_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "release_evidence_manifest_verified": false,
+      "recovery_objectives": {
+        "targets_defined": false,
+        "rollback_window_hours": 72,
+        "immutable_artifacts_required": true,
+        "signed_release_required": true,
+        "approval_required": true
+      },
+      "minimum_paid_partners": 2,
+      "paid_partner_count": 0,
+      "partner_evidence_verified": false,
+      "owner_accepted": false,
+      "production_eligible": false,
+      "release_allowed": false,
+      "gates": [
+        {
+          "kind": "SUPPLY_CHAIN",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "PROFILE_RENDER",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "IDENTITY",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": false,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "EGRESS",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "SECRET_ROTATION",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "BACKUP_RESTORE",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "UPGRADE_ROLLBACK",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        },
+        {
+          "kind": "AUDIT_EXPORT",
+          "status": "NOT_CONFIGURED",
+          "evidence_verified": false,
+          "drill_required": true,
+          "drill_passed": false,
+          "owner_accepted": false
+        }
+      ]
+    }
+  ]
+}

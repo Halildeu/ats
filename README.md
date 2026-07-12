@@ -33,6 +33,8 @@ Platform iç paketlerine **kod bağımlılığı YASAK**; reuse yalnız yayınla
 
 P4 land-and-expand kontratı bu dört interface'i büyütmez: [`integration-platform/v1`](./docs/integrations/integration-platform-v1.md) ayrı versioned wire registry/envelope katmanıdır; gerçek connector aktivasyonu G0/P3/partner sandbox acceptance olmadan kapalıdır.
 
+P5 sovereign packaging kontratı [`deployment-profile/v1`](./docs/integrations/deployment-profile-v1.md) ile managed/dedicated/BYO-region/on-prem kabul zincirlerini ayırır; gerçek cluster, partner veya release kanıtı olmadan tüm profiller fail-closed kalır.
+
 ## Geliştirme (contracts)
 
 ```bash
@@ -45,4 +47,3 @@ bash ../scripts/check-boundary.sh
 ```
 
 **Contract shape parity (machine-enforced):** TS↔Java tip/DTO/enum drift'i artık testle yakalanır (`contracts/PARITY.md`): `tools/extract-surface.ts` TS kaynağından token-projeksiyonu üretir; `surface-parity.contract.test.ts` (TS) + `SurfaceParityTest.java` (Java reflection) aynı `contract-surface.tokens.txt`'e karşı doğrular.
-

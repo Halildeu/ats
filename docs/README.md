@@ -36,6 +36,7 @@
 ## Entegrasyon (public, living)
 - [integrations/connector-capability-standard.md](./integrations/connector-capability-standard.md) — ATS connector yetenek registry'si: export baseline + dar write-back (aday/karar yazımı YASAK; drift-guard `connector-capability-guard`).
 - [integrations/integration-platform-v1.md](./integrations/integration-platform-v1.md) — P4 ATS/HRIS/calendar-email/SSO-SCIM/portability capability matrisi + sentetik envelope/idempotency/replay/ownership kontratı (runtime gate-locked; drift-guard `integration-platform-guard`).
+- [integrations/deployment-profile-v1.md](./integrations/deployment-profile-v1.md) — P5 managed/dedicated/BYO-region/on-prem responsibility ve readiness zinciri; release-evidence ref-only, restore/rollback/rotation/egress/audit drill gate'leri (runtime ve partner acceptance gate-locked; drift-guard `deployment-profile-guard`).
 
 ## Ürün akışı (public, living)
 - [product/interview-evidence-flow.md](./product/interview-evidence-flow.md) — uçtan-uca buyer-readable akış (disclosure→consent→record→AI-suggest→human-review→finalize→export/ATS→withdraw/DSAR); per-step backing+forbidden+p1-residual (drift-guard `product-flow-guard`). Akış sözleşmesi; runtime P1.
