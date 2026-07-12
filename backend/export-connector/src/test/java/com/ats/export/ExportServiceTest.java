@@ -726,6 +726,58 @@ class ExportServiceTest {
         assertFalse(service.exportArtifact(T1, new ActorId(" "), I1, caseKey).isOk());
     }
 
+    // ---- 39d-12 packet human_actor_ref hash-mapping (canlı KC-UUID bulgusu) ----
+
+    @Test
+    void packet_human_actor_ref_is_versioned_full_hash_and_raw_sub_never_leaks() {
+        assertTrue(ExportService.packetHumanActorRef("8f3e-uuid-rakam-basli")
+                .matches("^actor\\.v1\\.[0-9a-f]{64}$"));
+        assertEquals(ExportService.packetHumanActorRef("ayni-actor"),
+                ExportService.packetHumanActorRef("ayni-actor"));
+        assertFalse(ExportService.packetHumanActorRef("a").equals(ExportService.packetHumanActorRef("b")));
+        // harf-başlı da HER ZAMAN hash'lenir (koşullu-mapping collision'ı yok):
+        assertTrue(ExportService.packetHumanActorRef("human-opaque-1").startsWith("actor.v1."));
+
+        ExportReceipt receipt = export().asOptional().orElseThrow();
+        String packet = artifactStore.find(T1, I1, receipt.artifactKey()).asOptional().orElseThrow();
+        assertFalse(packet.contains("human-opaque-1"), "RAW actor sub packet'e SIZMAZ");
+        assertTrue(packet.contains(ExportService.packetHumanActorRef("human-opaque-1")),
+                "packet hash'li actor ref taşır");
+    }
+
+    @Test
+    void export_succeeds_for_digit_leading_uuid_actor_and_other_bad_refs_stay_fail_closed() {
+        // rakam-başlı UUID actor (canlı KC senaryosu) ile TAM zincir:
+        ActorId uuidActor = new ActorId("8f3e0c2a-1111-2222-3333-444455556666");
+        String cit = citationStore.put(new Citation(T1, I1, "i1/tr-1", CLAIM_TEXT,
+                List.of(0), Entailment.SUPPORTED)).asOptional().orElseThrow();
+        String ck = humanReview.open(T1, I1, List.of(cit), "aiout-v1").asOptional().orElseThrow();
+        humanReview.startReview(T1, I1, ck, uuidActor.value(), "role-1").asOptional();
+        humanReview.recordEdit(T1, uuidActor, I1, ck, "cs").asOptional();
+        humanReview.recordRationale(T1, uuidActor, I1, ck, "rat").asOptional();
+        assertTrue(humanReview.finalizeDecision(T1, uuidActor, I1, ck, "karar-x", "2026-07-12T20:00:00Z").isOk());
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-1"), "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(cit, "c-comm"), List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        Outcome<ExportService.ExportPacketResult> out =
+                service.exportPacket(T1, uuidActor, I1, ck, List.of(cit), c, "2026-07-12T20:01:00Z");
+        assertTrue(out.isOk(), "UUID-actor export artık GEÇER: " + out);
+        // diğer bozuk ref alanları fail-closed KALIR (örn. rakam-başlı oversight rolü):
+        String ck2 = humanReview.open(T1, I1, List.of(cit), "aiout-v1").asOptional().orElseThrow();
+        humanReview.startReview(T1, I1, ck2, uuidActor.value(), "9-rakam-basli-rol").asOptional();
+        humanReview.recordEdit(T1, uuidActor, I1, ck2, "cs").asOptional();
+        humanReview.recordRationale(T1, uuidActor, I1, ck2, "rat").asOptional();
+        assertTrue(humanReview.finalizeDecision(T1, uuidActor, I1, ck2, "karar-y", "2026-07-12T20:02:00Z").isOk());
+        Outcome<ExportService.ExportPacketResult> bad =
+                service.exportPacket(T1, uuidActor, I1, ck2, List.of(cit), c, "2026-07-12T20:03:00Z");
+        assertTrue(bad instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.reason().contains("oversight_role_ref"),
+                "operatör-girdisi alanlar auto-map EDİLMEZ: " + bad);
+    }
+
     // ---- 39d-10 idempotent-replay (Codex plan-REVISE matrisi) ----
 
     private ExportContext ctxWithSignature(String sig) {

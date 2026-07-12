@@ -77,6 +77,19 @@ public final class ExportService {
     }
 
     /**
+     * 39d-12 (Codex — canlı smoke bulgusu): packet'teki human_actor_ref HER ZAMAN
+     * versioned tam-SHA256 mapping'dir: actor.v1.<sha256(raw)>. Gerekçe: canlı KC
+     * sub'ı UUID (rakam-başlı) → REF_PATTERN ilk-karakter-harf şartını düşürüyordu;
+     * koşullu "u."-prefix collision üretir (u.X vs X). Ham JWT sub packet'e
+     * TAŞINMAZ; izlenebilirlik bilinen sub'ın yeniden hash'lenmesiyle korunur.
+     * Vaka/ledger'daki RAW actor ref DEĞİŞMEZ (yalnız packet-içi temsil).
+     * Alan-özel helper — başka ref alanlarına YAYILMAZ (onlar fail-closed kalır).
+     */
+    static String packetHumanActorRef(String rawActorRef) {
+        return "actor.v1." + sha256Hex(rawActorRef);
+    }
+
+    /**
      * Schema entailment enum eşlemesi (Codex iter-2 blocker): supported | unsupported.
      * INSUFFICIENT schema'da YOK ve denetim paketine belirsiz iddia GİRMEZ (fail-closed reject;
      * partially_supported'a otomatik map semantik olarak yanlış olurdu) — çağıran ya claim'i
@@ -290,7 +303,7 @@ public final class ExportService {
         refFields.put("retention_policy_ref", ctx.retentionPolicyRef());
         refFields.put("signature_ref", ctx.signatureRef());
         refFields.put("model_version_ref", reviewCase.aiOutputVersionRef());
-        refFields.put("human_actor_ref", reviewCase.humanActorRef());
+        refFields.put("human_actor_ref", packetHumanActorRef(reviewCase.humanActorRef()));
         refFields.put("oversight_role_ref", reviewCase.oversightRoleRef());
         refFields.put("human_authored_rationale_ref", reviewCase.humanAuthoredRationaleRef());
         refFields.put("decision_outcome_ref", reviewCase.decisionOutcomeRef());
@@ -465,7 +478,7 @@ public final class ExportService {
         m.put("claims", new JsonValue.JsonArray(claims));
         m.put("unsupported_claim_policy", JsonValue.of(UNSUPPORTED_CLAIM_POLICY));
         m.put("human_decision", JsonValue.object(Map.of(
-                "human_actor_ref", JsonValue.of(reviewCase.humanActorRef()),
+                "human_actor_ref", JsonValue.of(packetHumanActorRef(reviewCase.humanActorRef())),
                 "oversight_role_ref", JsonValue.of(reviewCase.oversightRoleRef()),
                 "human_authored_rationale_ref", JsonValue.of(reviewCase.humanAuthoredRationaleRef()),
                 "source_evidence_refs", new JsonValue.JsonArray(evidenceRefs),
