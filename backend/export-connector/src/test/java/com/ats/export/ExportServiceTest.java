@@ -1099,8 +1099,10 @@ class ExportServiceTest {
         assertTrue(sink.emitted().stream().noneMatch(e ->
                 ExportService.R4_REPAIRED_EVENT.equals(e.eventTypeId())));
         // AYNI actor retry: intent idempotent-replay (satır ÇOĞALMAZ) + CAS tamamlanır
+        // FARKLI timestamp: occurredAt idempotency-kimliğinin BİLİNÇLİ dışında
+        // (meşru retry zamanı yeniden damgalar) — replay yine tetiklenir.
         ExportService.ExportRepairResult second =
-                svc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T18:00:00Z")
+                svc.repairExportTransition(T1, HUMAN, I1, caseKey, "2026-07-12T18:09:00Z")
                         .asOptional().orElseThrow();
         assertEquals(ExportService.RepairStatus.REPAIRED, second.status());
         assertEquals(worm + 1, ledger.entries.size(), "aynı-actor retry intent ÇOĞALTMAZ");

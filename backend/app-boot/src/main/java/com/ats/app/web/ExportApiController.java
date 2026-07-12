@@ -196,9 +196,20 @@ class ExportApiController {
      * no-store'lu 400 INVALID kontratımızı alır (converter-yolu davranışı
      * container/sıra-duyarlıydı — kontrat kendi elimizde).
      */
+    record RepairBody(String caseKey) {}
+
+    @io.swagger.v3.oas.annotations.Operation(
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = "application/json",
+                            schema = @io.swagger.v3.oas.annotations.media.Schema(
+                                    implementation = RepairBody.class))))
     @PostMapping("/api/v1/interviews/{interviewId}/export/repair")
     ResponseEntity<?> repairExport(Authentication auth,
             @PathVariable("interviewId") String interviewId,
+            // Runtime raw-String + kendi parse (deterministik no-store 400);
+            // DIŞ kontrat OpenAPI-anotasyonuyla RepairBody olarak pinli.
             @RequestBody(required = false) String rawBody) {
         String caseKey = null;
         if (rawBody != null && !rawBody.isBlank()) {
