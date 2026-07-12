@@ -190,4 +190,25 @@ class SecurityConfigConverterTest {
                 "tenant", ATS_CLIENT);
         assertTrue(auth.isEmpty(), "normalize edilmemiş varyantlar exact kontrata göre deny");
     }
+
+    // ---- 39d-8: ats.export.read → EXPORT_READ (yeni salt-okuma yetkisi) ----
+
+    @Test
+    void export_read_scope_and_assigned_role_map_to_export_read_authority() {
+        var auth = SecurityConfig.deriveAuthorities(
+                jwt(Map.of("tenant", "t-1", "scope", "ats.export.read",
+                        "resource_access", roles("ats.export.read"))),
+                "tenant", ATS_CLIENT);
+        assertEquals(List.of("EXPORT_READ"), names(auth));
+    }
+
+    @Test
+    void export_read_scope_without_assigned_role_grants_nothing() {
+        // scope istenen-yarı; rol atanmadan authority ÜRETİLMEZ (self-escalation kapalı):
+        var auth = SecurityConfig.deriveAuthorities(
+                jwt(Map.of("tenant", "t-1", "scope", "ats.export.read",
+                        "resource_access", Map.of())),
+                "tenant", ATS_CLIENT);
+        assertTrue(auth.isEmpty());
+    }
 }
