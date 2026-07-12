@@ -5,7 +5,8 @@
   "type": "module",
   "description": "ATS-0001 stable-interface contracts (gate-safe; no P1 functional)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./integration-platform-v1": "./wire/integration-platform.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

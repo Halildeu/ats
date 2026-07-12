@@ -19,7 +19,7 @@ Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalış
 
 | Dizin | Amaç | Durum |
 |---|---|---|
-| `contracts/` | ATS-0001 stable-interface sözleşmeleri (TS kanonik) + reference stub + contract-test | ✅ scaffold |
+| `contracts/` | ATS-0001 stable-interface sözleşmeleri + gate-safe P4 Integration Platform wire contract + contract-test | 🟢 versioned contracts |
 | `backend/` | Spring/Java domain servisleri (P1 build aktif — ATS-0016; slice-1: consent-gated ingest) | 🟢 build |
 | `web/` | React MFE — gate-safe foundation (token/i18n/typed-contract; runtime gate-locked) | 🟡 foundation |
 | `ai/` | Python — Faz 24 motor entegrasyonu (provider, kopya değil) | 🔒 placeholder |
@@ -30,6 +30,8 @@ Regüle/mahremiyet-duyarlı kurumlar için, **mevcut ATS'in üstünde** çalış
 ## ATS-0001 boundary
 
 Platform iç paketlerine **kod bağımlılığı YASAK**; reuse yalnız yayınlanmış interface/imaj üzerinden (`scripts/check-boundary.sh` CI'da zorlar). 4 MVP sözleşmesi: `IdentityTenant`, `EvidenceLedger` (WORM append-only), `AIProvider` (Faz 24), `ATSConnector` (export + narrow write-back).
+
+P4 land-and-expand kontratı bu dört interface'i büyütmez: [`integration-platform/v1`](./docs/integrations/integration-platform-v1.md) ayrı versioned wire registry/envelope katmanıdır; gerçek connector aktivasyonu G0/P3/partner sandbox acceptance olmadan kapalıdır.
 
 ## Geliştirme (contracts)
 

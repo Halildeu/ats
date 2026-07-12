@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/integration-platform.schema.json",
+  "title": "ATS Integration Platform v1 Registry",
+  "description": "P4 contract-only capability registry. Runtime connector activation requires G0/P3/partner sandbox evidence; this schema never carries credentials or raw candidate PII.",
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._:/-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "operation": {
+      "enum": [
+        "pull_candidate_ref",
+        "pull_interview_ref",
+        "pull_role_ref",
+        "push_evidence_ref",
+        "pull_worker_ref",
+        "push_hire_handoff_ref",
+        "pull_availability_ref",
+        "propose_interview_slot",
+        "send_human_approved_invite",
+        "send_human_approved_notification",
+        "verify_sso_metadata",
+        "provision_human_approved_user",
+        "deprovision_human_approved_user",
+        "import_csv_ref",
+        "export_csv_ref",
+        "open_api_read",
+        "subscribe_signed_webhook",
+        "export_tenant_archive",
+        "request_tenant_erasure",
+        "publish_human_approved_job_ref"
+      ]
+    },
+    "data_class": {
+      "enum": [
+        "opaque_candidate_ref",
+        "interview_ref",
+        "role_ref",
+        "evidence_packet_ref",
+        "audit_link",
+        "worker_ref",
+        "availability_window",
+        "identity_admin_ref",
+        "dossier_metadata",
+        "job_ref",
+        "tenant_archive_ref"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "activation_gate",
+    "connectors",
+    "synthetic_envelopes"
+  ],
+  "properties": {
+    "schema_version": { "const": "integration-platform/v1" },
+    "activation_gate": { "const": "PRE_G0_CONTRACT_ONLY" },
+    "connectors": {
+      "type": "array",
+      "description": "Fixture parity requires six connectors: five required capability domains plus one optional DISTRIBUTION reference connector.",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "connector_id",
+          "domain",
+          "provider_ref",
+          "critical_path",
+          "direction",
+          "operations",
+          "auth_model",
+          "data_classes",
+          "verification_status",
+          "api_verified",
+          "mutation_policy",
+          "transfer_policy",
+          "reliability"
+        ],
+        "properties": {
+          "connector_id": { "$ref": "#/$defs/ref" },
+          "domain": {
+            "enum": [
+              "ATS",
+              "HRIS",
+              "CALENDAR_EMAIL",
+              "SSO_SCIM",
+              "PORTABILITY",
+              "DISTRIBUTION"
+            ]
+          },
+          "provider_ref": { "$ref": "#/$defs/ref" },
+          "critical_path": { "type": "boolean" },
+          "direction": { "enum": ["PULL", "PUSH", "BIDIRECTIONAL"] },
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/operation" }
+          },
+          "auth_model": {
+            "enum": [
+              "OAUTH2",
+              "OIDC_SAML_METADATA",
+              "SERVICE_ACCOUNT",
+              "SIGNED_WEBHOOK",
+              "NONE"
+            ]
+          },
+          "data_classes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/data_class" }
+          },
+          "verification_status": {
+            "enum": ["UNVERIFIED", "VERIFIED", "BLOCKED", "NOT_CONFIGURED"]
+          },
+          "api_verified": { "type": "boolean" },
+          "activation_evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sandbox_receipt_ref",
+              "contract_version",
+              "verified_at",
+              "verifier_ref"
+            ],
+            "properties": {
+              "sandbox_receipt_ref": { "$ref": "#/$defs/ref" },
+              "contract_version": { "$ref": "#/$defs/ref" },
+              "verified_at": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"
+              },
+              "verifier_ref": { "$ref": "#/$defs/ref" }
+            }
+          },
+          "mutation_policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "human_approval_required",
+              "idempotency_required",
+              "decision_impact",
+              "destructive_operations",
+              "batch_approval"
+            ],
+            "properties": {
+              "human_approval_required": { "const": true },
+              "idempotency_required": { "const": true },
+              "decision_impact": { "const": "NONE" },
+              "destructive_operations": { "const": "DISALLOWED" },
+              "batch_approval": { "const": "DISALLOWED" }
+            }
+          },
+          "transfer_policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "purpose",
+              "pii_mode",
+              "dsar_owner",
+              "retention_owner"
+            ],
+            "properties": {
+              "purpose": {
+                "enum": [
+                  "EVIDENCE_HANDOFF",
+                  "POST_HIRE_HANDOFF",
+                  "INTERVIEW_COORDINATION",
+                  "IDENTITY_ADMINISTRATION",
+                  "TENANT_PORTABILITY",
+                  "HUMAN_APPROVED_DISTRIBUTION"
+                ]
+              },
+              "pii_mode": { "const": "OPAQUE_REF_ONLY" },
+              "dsar_owner": {
+                "enum": ["ATS_PLATFORM", "SOURCE_SYSTEM", "SHARED_DOCUMENTED"]
+              },
+              "retention_owner": {
+                "enum": ["ATS_PLATFORM", "SOURCE_SYSTEM", "SHARED_DOCUMENTED"]
+              }
+            }
+          },
+          "reliability": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cursor_model",
+              "delivery",
+              "tenant_scoped_idempotency",
+              "webhook_signature_required",
+              "replay_window_seconds"
+            ],
+            "properties": {
+              "cursor_model": { "enum": ["NONE", "OPAQUE_CURSOR"] },
+              "delivery": { "enum": ["AT_LEAST_ONCE", "REQUEST_RESPONSE"] },
+              "tenant_scoped_idempotency": { "const": true },
+              "webhook_signature_required": { "type": "boolean" },
+              "replay_window_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 86400
+              }
+            }
+          }
+        }
+      }
+    },
+    "synthetic_envelopes": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "synthetic",
+          "event_id",
+          "tenant_ref",
+          "connector_id",
+          "operation",
+          "correlation_id",
+          "idempotency_key",
+          "payload_digest",
+          "occurred_at",
+          "data_classes"
+        ],
+        "properties": {
+          "schema_version": { "const": "integration-envelope/v1" },
+          "synthetic": { "const": true },
+          "event_id": { "$ref": "#/$defs/ref" },
+          "tenant_ref": { "$ref": "#/$defs/ref" },
+          "connector_id": { "$ref": "#/$defs/ref" },
+          "operation": { "$ref": "#/$defs/operation" },
+          "correlation_id": { "$ref": "#/$defs/ref" },
+          "idempotency_key": { "$ref": "#/$defs/ref" },
+          "payload_digest": { "$ref": "#/$defs/digest" },
+          "occurred_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"
+          },
+          "data_classes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/data_class" }
+          },
+          "cursor_ref": { "$ref": "#/$defs/ref" },
+          "human_approval_ref": { "$ref": "#/$defs/ref" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "schema_version": "integration-platform/v1",
+  "activation_gate": "PRE_G0_CONTRACT_ONLY",
+  "connectors": [
+    {
+      "connector_id": "generic-ats-v1",
+      "domain": "ATS",
+      "provider_ref": "generic-ats",
+      "critical_path": true,
+      "direction": "BIDIRECTIONAL",
+      "operations": [
+        "pull_candidate_ref",
+        "pull_interview_ref",
+        "pull_role_ref",
+        "push_evidence_ref"
+      ],
+      "auth_model": "OAUTH2",
+      "data_classes": [
+        "opaque_candidate_ref",
+        "interview_ref",
+        "role_ref",
+        "evidence_packet_ref",
+        "audit_link"
+      ],
+      "verification_status": "UNVERIFIED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "EVIDENCE_HANDOFF",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "SHARED_DOCUMENTED",
+        "retention_owner": "SHARED_DOCUMENTED"
+      },
+      "reliability": {
+        "cursor_model": "OPAQUE_CURSOR",
+        "delivery": "AT_LEAST_ONCE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": false,
+        "replay_window_seconds": 0
+      }
+    },
+    {
+      "connector_id": "generic-hris-v1",
+      "domain": "HRIS",
+      "provider_ref": "generic-hris",
+      "critical_path": true,
+      "direction": "BIDIRECTIONAL",
+      "operations": [
+        "pull_role_ref",
+        "pull_worker_ref",
+        "push_hire_handoff_ref"
+      ],
+      "auth_model": "OAUTH2",
+      "data_classes": ["role_ref", "worker_ref", "dossier_metadata"],
+      "verification_status": "BLOCKED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "POST_HIRE_HANDOFF",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "SHARED_DOCUMENTED",
+        "retention_owner": "SOURCE_SYSTEM"
+      },
+      "reliability": {
+        "cursor_model": "OPAQUE_CURSOR",
+        "delivery": "AT_LEAST_ONCE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": false,
+        "replay_window_seconds": 0
+      }
+    },
+    {
+      "connector_id": "m365-calendar-email-v1",
+      "domain": "CALENDAR_EMAIL",
+      "provider_ref": "microsoft365-calendar-email",
+      "critical_path": true,
+      "direction": "BIDIRECTIONAL",
+      "operations": [
+        "pull_availability_ref",
+        "propose_interview_slot",
+        "send_human_approved_invite",
+        "send_human_approved_notification"
+      ],
+      "auth_model": "OAUTH2",
+      "data_classes": ["interview_ref", "availability_window"],
+      "verification_status": "NOT_CONFIGURED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "INTERVIEW_COORDINATION",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "SHARED_DOCUMENTED",
+        "retention_owner": "ATS_PLATFORM"
+      },
+      "reliability": {
+        "cursor_model": "OPAQUE_CURSOR",
+        "delivery": "AT_LEAST_ONCE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": false,
+        "replay_window_seconds": 0
+      }
+    },
+    {
+      "connector_id": "generic-scim-v1",
+      "domain": "SSO_SCIM",
+      "provider_ref": "generic-scim",
+      "critical_path": true,
+      "direction": "BIDIRECTIONAL",
+      "operations": [
+        "verify_sso_metadata",
+        "provision_human_approved_user",
+        "deprovision_human_approved_user"
+      ],
+      "auth_model": "OIDC_SAML_METADATA",
+      "data_classes": ["identity_admin_ref"],
+      "verification_status": "NOT_CONFIGURED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "IDENTITY_ADMINISTRATION",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "SOURCE_SYSTEM",
+        "retention_owner": "SOURCE_SYSTEM"
+      },
+      "reliability": {
+        "cursor_model": "OPAQUE_CURSOR",
+        "delivery": "AT_LEAST_ONCE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": false,
+        "replay_window_seconds": 0
+      }
+    },
+    {
+      "connector_id": "open-portability-v1",
+      "domain": "PORTABILITY",
+      "provider_ref": "open-portability",
+      "critical_path": true,
+      "direction": "BIDIRECTIONAL",
+      "operations": [
+        "import_csv_ref",
+        "export_csv_ref",
+        "open_api_read",
+        "subscribe_signed_webhook",
+        "export_tenant_archive",
+        "request_tenant_erasure"
+      ],
+      "auth_model": "SIGNED_WEBHOOK",
+      "data_classes": [
+        "opaque_candidate_ref",
+        "interview_ref",
+        "role_ref",
+        "evidence_packet_ref",
+        "audit_link",
+        "tenant_archive_ref"
+      ],
+      "verification_status": "UNVERIFIED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "TENANT_PORTABILITY",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "ATS_PLATFORM",
+        "retention_owner": "ATS_PLATFORM"
+      },
+      "reliability": {
+        "cursor_model": "OPAQUE_CURSOR",
+        "delivery": "AT_LEAST_ONCE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": true,
+        "replay_window_seconds": 300
+      }
+    },
+    {
+      "connector_id": "kariyer-net-optional-v1",
+      "domain": "DISTRIBUTION",
+      "provider_ref": "kariyer-net-optional",
+      "critical_path": false,
+      "direction": "PUSH",
+      "operations": ["publish_human_approved_job_ref"],
+      "auth_model": "NONE",
+      "data_classes": ["job_ref"],
+      "verification_status": "NOT_CONFIGURED",
+      "api_verified": false,
+      "mutation_policy": {
+        "human_approval_required": true,
+        "idempotency_required": true,
+        "decision_impact": "NONE",
+        "destructive_operations": "DISALLOWED",
+        "batch_approval": "DISALLOWED"
+      },
+      "transfer_policy": {
+        "purpose": "HUMAN_APPROVED_DISTRIBUTION",
+        "pii_mode": "OPAQUE_REF_ONLY",
+        "dsar_owner": "SOURCE_SYSTEM",
+        "retention_owner": "SOURCE_SYSTEM"
+      },
+      "reliability": {
+        "cursor_model": "NONE",
+        "delivery": "REQUEST_RESPONSE",
+        "tenant_scoped_idempotency": true,
+        "webhook_signature_required": false,
+        "replay_window_seconds": 0
+      }
+    }
+  ],
+  "synthetic_envelopes": [
+    {
+      "schema_version": "integration-envelope/v1",
+      "synthetic": true,
+      "event_id": "evt.synthetic.ats.001",
+      "tenant_ref": "tenant.synthetic",
+      "connector_id": "generic-ats-v1",
+      "operation": "push_evidence_ref",
+      "correlation_id": "corr.synthetic.ats.001",
+      "idempotency_key": "tenant.synthetic:push-evidence:001",
+      "payload_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "occurred_at": "1970-01-01T00:00:00Z",
+      "data_classes": ["evidence_packet_ref", "audit_link"],
+      "cursor_ref": "cursor.synthetic.ats.001",
+      "human_approval_ref": "approval.synthetic.ats.001"
+    },
+    {
+      "schema_version": "integration-envelope/v1",
+      "synthetic": true,
+      "event_id": "evt.synthetic.webhook.001",
+      "tenant_ref": "tenant.synthetic",
+      "connector_id": "open-portability-v1",
+      "operation": "subscribe_signed_webhook",
+      "correlation_id": "corr.synthetic.webhook.001",
+      "idempotency_key": "tenant.synthetic:webhook-subscription:001",
+      "payload_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "occurred_at": "1970-01-01T00:00:00Z",
+      "data_classes": ["audit_link"],
+      "human_approval_ref": "approval.synthetic.webhook.001"
+    },
+    {
+      "schema_version": "integration-envelope/v1",
+      "synthetic": true,
+      "event_id": "evt.synthetic.scim.001",
+      "tenant_ref": "tenant.synthetic",
+      "connector_id": "generic-scim-v1",
+      "operation": "provision_human_approved_user",
+      "correlation_id": "corr.synthetic.scim.001",
+      "idempotency_key": "tenant.synthetic:scim-provision:001",
+      "payload_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "occurred_at": "1970-01-01T00:00:00Z",
+      "data_classes": ["identity_admin_ref"],
+      "human_approval_ref": "approval.synthetic.scim.001"
+    }
+  ]
+}
