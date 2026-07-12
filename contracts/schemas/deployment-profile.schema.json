@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/deployment-profile.schema.json",
+  "title": "ATS Deployment Profile v1",
+  "description": "Managed, dedicated, BYO-region and sovereign on-prem readiness orchestration. Supply-chain evidence remains authoritative in release-evidence/v1; this schema stores opaque references and independent topology acceptance state only.",
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(?::[a-z0-9-]+)+$",
+      "minLength": 3,
+      "maxLength": 200
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "readiness_state": {
+      "enum": [
+        "NOT_CONFIGURED",
+        "CONFIGURED",
+        "VERIFIED",
+        "DRILL_PASSED",
+        "OWNER_ACCEPTED"
+      ]
+    },
+    "gate_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_ref", "verifier_ref", "verified_at"],
+      "properties": {
+        "evidence_ref": { "$ref": "#/$defs/ref" },
+        "verifier_ref": { "$ref": "#/$defs/ref" },
+        "verified_at": { "$ref": "#/$defs/timestamp" },
+        "drill_evidence_ref": { "$ref": "#/$defs/ref" },
+        "measured_at": { "$ref": "#/$defs/timestamp" },
+        "observed_rpo_seconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "observed_rto_seconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "owner_acceptance_ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "status",
+        "evidence_verified",
+        "drill_required",
+        "drill_passed",
+        "owner_accepted"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "SUPPLY_CHAIN",
+            "PROFILE_RENDER",
+            "IDENTITY",
+            "EGRESS",
+            "SECRET_ROTATION",
+            "BACKUP_RESTORE",
+            "UPGRADE_ROLLBACK",
+            "AUDIT_EXPORT"
+          ]
+        },
+        "status": { "$ref": "#/$defs/readiness_state" },
+        "evidence_verified": { "type": "boolean" },
+        "drill_required": { "type": "boolean" },
+        "drill_passed": { "type": "boolean" },
+        "owner_accepted": { "type": "boolean" },
+        "evidence": { "$ref": "#/$defs/gate_evidence" }
+      }
+    },
+    "controls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_plane_owner",
+        "data_plane_owner",
+        "isolation",
+        "residency",
+        "egress",
+        "identity",
+        "secrets",
+        "storage",
+        "ai_provider",
+        "support"
+      ],
+      "properties": {
+        "control_plane_owner": { "enum": ["PLATFORM", "SHARED", "CUSTOMER"] },
+        "data_plane_owner": { "enum": ["PLATFORM", "SHARED", "CUSTOMER"] },
+        "isolation": {
+          "enum": [
+            "LOGICAL_TENANT",
+            "DEDICATED_TENANT",
+            "DEDICATED_REGION",
+            "CUSTOMER_CONTROLLED_BOUNDARY"
+          ]
+        },
+        "residency": {
+          "enum": [
+            "PLATFORM_APPROVED_REGION",
+            "CUSTOMER_SELECTED_REGION",
+            "CUSTOMER_CONTROLLED_RESIDENCY"
+          ]
+        },
+        "egress": {
+          "enum": [
+            "ALLOWLIST_ONLY",
+            "DENY_BY_DEFAULT",
+            "AIR_GAPPED_OR_CUSTOMER_ALLOWLIST"
+          ]
+        },
+        "identity": {
+          "enum": [
+            "PLATFORM_FEDERATED_OIDC_SAML",
+            "CUSTOMER_FEDERATED_OIDC_SAML",
+            "CUSTOMER_CONTROLLED_SSO_SCIM_METADATA"
+          ]
+        },
+        "secrets": {
+          "enum": [
+            "PLATFORM_KMS_ROTATED",
+            "CUSTOMER_KMS_BYOK",
+            "CUSTOMER_MANAGED_OFFLINE_KEYS"
+          ]
+        },
+        "storage": {
+          "enum": [
+            "ENCRYPTED_LOGICAL_TENANT",
+            "ENCRYPTED_DEDICATED",
+            "CUSTOMER_MANAGED_ENCRYPTED"
+          ]
+        },
+        "ai_provider": {
+          "enum": [
+            "SELF_HOSTED_PRIMARY",
+            "CUSTOMER_APPROVED_PROVIDER",
+            "OFFLINE_SELF_HOSTED_ONLY"
+          ]
+        },
+        "support": {
+          "enum": [
+            "PLATFORM_OPERATED",
+            "SHARED_RESPONSIBILITY",
+            "CUSTOMER_OPERATED_SIGNED_BUNDLE"
+          ]
+        }
+      }
+    },
+    "activation_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release_receipt_ref",
+        "partner_evidence_refs",
+        "owner_acceptance_ref",
+        "accepted_at"
+      ],
+      "properties": {
+        "release_receipt_ref": { "$ref": "#/$defs/ref" },
+        "partner_evidence_refs": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ref" }
+        },
+        "owner_acceptance_ref": { "$ref": "#/$defs/ref" },
+        "accepted_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "recovery_objectives": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targets_defined",
+        "rollback_window_hours",
+        "immutable_artifacts_required",
+        "signed_release_required",
+        "approval_required"
+      ],
+      "properties": {
+        "targets_defined": { "type": "boolean" },
+        "target_rpo_seconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "target_rto_seconds": { "type": "integer", "minimum": 0, "maximum": 31536000 },
+        "rollback_window_hours": { "type": "integer", "minimum": 72 },
+        "immutable_artifacts_required": { "const": true },
+        "signed_release_required": { "const": true },
+        "approval_required": { "const": true }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "topology",
+        "synthetic",
+        "readiness_state",
+        "controls",
+        "release_evidence_manifest_ref",
+        "release_evidence_manifest_digest",
+        "release_evidence_manifest_verified",
+        "recovery_objectives",
+        "minimum_paid_partners",
+        "paid_partner_count",
+        "partner_evidence_verified",
+        "owner_accepted",
+        "production_eligible",
+        "release_allowed",
+        "gates"
+      ],
+      "properties": {
+        "profile_id": { "$ref": "#/$defs/ref" },
+        "topology": {
+          "enum": ["MANAGED", "DEDICATED", "BYO_REGION", "SOVEREIGN_ON_PREM"]
+        },
+        "synthetic": { "type": "boolean" },
+        "readiness_state": { "$ref": "#/$defs/readiness_state" },
+        "controls": { "$ref": "#/$defs/controls" },
+        "release_evidence_manifest_ref": { "$ref": "#/$defs/ref" },
+        "release_evidence_manifest_digest": { "$ref": "#/$defs/digest" },
+        "release_evidence_manifest_verified": { "type": "boolean" },
+        "recovery_objectives": { "$ref": "#/$defs/recovery_objectives" },
+        "minimum_paid_partners": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "paid_partner_count": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "partner_evidence_verified": { "type": "boolean" },
+        "owner_accepted": { "type": "boolean" },
+        "production_eligible": { "type": "boolean" },
+        "release_allowed": { "type": "boolean" },
+        "gates": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/gate" }
+        },
+        "activation_evidence": { "$ref": "#/$defs/activation_evidence" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "activation_gate", "profiles"],
+  "properties": {
+    "schema_version": { "const": "deployment-profile/v1" },
+    "activation_gate": { "enum": ["PRE_G0_CONTRACT_ONLY", "G0_ACCEPTED_RUNTIME"] },
+    "profiles": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/profile" }
+    }
+  }
+}
