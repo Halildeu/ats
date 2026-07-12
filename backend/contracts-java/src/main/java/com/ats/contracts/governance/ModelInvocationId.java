@@ -21,11 +21,19 @@ public record ModelInvocationId(String value) {
             "mgi_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
 
     public ModelInvocationId {
-        if (value == null || !FORMAT.matcher(value).matches()) {
+        if (!isValid(value)) {
             // ham değeri mesaja koyma disiplini gereksiz (bu değer secret değil; ama biçim-beklentisi net).
             throw new IllegalArgumentException(
                     "ModelInvocationId biçimi geçersiz (beklenen mgi_<uuid-v4-küçük-hex>): " + value);
         }
+    }
+
+    /**
+     * Biçim-geçerli mi (nesne üretmeden). Projeksiyon bozuk {@code invocation_id} taşıyan governance
+     * satırını makine-tespit için kullanır (regex tek kaynak burada — vokabüler drift YOK).
+     */
+    public static boolean isValid(String value) {
+        return value != null && FORMAT.matcher(value).matches();
     }
 
     /** Yeni rastgele (UUID v4) invocation kimliği; {@code UUID.toString()} zaten küçük-hex. */

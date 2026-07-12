@@ -10,6 +10,7 @@ import com.ats.contracts.governance.ModelGovernanceGate.Permit;
 import com.ats.contracts.governance.ModelGovernanceGate.Reason;
 import com.ats.contracts.governance.ModelGovernanceJournal.Attested;
 import com.ats.contracts.governance.ModelGovernanceJournal.InvocationContext;
+import com.ats.contracts.governance.ModelGovernanceJournal.InvocationPreparationRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.JournalReceipt;
 import com.ats.contracts.governance.ModelGovernanceJournal.PreflightRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.ProviderRejected;
@@ -86,6 +87,13 @@ class ModelGovernanceJournalContractTest {
     void provider_rejected_reason_is_fixed_provider_failed() {
         assertEquals(Reason.PROVIDER_FAILED, new ProviderRejected(PERMIT).reason());
         assertThrows(IllegalArgumentException.class, () -> new ProviderRejected(null));
+    }
+
+    @Test
+    void invocation_preparation_rejected_reason_is_fixed_and_requires_permit() {
+        // Codex 1d blocker-1: post-authorized pre-provider terminal; reason değişmez, permit zorunlu.
+        assertEquals(Reason.INVOCATION_PREPARATION_FAILED, new InvocationPreparationRejected(PERMIT).reason());
+        assertThrows(IllegalArgumentException.class, () -> new InvocationPreparationRejected(null));
     }
 
     @Test

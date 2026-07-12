@@ -11,6 +11,7 @@ import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.contracts.governance.ModelGovernanceJournal.Attested;
 import com.ats.contracts.governance.ModelGovernanceJournal.InvocationContext;
+import com.ats.contracts.governance.ModelGovernanceJournal.InvocationPreparationRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.PreflightRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.ProviderRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.VerificationRejected;
@@ -152,9 +153,9 @@ public final class TranscriptionService {
             return preflightRejected(journalCtx, invocationId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
         }
 
-        // gov1-1d: çağrı-ÖNCESİ authorized WORM event'i. Append başarısızsa sağlayıcıya HİÇ çıkılmaz
-        // (fail-closed AUDIT_UNAVAILABLE) — ses-erişim grant'i bile verilmez.
-        if (!journal.recordAuthorized(journalCtx, invocationId, permit).isOk()) {
+        // gov1-1d: çağrı-ÖNCESİ authorized WORM event'i. Append başarısızsa (Fail VEYA makbuz-kanıtsız
+        // Ok(null)) sağlayıcıya HİÇ çıkılmaz (fail-closed AUDIT_UNAVAILABLE) — ses-erişim grant'i bile verilmez.
+        if (!journalReceiptOk(journal.recordAuthorized(journalCtx, invocationId, permit))) {
             return governanceDenied(tenantId, ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
         }
 
@@ -162,7 +163,15 @@ public final class TranscriptionService {
         // handle'ı gider (Codex slice-33 sınırı). Handle sırdır: log/WORM/hata
         // mesajına yazılmaz; WORM kaydında kaynak orijinal sourceObjectKey kalır.
         Outcome<String> issued = grants.issue(tenantId, sourceObjectKey);
-        if (!(issued instanceof Outcome.Ok<String> issuedOk)) {
+        if (!(issued instanceof Outcome.Ok<String> issuedOk) || issuedOk.value() == null) {
+            // authorized WORM YAZILDI ama provider HİÇ çağrılmadı → post-authorized pre-provider terminal.
+            // ProviderRejected KULLANMA (o COMPLETE_INVOKED iddiasıdır; provider çağrılmadı); grant'i de
+            // authorized ÖNCESİNE taşıma. Terminal append fail → AUDIT_UNAVAILABLE (journalTerminal).
+            Outcome<TranscriptionReceipt> audit = journalTerminal(journalCtx, invocationId,
+                    new InvocationPreparationRejected(permit));
+            if (audit != null) {
+                return audit;
+            }
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ses-erişim grant'i verilemedi (fail-closed)");
         }
         Outcome<TranscriptResult> transcribed = provider.transcribe(issuedOk.value());
@@ -430,10 +439,20 @@ public final class TranscriptionService {
      */
     private Outcome<TranscriptionReceipt> journalTerminal(
             InvocationContext ctx, ModelInvocationId id, ModelGovernanceJournal.Terminal terminal) {
-        if (journal.recordTerminal(ctx, id, terminal).isOk()) {
+        if (journalReceiptOk(journal.recordTerminal(ctx, id, terminal))) {
             return null;
         }
         return governanceDenied(ctx.tenantId(), ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
+    }
+
+    /**
+     * Journal append başarı-kapısı (fail-closed): yalnız {@code Outcome.Ok} VE non-null {@link
+     * ModelGovernanceJournal.JournalReceipt} başarıdır. Bozuk journal {@code Outcome.ok(null)} dönerse
+     * {@code isOk()} tek başına YANLIŞ-pozitif verirdi (authorized'da makbuz-kanıtsız provider'a çıkış,
+     * terminal'de terminal-kanıtsız business-store) — bu guard onu AUDIT_UNAVAILABLE'a çevirir.
+     */
+    private static boolean journalReceiptOk(Outcome<ModelGovernanceJournal.JournalReceipt> result) {
+        return result instanceof Outcome.Ok<ModelGovernanceJournal.JournalReceipt> ok && ok.value() != null;
     }
 
     /**

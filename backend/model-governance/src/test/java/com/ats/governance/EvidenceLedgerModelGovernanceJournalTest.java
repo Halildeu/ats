@@ -17,6 +17,7 @@ import com.ats.contracts.governance.ModelGovernanceGate.Reason;
 import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.contracts.governance.ModelGovernanceJournal.Attested;
 import com.ats.contracts.governance.ModelGovernanceJournal.InvocationContext;
+import com.ats.contracts.governance.ModelGovernanceJournal.InvocationPreparationRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.JournalReceipt;
 import com.ats.contracts.governance.ModelGovernanceJournal.PreflightRejected;
 import com.ats.contracts.governance.ModelGovernanceJournal.ProviderRejected;
@@ -85,6 +86,8 @@ class EvidenceLedgerModelGovernanceJournalTest {
     static final class CapturingLedger implements EvidenceLedger {
         final List<EvidenceEvent> appended = new ArrayList<>();
         boolean failAppend = false;
+        boolean okNullEntry = false;     // Outcome.ok(null) LedgerEntry (bozuk ledger)
+        boolean blankEvidenceId = false; // Outcome.ok(entry) ama blank evidenceId (bozuk ledger)
         private long seq = 0;
 
         @Override
@@ -94,9 +97,13 @@ class EvidenceLedgerModelGovernanceJournalTest {
             }
             appended.add(e);
             seq++;
+            if (okNullEntry) {
+                return Outcome.ok(null);
+            }
+            EvidenceId evId = blankEvidenceId ? new EvidenceId("  ") : new EvidenceId("ev-" + seq);
             return Outcome.ok(new LedgerEntry(e.tenantId(), e.actorId(), e.interviewId(), e.eventType(),
                     e.occurredAt(), e.idempotencyKey(), e.contentHash(), e.payload(),
-                    new EvidenceId("ev-" + seq), seq, "prev", "hash-" + seq));
+                    evId, seq, "prev", "hash-" + seq));
         }
 
         @Override
@@ -214,6 +221,39 @@ class EvidenceLedgerModelGovernanceJournalTest {
     }
 
     @Test
+    void invocation_preparation_rejected_writes_pre_provider_stage_null_observed() {
+        CapturingLedger ledger = new CapturingLedger();
+        Outcome<JournalReceipt> out = journal(ledger)
+                .recordTerminal(CTX, ID, new InvocationPreparationRejected(permitFrom(spec())));
+        assertInstanceOf(Outcome.Ok.class, out);
+        EvidenceLedger.EvidenceEvent ev = ledger.appended.get(0);
+        assertEquals(EvidenceLedgerModelGovernanceJournal.REJECTED_EVENT_TYPE, ev.eventType());
+        // pre-provider terminal de tek ":terminal" idempotency slot'unu paylaşır (invocation başına 1 terminal)
+        assertEquals(T.value() + ":" + I.value() + ":model-gov:" + ID.value() + ":terminal", ev.idempotencyKey());
+        JsonValue.JsonObject p = ev.payload();
+        assertEquals("pre_provider_rejected", str(p, "stage"));
+        assertEquals("INVOCATION_PREPARATION_FAILED", str(p, "reason_code"));
+        assertTrue(isJsonNull(p, "decision"), "provider çağrılmadı → decision null");
+        assertTrue(isJsonNull(p, "observed_model_id"));
+        assertTrue(isJsonNull(p, "observed_model_version"));
+        assertEquals("RESOLVED", str(p, "binding_state"));
+        // permit-taşıyan terminal → intended alanlar boot-snapshot'tan doldurulur
+        assertEquals("model-x", str(p, "intended_model_id"));
+    }
+
+    @Test
+    void invocation_preparation_rejected_permit_mismatch_fails_closed_without_worm() {
+        CapturingLedger ledger = new CapturingLedger();
+        ApprovedModelSpec s = spec();
+        Permit forged = new Permit(CAP, s.approvalRef(), "prov-x", "TAMPERED", "v1", "endpoint-x", "ip-1");
+        Outcome<JournalReceipt> out = journal(ledger)
+                .recordTerminal(CTX, ID, new InvocationPreparationRejected(forged));
+        assertInstanceOf(Outcome.Fail.class, out);
+        assertEquals(Reason.PERMIT_MISMATCH.name(), ((Outcome.Fail<JournalReceipt>) out).reason());
+        assertTrue(ledger.appended.isEmpty(), "uyuşmayan permit terminal WORM'a YAZILMAMALI (fail-closed)");
+    }
+
+    @Test
     void preflight_rejected_with_binding_fills_intended_from_snapshot() {
         CapturingLedger ledger = new CapturingLedger();
         Outcome<JournalReceipt> out = journal(ledger)
@@ -297,6 +337,26 @@ class EvidenceLedgerModelGovernanceJournalTest {
     void ledger_append_failure_returns_audit_unavailable() {
         CapturingLedger ledger = new CapturingLedger();
         ledger.failAppend = true;
+        Outcome<JournalReceipt> out = journal(ledger).recordAuthorized(CTX, ID, permitFrom(spec()));
+        assertInstanceOf(Outcome.Fail.class, out);
+        assertEquals(Reason.AUDIT_UNAVAILABLE.name(), ((Outcome.Fail<JournalReceipt>) out).reason());
+    }
+
+    @Test
+    void ledger_ok_null_entry_returns_audit_unavailable_not_npe() {
+        // Codex 1d blocker-2: ledger Ok(null) → JournalReceipt ctor'una NPE yerine fail-closed AUDIT_UNAVAILABLE.
+        CapturingLedger ledger = new CapturingLedger();
+        ledger.okNullEntry = true;
+        Outcome<JournalReceipt> out = journal(ledger).recordAuthorized(CTX, ID, permitFrom(spec()));
+        assertInstanceOf(Outcome.Fail.class, out);
+        assertEquals(Reason.AUDIT_UNAVAILABLE.name(), ((Outcome.Fail<JournalReceipt>) out).reason());
+    }
+
+    @Test
+    void ledger_ok_blank_evidence_id_returns_audit_unavailable_not_npe() {
+        // Codex 1d blocker-2: null/blank evidenceId → makbuz pointer üretilemez → fail-closed AUDIT_UNAVAILABLE.
+        CapturingLedger ledger = new CapturingLedger();
+        ledger.blankEvidenceId = true;
         Outcome<JournalReceipt> out = journal(ledger).recordAuthorized(CTX, ID, permitFrom(spec()));
         assertInstanceOf(Outcome.Fail.class, out);
         assertEquals(Reason.AUDIT_UNAVAILABLE.name(), ((Outcome.Fail<JournalReceipt>) out).reason());

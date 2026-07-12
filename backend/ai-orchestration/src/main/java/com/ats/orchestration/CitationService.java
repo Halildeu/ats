@@ -128,9 +128,9 @@ public final class CitationService {
             return preflightRejected(journalCtx, invocationId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
         }
 
-        // gov1-1d: çağrı-ÖNCESİ authorized WORM event'i. Append başarısızsa sağlayıcıya HİÇ çıkılmaz
-        // (fail-closed AUDIT_UNAVAILABLE).
-        if (!journal.recordAuthorized(journalCtx, invocationId, permit).isOk()) {
+        // gov1-1d: çağrı-ÖNCESİ authorized WORM event'i. Append başarısızsa (Fail VEYA makbuz-kanıtsız
+        // Ok(null)) sağlayıcıya HİÇ çıkılmaz (fail-closed AUDIT_UNAVAILABLE).
+        if (!journalReceiptOk(journal.recordAuthorized(journalCtx, invocationId, permit))) {
             return governanceDenied(tenantId, ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
         }
 
@@ -315,10 +315,20 @@ public final class CitationService {
      */
     private Outcome<CitationReceipt> journalTerminal(
             InvocationContext ctx, ModelInvocationId id, ModelGovernanceJournal.Terminal terminal) {
-        if (journal.recordTerminal(ctx, id, terminal).isOk()) {
+        if (journalReceiptOk(journal.recordTerminal(ctx, id, terminal))) {
             return null;
         }
         return governanceDenied(ctx.tenantId(), ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
+    }
+
+    /**
+     * Journal append başarı-kapısı (fail-closed): yalnız {@code Outcome.Ok} VE non-null {@link
+     * ModelGovernanceJournal.JournalReceipt} başarıdır. Bozuk journal {@code Outcome.ok(null)} dönerse
+     * {@code isOk()} tek başına YANLIŞ-pozitif verirdi (authorized'da makbuz-kanıtsız provider'a çıkış,
+     * terminal'de terminal-kanıtsız business-store) — bu guard onu AUDIT_UNAVAILABLE'a çevirir.
+     */
+    private static boolean journalReceiptOk(Outcome<ModelGovernanceJournal.JournalReceipt> result) {
+        return result instanceof Outcome.Ok<ModelGovernanceJournal.JournalReceipt> ok && ok.value() != null;
     }
 
     /**

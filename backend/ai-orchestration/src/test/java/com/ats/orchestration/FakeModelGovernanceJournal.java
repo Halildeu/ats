@@ -25,6 +25,8 @@ final class FakeModelGovernanceJournal implements ModelGovernanceJournal {
     boolean failAuthorized = false;
     boolean failTerminal = false;                       // TÜM terminal append'leri düşür
     Class<? extends Terminal> failTerminalType = null;  // yalnız bu terminal varyantını düşür
+    boolean nullAuthorizedReceipt = false;              // recordAuthorized → Outcome.ok(null) (bozuk journal)
+    boolean nullTerminalReceipt = false;                // recordTerminal → Outcome.ok(null) (bozuk journal)
 
     FakeModelGovernanceJournal() {
         this(null);
@@ -47,6 +49,9 @@ final class FakeModelGovernanceJournal implements ModelGovernanceJournal {
         if (failAuthorized) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "AUDIT_UNAVAILABLE");
         }
+        if (nullAuthorizedReceipt) {
+            return Outcome.ok(null); // Ok ama null makbuz (bozuk journal; fail-closed guard testi)
+        }
         return Outcome.ok(new JournalReceipt("fake-journal-auth-" + authorizedCalls));
     }
 
@@ -62,6 +67,9 @@ final class FakeModelGovernanceJournal implements ModelGovernanceJournal {
                 || (failTerminalType != null && failTerminalType.isInstance(terminal));
         if (shouldFail) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "AUDIT_UNAVAILABLE");
+        }
+        if (nullTerminalReceipt) {
+            return Outcome.ok(null); // Ok ama null makbuz (bozuk journal; fail-closed guard testi)
         }
         return Outcome.ok(new JournalReceipt("fake-journal-term-" + terminalCalls));
     }

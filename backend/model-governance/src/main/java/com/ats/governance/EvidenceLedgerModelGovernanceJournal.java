@@ -98,6 +98,10 @@ public final class EvidenceLedgerModelGovernanceJournal implements ModelGovernan
         }
         return switch (terminal) {
             case PreflightRejected pr -> terminalPreflight(ctx, id, pr);
+            case InvocationPreparationRejected ipr -> terminalWithPermit(
+                    ctx, id, ipr.permit(), REJECTED_EVENT_TYPE, JournalStage.PRE_PROVIDER_REJECTED,
+                    // provider HİÇ çağrılmadı → observed yok, decision verdict yok; reason = prep-fail.
+                    null, null, null, ipr.reason());
             case ProviderRejected pr -> terminalWithPermit(
                     ctx, id, pr.permit(), REJECTED_EVENT_TYPE, JournalStage.PROVIDER_REJECTED,
                     null, null, null, pr.reason());
@@ -213,11 +217,18 @@ public final class EvidenceLedgerModelGovernanceJournal implements ModelGovernan
                 ctx.tenantId(), ctx.actorId(), ctx.interviewId(),
                 eventType, occurredAt, idempotencyKey, contentHash, payload);
         Outcome<LedgerEntry> appended = ledger.append(event);
-        if (!(appended instanceof Outcome.Ok<LedgerEntry> ok)) {
+        // Fail-closed: Fail VEYA Ok(null)-entry → WORM append erişilemez say (NPE'ye izin verme).
+        if (!(appended instanceof Outcome.Ok<LedgerEntry> ok) || ok.value() == null) {
             // WORM append erişilemez → orkestrasyon AUDIT_UNAVAILABLE ile fail-closed davranır.
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, Reason.AUDIT_UNAVAILABLE.name());
         }
-        return Outcome.ok(new JournalReceipt(ok.value().evidenceId().value()));
+        LedgerEntry entry = ok.value();
+        if (entry.evidenceId() == null || entry.evidenceId().value() == null
+                || entry.evidenceId().value().isBlank()) {
+            // Bozuk ledger (null/blank evidenceId) → JournalReceipt ctor'una NPE/atma yerine fail-closed.
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, Reason.AUDIT_UNAVAILABLE.name());
+        }
+        return Outcome.ok(new JournalReceipt(entry.evidenceId().value()));
     }
 
     private static String sha256Hex(String text) {

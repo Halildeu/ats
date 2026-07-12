@@ -926,4 +926,102 @@ class TranscriptionServiceTest {
         assertEquals(0, provider.calls, "preflight DENY → sağlayıcı çağrılmamalı");
         assertTrue(ledger.entries.isEmpty());
     }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex 1d blocker-1 — post-authorized pre-provider terminal (grant-fail)*/
+    /* ------------------------------------------------------------------ */
+
+    static final class FailingAudioAccessGrants implements AudioAccessGrants {
+        @Override
+        public Outcome<String> issue(TenantId tenantId, String objectKey) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "grant store down (test)");
+        }
+
+        @Override
+        public Outcome<Grant> redeem(String handle) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "n/a");
+        }
+    }
+
+    @Test
+    void grant_issue_fail_after_authorized_records_pre_provider_terminal_not_crash_gap() {
+        grant();
+        List<String> order = new ArrayList<>();
+        FakeModelGovernanceJournal orderedJournal = new FakeModelGovernanceJournal(order);
+        CountingProvider provider = new CountingProvider();
+        // grants.issue FAIL: authorized WORM'dan SONRA, provider'dan ÖNCE.
+        TranscriptionService svc = new TranscriptionService(
+                new ConsentGate(consentStore, sink), gate, orderedJournal, provider,
+                new SegmentSanitizer(), transcriptStore, ledger, sink, new FailingAudioAccessGrants());
+        Outcome<TranscriptionReceipt> out = svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, orderedJournal.authorizedCalls, "authorized WORM yazılmış olmalı");
+        assertEquals(1, orderedJournal.terminalCalls, "pre-provider terminal yazılmalı (crash-gap DEĞİL)");
+        assertInstanceOf(ModelGovernanceJournal.InvocationPreparationRejected.class, orderedJournal.lastTerminal);
+        assertEquals(0, provider.calls, "grant-fail → sağlayıcı HİÇ çağrılmamalı");
+        assertEquals(0, transcriptStore.size(), "grant-fail → store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "grant-fail → business-WORM'a satır yazılmamalı");
+        // ordering: authorized → pre-provider terminal (store'a HİÇ gidilmez)
+        assertEquals(List.of("authorized", "terminal:InvocationPreparationRejected"), order);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex 1d blocker-2 — journal Ok(null) makbuz fail-closed guard'ları  */
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void journal_authorized_ok_null_receipt_fails_closed_before_provider() {
+        grant();
+        journal.nullAuthorizedReceipt = true;
+        CountingProvider provider = new CountingProvider();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(0, provider.calls, "authorized Ok(null) → sağlayıcı HİÇ çağrılmamalı (makbuz-kanıtsız)");
+        assertEquals(0, transcriptStore.size());
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_attested_ok_null_receipt_discards_business_no_store() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        Outcome<TranscriptionReceipt> out =
+                service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk(), "attested terminal Ok(null) → makbuz-kanıtsız → business TAMAMEN discard");
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, journal.lastTerminal);
+        assertEquals(0, transcriptStore.size(), "terminal Ok(null) → store'a YAZILMAMALI");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_preflight_terminal_ok_null_receipt_maps_to_audit_unavailable_not_governance_reason() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        Outcome<TranscriptionReceipt> out =
+                service(new CountingProvider(), ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, journal.authorizedCalls, "preflight DENY → authorized yazılmaz");
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.PreflightRejected.class, journal.lastTerminal);
+        // terminal-append kanıtsız (Ok(null)) → AUDIT_UNAVAILABLE; governance-reason SIZMAMALI.
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "APPROVAL_NOT_ACTIVE".equals(e.extras().get("reason_code"))),
+                "terminal-append kanıtsız → governance-reason yerine AUDIT_UNAVAILABLE");
+    }
 }

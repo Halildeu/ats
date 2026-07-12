@@ -601,4 +601,68 @@ class CitationServiceTest {
         assertEquals(0, provider.calls, "preflight DENY → sağlayıcı çağrılmamalı");
         assertTrue(ledger.entries.isEmpty());
     }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex 1d blocker-2 — journal Ok(null) makbuz fail-closed guard'ları  */
+    /* (CitationService'te authorized↔provider arası hazırlık adımı YOK →   */
+    /*  blocker-1 pre-provider terminal gerekmiyor; yalnız Ok(null) guard.) */
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void journal_authorized_ok_null_receipt_fails_closed_before_provider() {
+        grant();
+        journal.nullAuthorizedReceipt = true;
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, gate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(0, provider.calls, "authorized Ok(null) → sağlayıcı HİÇ çağrılmamalı (makbuz-kanıtsız)");
+        assertEquals(0, citationStore.size());
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_attested_ok_null_receipt_discards_business_no_store() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        Outcome<CitationReceipt> out = cite(providerReturning(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())));
+        assertFalse(out.isOk(), "attested terminal Ok(null) → makbuz-kanıtsız → business TAMAMEN discard");
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, journal.lastTerminal);
+        assertEquals(0, citationStore.size(), "terminal Ok(null) → citation store'a YAZILMAMALI");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_preflight_terminal_ok_null_receipt_maps_to_audit_unavailable_not_governance_reason() {
+        grant();
+        journal.nullTerminalReceipt = true;
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        CountingCiteProvider provider = supportedProvider();
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, journal.authorizedCalls, "preflight DENY → authorized yazılmaz");
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.PreflightRejected.class, journal.lastTerminal);
+        assertEquals(0, provider.calls);
+        // terminal-append kanıtsız (Ok(null)) → AUDIT_UNAVAILABLE; governance-reason SIZMAMALI.
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "APPROVAL_NOT_ACTIVE".equals(e.extras().get("reason_code"))),
+                "terminal-append kanıtsız → governance-reason yerine AUDIT_UNAVAILABLE");
+    }
 }

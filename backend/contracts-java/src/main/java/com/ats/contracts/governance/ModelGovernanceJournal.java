@@ -81,7 +81,8 @@ public interface ModelGovernanceJournal {
      * compact-ctor'da zorlanır: {@link Attested} yalnız ALLOW; {@link VerificationRejected} yalnız DENY.
      */
     sealed interface Terminal
-            permits PreflightRejected, ProviderRejected, VerificationRejected, Attested {}
+            permits PreflightRejected, InvocationPreparationRejected,
+                    ProviderRejected, VerificationRejected, Attested {}
 
     /**
      * Preflight RED (provider HİÇ çağrılmadı) — permit YOK; adapter intended-alanları boot-snapshot'tan
@@ -96,6 +97,27 @@ public interface ModelGovernanceJournal {
             if (reason == null) {
                 throw new IllegalArgumentException("PreflightRejected.reason zorunlu (fail-closed)");
             }
+        }
+    }
+
+    /**
+     * Post-authorized ama pre-provider hazırlık başarısızlığı (ör. ses-erişim grant'i verilemedi):
+     * {@link #recordAuthorized} WORM'a YAZILDI ama sağlayıcı HİÇ çağrılmadı. Bu ayrı terminal olmadan
+     * projeksiyon yanlışlıkla {@code INCOMPLETE_CRASH_GAP} raporlardı (oysa çağrı hiç yapılmadı; crash yok).
+     * {@link ProviderRejected} KULLANILMAZ — o COMPLETE_INVOKED (provider çağrıldı) iddiasıdır. Permit
+     * taşır (authorized ile aynı permit; adapter boot-snapshot re-verify eder). Reason değişmez
+     * {@link ModelGovernanceGate.Reason#INVOCATION_PREPARATION_FAILED} (caller değiştiremez).
+     */
+    record InvocationPreparationRejected(ModelGovernanceGate.Permit permit) implements Terminal {
+        public InvocationPreparationRejected {
+            if (permit == null) {
+                throw new IllegalArgumentException("InvocationPreparationRejected.permit zorunlu (fail-closed)");
+            }
+        }
+
+        /** Değişmez terminal reason: post-authorized pre-provider hazırlık arızası (governance verdict'i DEĞİL). */
+        public ModelGovernanceGate.Reason reason() {
+            return ModelGovernanceGate.Reason.INVOCATION_PREPARATION_FAILED;
         }
     }
 
