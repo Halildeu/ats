@@ -53,6 +53,13 @@ public final class ExportService {
     static final String RECEIPT_RECOVERED_EVENT = "security.audit_export.receipt_recovered";
     static final String ARTIFACT_READ_EVENT = "security.audit_export.artifact_read";
     static final String REPLAYED_EVENT = "security.audit_export.replayed";
+    static final String R4_REPAIRED_EVENT = "security.audit_export.r4_repaired";
+    /**
+     * 39d-11 WORM İŞ-KANITI event'i (ops-taxonomy'ye GİRMEZ — ayrı düzlem):
+     * "repair NİYETİ kalıcı kaydedildi" der; repair'in TAMAMLANDIĞINI TEK BAŞINA
+     * KANITLAMAZ (tamamlanma = intent-satırı + case EXPORTED + ref-eşleşmesi).
+     */
+    static final String REPAIR_INTENT_EVENT = "export.transition_repair_intent";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String LEDGER_EVENT_TYPE = "evidence_packet.exported";
     static final String SCHEMA_VERSION = "evidence-packet/v1";
@@ -99,6 +106,25 @@ public final class ExportService {
      * belirlediği için semantiktir — sıra korunur. Ledger'a ham gövde değil
      * yalnız digest yazılır (pointer-only disiplin).
      */
+    /**
+     * 39d-11 (Codex blocker×2): intent-key ACTOR-BAĞLI + TUPLE-SAFE — farklı
+     * yetkili operatör devralırken ilk operatörün yarım girişimi idempotency
+     * kilidi YARATMAZ (aynı actor retry'ı birebir idempotent replay olur).
+     * HİÇBİR raw ref key'e girmez: caseKey/interview ':' içerebilir →
+     * delimiter-birleşimi collision üretebilirdi; canonical-JSON tuple'ının
+     * sha256'sı kullanılır (delimiter-shift yapısal olarak imkânsız).
+     */
+    static String exportRepairIntentKey(TenantId tenantId, InterviewId interviewId,
+            String caseKey, ActorId actorId) {
+        JsonValue tuple = JsonValue.object(Map.of(
+                "schema", JsonValue.of("export-repair-intent-key/v1"),
+                "tenant", JsonValue.of(tenantId.value()),
+                "interview", JsonValue.of(interviewId.value()),
+                "case_key", JsonValue.of(caseKey),
+                "actor_ref", JsonValue.of(actorId.value())));
+        return "export-repair-intent:v1:" + sha256Hex(PacketJson.canonical(tuple));
+    }
+
     static String exportRequestDigest(TenantId tenantId, InterviewId interviewId, String caseKey,
             List<String> citationKeys, ExportContext ctx) {
         Map<String, JsonValue> m = new HashMap<>();
@@ -514,7 +540,7 @@ public final class ExportService {
      */
     private record VerifiedExport(ReviewState state, String transitionStatus, String artifactKey,
             String evidenceId, String packetDigest, int claimCount, String ledgerRecordedAt,
-            String artifactDigest, String requestDigest) {}
+            String artifactDigest, String requestDigest, String caseArtifactRef) {}
 
     private Outcome<VerifiedExport> verifyLedgerReceipt(TenantId tenantId, ActorId actorId,
             InterviewId interviewId, String caseKey) {
@@ -599,7 +625,8 @@ public final class ExportService {
                     "ledger request_digest 64-hex değil (operasyonel inceleme gerekir)");
         }
         return Outcome.ok(new VerifiedExport(state, transition, artifactKey, evidenceId,
-                packetDigest, claimCount, recordedAt, artifactDigest, requestDigest));
+                packetDigest, claimCount, recordedAt, artifactDigest, requestDigest,
+                caseOk.value().exportArtifactRef()));
     }
 
     /** 39d-9 artifact-read cevabı: ledger'dan doğrulanmış key + depolanan TAM packet JSON string'i. */
@@ -663,6 +690,103 @@ public final class ExportService {
         emit(tenantId, ARTIFACT_READ_EVENT, "security", "notice", PiiClass.ID_ONLY,
                 Map.of("actor_ref", actorId.value(), "target_ref", v.artifactKey()));
         return Outcome.ok(new ExportArtifactContent(v.artifactKey(), packetJson));
+    }
+
+    public enum RepairStatus { REPAIRED, ALREADY_EXPORTED }
+
+    public record ExportRepairResult(ExportReceipt receipt, RepairStatus status) {}
+
+    /**
+     * 39d-11 R4 self-heal (Codex plan-şartları): FINALIZED + doğrulanmış export
+     * ledger-satırı olan vakada EXPORTED geçişini GÜVENLE tamamlar. Sıra:
+     * 1) receipt zinciri (çapraz-bağlar) 2) EXPORTED ise ledger↔case artifact-ref
+     * eşleşmesi şartıyla ALREADY (yeni intent/CAS yok) 3) artifact_digest ZORUNLU
+     * (legacy → INVALID; intent yazılmaz) 4) artifact mevcut+digest-eşleşik
+     * (yokluk NOT_FOUND; store-hatası passthrough; hiçbirinde intent yazılmaz)
+     * 5) kalıcı WORM repair-INTENT append — YAZILAMAZSA REPAIR YAPILMAZ
+     * ("audit'siz repair olmaz" garantisi ledger-önkoşuldur, best-effort sink
+     * değil; intent 'niyet' der, 'tamamlandı' DEMEZ — tamamlanma kanıtı intent +
+     * case=EXPORTED + ref-eşleşmesi BİRLİKTE) 6) CAS FINALIZED→EXPORTED
+     * (TRANSITIONED→REPAIRED + best-effort r4_repaired sinyali;
+     * ALREADY_SAME_ARTIFACT→ALREADY; INTEGRITY_CONFLICT→INVALID; geçici
+     * store-hatası → intent kalır, retry idempotent).
+     */
+    public Outcome<ExportRepairResult> repairExportTransition(TenantId tenantId, ActorId actorId,
+            InterviewId interviewId, String caseKey, String occurredAtIso) {
+        Outcome<VerifiedExport> verified = verifyLedgerReceipt(tenantId, actorId, interviewId, caseKey);
+        if (verified instanceof Outcome.Fail<VerifiedExport> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        VerifiedExport v = ((Outcome.Ok<VerifiedExport>) verified).value();
+        ExportReceipt receipt = new ExportReceipt(v.artifactKey(), v.evidenceId(),
+                v.packetDigest(), v.claimCount());
+        if (v.state() == ReviewState.EXPORTED) {
+            // already-repaired iddiası için case↔ledger ref bağı ŞART (Codex):
+            if (v.caseArtifactRef() == null || !v.caseArtifactRef().equals(v.artifactKey())) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "vaka EXPORTED ama artifact ref'i ledger'la uyuşmuyor (bütünlük ihlali;"
+                                + " operasyonel inceleme gerekir)");
+            }
+            return Outcome.ok(new ExportRepairResult(receipt, RepairStatus.ALREADY_EXPORTED));
+        }
+        // verifyLedgerReceipt whitelist'i gereği burada FINALIZED (R4).
+        if (v.artifactDigest() == null) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "legacy ledger kaydı: artifact_digest yok — otomatik repair yapılamaz"
+                            + " (backend müdahalesine eskale edin)");
+        }
+        Outcome<String> found = artifactStore.find(tenantId, interviewId, v.artifactKey());
+        if (found instanceof Outcome.Fail<String> storeFail) {
+            if (storeFail.code() == OutcomeCode.NOT_FOUND) {
+                return Outcome.fail(OutcomeCode.NOT_FOUND,
+                        "repair için gerekli artifact content-plane'de yok");
+            }
+            return Outcome.fail(storeFail.code(),
+                    "artifact deposu okunamadı (repair yapılmadı): " + storeFail.reason());
+        }
+        String packetJson = ((Outcome.Ok<String>) found).value();
+        if (packetJson == null || packetJson.isBlank()
+                || !sha256Hex(packetJson).equals(v.artifactDigest())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "artifact bütünlük doğrulaması geçmedi — repair yapılmadı (operasyonel inceleme)");
+        }
+        Outcome<LedgerEntry> intent = ledger.append(new EvidenceEvent(
+                tenantId, actorId, interviewId, REPAIR_INTENT_EVENT, occurredAtIso,
+                exportRepairIntentKey(tenantId, interviewId, caseKey, actorId),
+                v.packetDigest(),
+                JsonValue.object(Map.of(
+                        "case_key", JsonValue.of(caseKey),
+                        "export_artifact_ref", JsonValue.of(v.artifactKey()),
+                        "repair_actor_ref", JsonValue.of(actorId.value()),
+                        "original_export_evidence_id", JsonValue.of(v.evidenceId()),
+                        "packet_digest", JsonValue.of(v.packetDigest()),
+                        "artifact_digest", JsonValue.of(v.artifactDigest())))));
+        if (intent instanceof Outcome.Fail<LedgerEntry> intentFail) {
+            return Outcome.fail(intentFail.code(),
+                    "repair-intent WORM'a yazılamadı — repair YAPILMADI (audit'siz repair olmaz): "
+                            + intentFail.reason());
+        }
+        Outcome<ReviewCaseStore.ExportTransitionResult> cas =
+                humanReview.repairMarkExported(tenantId, interviewId, caseKey, v.artifactKey());
+        if (cas instanceof Outcome.Fail<ReviewCaseStore.ExportTransitionResult> casFail) {
+            // intent kalır (niyet-kaydı); geçici store hatasında retry idempotent.
+            return Outcome.fail(casFail.code(),
+                    "repair-geçişi tamamlanamadı (intent kayıtlı; yeniden denenebilir): " + casFail.reason());
+        }
+        ReviewCaseStore.ExportTransitionResult r =
+                ((Outcome.Ok<ReviewCaseStore.ExportTransitionResult>) cas).value();
+        return switch (r) {
+            case TRANSITIONED -> {
+                emit(tenantId, R4_REPAIRED_EVENT, "security", "notice", PiiClass.ID_ONLY,
+                        Map.of("actor_ref", actorId.value(), "target_ref", v.artifactKey()));
+                yield Outcome.ok(new ExportRepairResult(receipt, RepairStatus.REPAIRED));
+            }
+            case ALREADY_EXPORTED_SAME_ARTIFACT ->
+                Outcome.ok(new ExportRepairResult(receipt, RepairStatus.ALREADY_EXPORTED));
+            case INTEGRITY_CONFLICT -> Outcome.fail(OutcomeCode.INVALID,
+                    "repair yarışında vaka FARKLI artifact ref'iyle EXPORTED bulundu"
+                            + " (bütünlük ihlali; operasyonel inceleme gerekir)");
+        };
     }
 
     private static String payloadString(JsonValue.JsonObject obj, String key) {

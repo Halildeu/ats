@@ -21,6 +21,7 @@ import com.ats.orchestration.CitationService;
 import com.ats.orchestration.Transcript;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCase;
+import com.ats.review.ReviewCaseStore;
 import com.ats.review.ReviewState;
 import java.util.List;
 import org.flywaydb.core.Flyway;
@@ -143,6 +144,57 @@ class PostgresStoresTest {
         assertFalse(citations.find(T2, I1, key).isOk());
         assertTrue(citations.delete(T1, key).isOk());
         assertFalse(citations.find(T1, I1, key).isOk());
+    }
+
+    @Test
+    void review_case_cas_transition_matrix_and_concurrency() throws Exception {
+        // 39d-11 CAS matrisi (Codex şartları)
+        ReviewCase fin = new ReviewCase(T1, I1, ReviewState.FINALIZED,
+                List.of("ev-1"), "ai-v1", "h-1", "role-1", "cs-1", "rat-1", "karar-1", null, null);
+        String k1 = cases.put(fin).asOptional().orElseThrow();
+        assertEquals(ReviewCaseStore.ExportTransitionResult.TRANSITIONED,
+                cases.markExportedIfFinalized(T1, I1, k1, "art-A").asOptional().orElseThrow());
+        assertEquals(ReviewCaseStore.ExportTransitionResult.ALREADY_EXPORTED_SAME_ARTIFACT,
+                cases.markExportedIfFinalized(T1, I1, k1, "art-A").asOptional().orElseThrow(),
+                "aynı ref ikinci çağrı idempotent");
+        assertEquals(ReviewCaseStore.ExportTransitionResult.INTEGRITY_CONFLICT,
+                cases.markExportedIfFinalized(T1, I1, k1, "art-B").asOptional().orElseThrow(),
+                "farklı ref kazananı overwrite EDEMEZ");
+        ReviewCase after = cases.find(T1, I1, k1).asOptional().orElseThrow();
+        assertEquals(ReviewState.EXPORTED, after.state());
+        assertEquals("art-A", after.exportArtifactRef());
+        // OPEN state → fail-closed INVALID
+        ReviewCase open = new ReviewCase(T1, I1, ReviewState.AI_SUGGESTED,
+                List.of("ev-2"), "ai-v1", null, null, null, null, null, null, null);
+        String k2 = cases.put(open).asOptional().orElseThrow();
+        Outcome<ReviewCaseStore.ExportTransitionResult> bad =
+                cases.markExportedIfFinalized(T1, I1, k2, "art-X");
+        assertTrue(bad instanceof Outcome.Fail<ReviewCaseStore.ExportTransitionResult> f
+                && f.code() == OutcomeCode.INVALID);
+        // vaka yok → NOT_FOUND
+        Outcome<ReviewCaseStore.ExportTransitionResult> missing =
+                cases.markExportedIfFinalized(T1, I1, "i1/case-yok", "art-X");
+        assertTrue(missing instanceof Outcome.Fail<ReviewCaseStore.ExportTransitionResult> f2
+                && f2.code() == OutcomeCode.NOT_FOUND);
+
+        // Eşzamanlılık: aynı ref ile iki thread → TRANSITIONED + ALREADY (tek güncelleme)
+        ReviewCase fin2 = new ReviewCase(T1, I1, ReviewState.FINALIZED,
+                List.of("ev-3"), "ai-v1", "h-1", "role-1", "cs-1", "rat-1", "karar-1", null, null);
+        String k3 = cases.put(fin2).asOptional().orElseThrow();
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var gate = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.Callable<ReviewCaseStore.ExportTransitionResult> job = () -> {
+            gate.await();
+            return cases.markExportedIfFinalized(T1, I1, k3, "art-C").asOptional().orElseThrow();
+        };
+        var f1 = pool.submit(job);
+        var f2c = pool.submit(job);
+        gate.countDown();
+        var results = java.util.List.of(f1.get(), f2c.get());
+        pool.shutdown();
+        assertTrue(results.contains(ReviewCaseStore.ExportTransitionResult.TRANSITIONED));
+        assertTrue(results.contains(ReviewCaseStore.ExportTransitionResult.ALREADY_EXPORTED_SAME_ARTIFACT));
+        assertEquals("art-C", cases.find(T1, I1, k3).asOptional().orElseThrow().exportArtifactRef());
     }
 
     @Test

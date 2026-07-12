@@ -103,4 +103,19 @@ class OpenApiDriftTest {
         Files.createDirectories(out.getParent());
         Files.writeString(out, canonical, StandardCharsets.UTF_8);
     }
+    @org.junit.jupiter.api.Test
+    void repair_request_body_contract_is_pinned_semantically() throws Exception {
+        // Codex 39d-11 iter-2: runtime raw-String parse etse de DIŞ kontrat
+        // RepairBody-object + required=true olarak snapshot'ta pinli kalmalı.
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode rb = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/export/repair").path("post").path("requestBody");
+        org.junit.jupiter.api.Assertions.assertTrue(rb.path("required").asBoolean(false));
+        String ref = rb.path("content").path("application/json").path("schema").path("$ref").asText();
+        org.junit.jupiter.api.Assertions.assertTrue(ref.endsWith("/RepairBody"), ref);
+        com.fasterxml.jackson.databind.JsonNode props = snap.path("components").path("schemas")
+                .path("RepairBody").path("properties");
+        org.junit.jupiter.api.Assertions.assertTrue(props.has("caseKey"), props.toString());
+    }
 }

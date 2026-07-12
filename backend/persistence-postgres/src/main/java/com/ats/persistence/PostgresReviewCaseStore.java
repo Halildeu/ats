@@ -43,6 +43,52 @@ public final class PostgresReviewCaseStore implements ReviewCaseStore {
     }
 
     @Override
+    public Outcome<ReviewCaseStore.ExportTransitionResult> markExportedIfFinalized(
+            TenantId tenantId, InterviewId interviewId, String caseKey, String exportArtifactRef) {
+        if (exportArtifactRef == null || exportArtifactRef.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "export_artifact_ref zorunlu");
+        }
+        try (Connection c = ds.getConnection()) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE review_case SET state = 'EXPORTED', export_artifact_ref = ?"
+                            + " WHERE tenant_id = ? AND interview_id = ? AND case_key = ?"
+                            + " AND state = 'FINALIZED'")) {
+                ps.setString(1, exportArtifactRef);
+                ps.setString(2, tenantId.value());
+                ps.setString(3, interviewId.value());
+                ps.setString(4, caseKey);
+                if (ps.executeUpdate() == 1) {
+                    return Outcome.ok(ReviewCaseStore.ExportTransitionResult.TRANSITIONED);
+                }
+            }
+            // updated=0 → yeniden oku ve ayrıştır (yarış/idempotent/conflict):
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT state, export_artifact_ref FROM review_case"
+                            + " WHERE tenant_id = ? AND interview_id = ? AND case_key = ?")) {
+                ps.setString(1, tenantId.value());
+                ps.setString(2, interviewId.value());
+                ps.setString(3, caseKey);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
+                    }
+                    String state = rs.getString("state");
+                    String ref = rs.getString("export_artifact_ref");
+                    if ("EXPORTED".equals(state)) {
+                        return exportArtifactRef.equals(ref)
+                                ? Outcome.ok(ReviewCaseStore.ExportTransitionResult.ALREADY_EXPORTED_SAME_ARTIFACT)
+                                : Outcome.ok(ReviewCaseStore.ExportTransitionResult.INTEGRITY_CONFLICT);
+                    }
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "geçersiz repair-geçişi: " + state + " → EXPORTED (fail-closed)");
+                }
+            }
+        } catch (SQLException e) {
+            return Pg.sqlFail(e);
+        }
+    }
+
+    @Override
     public Outcome<ReviewCase> find(TenantId tenantId, InterviewId interviewId, String caseKey) {
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement(

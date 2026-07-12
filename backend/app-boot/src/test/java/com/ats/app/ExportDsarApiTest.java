@@ -97,6 +97,7 @@ class ExportDsarApiTest {
     @Autowired private TestRestTemplate rest;
     @Autowired private DataSource dataSource;
     @Autowired private TranscriptStore transcriptStore;
+    @Autowired private com.ats.review.ReviewCaseStore reviewCaseStore;
 
     private static final String TENANT = "ed-tenant";
     private static final String ALL = "ats.consent.write ats.citation.write ats.review.write "
@@ -201,6 +202,42 @@ class ExportDsarApiTest {
                 exportBody.replace("\"signatureRef\":\"sig-1\"", "\"signatureRef\":\"sig-BAŞKA\""));
         assertEquals(400, conflict.getStatusCode().value(), "body: " + conflict.getBody());
         assertEquals(wormAfterExport, wormTotal(TENANT));
+
+        // 39d-11 R4 repair E2E: gerçek export'un vakasını test-only save ile
+        // FINALIZED'a geri yazarak R4 kurulur (ledger satırı GERÇEK — request/
+        // artifact digest'li). repair-token'lı POST → 200 REPAIRED → receipt
+        // COMPLETED → aynı gövdeyle export POST yine 200 replay.
+        com.ats.review.ReviewCase cur = reviewCaseStore
+                .find(new TenantId(TENANT), new InterviewId(iv), caseKey).asOptional().orElseThrow();
+        assertTrue(reviewCaseStore.save(new TenantId(TENANT), caseKey,
+                cur.with(com.ats.review.ReviewState.FINALIZED)).isOk());
+        String repairTok = token("ats.export.repair", "repair-op-1");
+        ResponseEntity<String> rep = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\"" + caseKey + "\"}",
+                        jsonBearer(repairTok)), String.class);
+        assertEquals(200, rep.getStatusCode().value(), "body: " + rep.getBody());
+        assertEquals("no-store", rep.getHeaders().getCacheControl());
+        JsonNode repJson = JSON_READER.readTree(rep.getBody());
+        assertEquals("REPAIRED", repJson.path("repairStatus").asText());
+        assertEquals(field(exp.getBody(), "artifactKey"), repJson.path("artifactKey").asText());
+        assertEquals(1, wormCount(TENANT, "export.transition_repair_intent"),
+                "kalıcı repair-INTENT WORM satırı");
+        // repair sonrası: receipt COMPLETED + aynı gövde replay 200
+        ResponseEntity<String> recAfterRepair = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/receipt?caseKey=" + caseKey,
+                HttpMethod.GET,
+                new HttpEntity<>(jsonBearer(token("ats.export.read", "auditor-0"))), String.class);
+        assertTrue(recAfterRepair.getBody().contains("\"transitionStatus\":\"COMPLETED\""));
+        ResponseEntity<String> replay2 = post(tok, "/api/v1/interviews/" + iv + "/export", exportBody);
+        assertEquals(200, replay2.getStatusCode().value(), "body: " + replay2.getBody());
+        // ikinci repair → ALREADY_EXPORTED + intent çoğalmaz
+        ResponseEntity<String> rep2 = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/repair",
+                HttpMethod.POST, new HttpEntity<>("{\"caseKey\":\"" + caseKey + "\"}",
+                        jsonBearer(repairTok)), String.class);
+        assertEquals("ALREADY_EXPORTED", JSON_READER.readTree(rep2.getBody()).path("repairStatus").asText());
+        assertEquals(1, wormCount(TENANT, "export.transition_repair_intent"));
 
         // 39d-8d: receipt-recovery 200 — tam-fixture kontrat. Salt-okuma scope
         // yeter (EXPORT_READ); no-store 200'de de zorunlu; alanlar export
