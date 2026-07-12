@@ -324,3 +324,16 @@ jobs:
           node-version: "20"
       - name: connector-capability drift guard
         run: node scripts/check-connector-capability.mjs
+
+  integration-platform-guard:
+    # Faz 25 P4 integration-platform/v1: ATS/HRIS/calendar-email/SSO-SCIM/portability
+    # capability matrix + synthetic envelope/idempotency/replay/data-owner invariants.
+    # PRE-G0 fixture'da api_verified/VERIFIED/activation-evidence ve raw PII/secret/decision YASAK.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: integration-platform drift guard
+        run: node scripts/check-integration-platform.mjs
