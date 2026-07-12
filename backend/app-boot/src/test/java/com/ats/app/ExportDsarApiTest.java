@@ -8,6 +8,8 @@ import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
 import com.ats.orchestration.Transcript;
 import com.ats.orchestration.TranscriptStore;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +50,7 @@ class ExportDsarApiTest {
 
     private static final JwtTestSupport JWT = new JwtTestSupport();
     private static final HttpServer AI = aiStub();
+    private static final ObjectMapper JSON_READER = new ObjectMapper();
 
     private static HttpServer aiStub() {
         try {
@@ -119,7 +122,7 @@ class ExportDsarApiTest {
     }
 
     @Test
-    void full_chain_export_then_erasure_end_to_end() {
+    void full_chain_export_then_erasure_end_to_end() throws Exception {
         String tok = token(ALL, "reviewer-1");
         String iv = "iv-full";
 
@@ -177,6 +180,30 @@ class ExportDsarApiTest {
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
         assertTrue(got.getBody().contains("\"state\":\"EXPORTED\""), "body: " + got.getBody());
 
+        // 39d-8d: receipt-recovery 200 — tam-fixture kontrat. Salt-okuma scope
+        // yeter (EXPORT_READ); no-store 200'de de zorunlu; alanlar export
+        // cevabıyla birebir eşleşir (makbuz ledger'dan türetilir, yeniden
+        // hesaplanmaz).
+        String readTok = token("ats.export.read", "auditor-1");
+        ResponseEntity<String> rec = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/receipt?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(200, rec.getStatusCode().value(), "body: " + rec.getBody());
+        assertEquals("no-store", rec.getHeaders().getCacheControl());
+        assertEquals("no-cache", rec.getHeaders().getFirst("Pragma"));
+        JsonNode receiptJson = JSON_READER.readTree(rec.getBody());
+        assertEquals(caseKey, receiptJson.path("caseKey").asText());
+        assertEquals("EXPORTED", receiptJson.path("caseState").asText());
+        assertEquals("COMPLETED", receiptJson.path("transitionStatus").asText());
+        assertEquals(artifactKey, receiptJson.path("artifactKey").asText());
+        assertEquals(field(exp.getBody(), "evidenceId"), receiptJson.path("evidenceId").asText());
+        assertEquals(field(exp.getBody(), "packetDigest"), receiptJson.path("packetDigest").asText());
+        JsonNode claimCount = receiptJson.path("claimCount");
+        assertTrue(claimCount.isIntegralNumber(),
+                "claimCount JSON integer olmalı (string/float değil); body: " + rec.getBody());
+        assertEquals(1, claimCount.intValue());
+        java.time.Instant.parse(receiptJson.path("ledgerRecordedAt").asText());
+
         // DSAR + ERASURE (tombstone hedefi: citation kanıtı)
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
                 "{\"subjectRef\":\"s-1\",\"reasonCode\":\"kvkk_talep\"}");
@@ -201,6 +228,23 @@ class ExportDsarApiTest {
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
         assertEquals(404, gone.getStatusCode().value(), "transcript content silinmiş olmalı");
         assertTrue(wormCount(TENANT, "evidence.tombstoned") >= 1, "tombstone WORM satırı olmalı");
+
+        // Makbuz gerçeği erasure'dan SAĞ ÇIKAR: erasure scope'u export
+        // artifact'i content-plane silme HEDEFİ olarak içerir; recovery GET
+        // artifact'in hâlâ erişilebilir olduğunu İDDİA ETMEZ — yalnız
+        // immutable ledger receipt metadata'sı (8 alan birebir) aynı kalır.
+        ResponseEntity<String> recAfter = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/receipt?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(200, recAfter.getStatusCode().value(), "body: " + recAfter.getBody());
+        assertEquals("no-store", recAfter.getHeaders().getCacheControl());
+        assertEquals("no-cache", recAfter.getHeaders().getFirst("Pragma"));
+        JsonNode afterJson = JSON_READER.readTree(recAfter.getBody());
+        for (String f : List.of("caseKey", "caseState", "transitionStatus", "artifactKey",
+                "evidenceId", "packetDigest", "claimCount", "ledgerRecordedAt")) {
+            assertEquals(receiptJson.get(f), afterJson.get(f),
+                    "erasure sonrası ledger receipt alanı değişmemeli: " + f);
+        }
     }
 
     @Test
