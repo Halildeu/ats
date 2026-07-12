@@ -4,6 +4,7 @@ import com.ats.export.ExportContext;
 import com.ats.export.ExportContext.CriterionRef;
 import com.ats.export.ExportService;
 import com.ats.export.ExportService.ExportReceipt;
+import com.ats.export.ExportService.ExportReceiptRecovery;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Outcome;
 import java.time.Instant;
@@ -12,9 +13,11 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -93,5 +96,41 @@ class ExportApiController {
                 "evidenceId", r.evidenceId(),
                 "packetDigest", r.packetDigest(),
                 "claimCount", r.claimCount()));
+    }
+
+    /**
+     * 39d-8 receipt-recovery (R2 residual): ledger-bagli export makbuzunu salt-okuma
+     * kurtarir. caseState=FINALIZED + makbuz = R4 (transitionStatus=INCOMPLETE —
+     * tamamlanmis export DEGIL; repair runbook'u). Cache'lenmez (opak ref + digest):
+     * Cache-Control no-store. caseKey '/' icerebilir → query param.
+     */
+    @GetMapping("/api/v1/interviews/{interviewId}/export/receipt")
+    ResponseEntity<?> exportReceipt(Authentication auth,
+            @PathVariable("interviewId") String interviewId,
+            @RequestParam(name = "caseKey", required = false) String caseKey) {
+        if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
+                || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID",
+                    "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512+ uzunluk reddedilir)"));
+        }
+        Outcome<ExportReceiptRecovery> out = exportService.exportReceipt(
+                tenantAccess.tenant(auth), tenantAccess.actor(auth),
+                new InterviewId(interviewId), caseKey);
+        if (out instanceof Outcome.Fail<ExportReceiptRecovery> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        ExportReceiptRecovery r = ((Outcome.Ok<ExportReceiptRecovery>) out).value();
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .header("Pragma", "no-cache")
+                .body(Map.of(
+                        "caseKey", r.caseKey(),
+                        "caseState", r.caseState(),
+                        "transitionStatus", r.transitionStatus(),
+                        "artifactKey", r.artifactKey(),
+                        "evidenceId", r.evidenceId(),
+                        "packetDigest", r.packetDigest(),
+                        "claimCount", r.claimCount(),
+                        "ledgerRecordedAt", r.ledgerRecordedAt()));
     }
 }

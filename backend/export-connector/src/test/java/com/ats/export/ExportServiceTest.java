@@ -341,4 +341,129 @@ class ExportServiceTest {
         assertFalse(service.exportPacket(T1, HUMAN, I1, caseKey, List.of(badCitation), c, "2026-07-02T14:00:00Z").isOk(),
                 "kaynaksız SUPPORTED packet'e giremez (ATS-0004 savunma re-check)");
     }
+
+    // ---- 39d-8 exportReceipt (R2 recovery; Codex 019f535a plan-şartları) ----
+
+    private EvidenceLedger.LedgerEntry makeExportEntry(TenantId t, InterviewId i, String ck, String digest,
+            double count, String occurredAt, String evidenceId) {
+        String key = ExportService.exportIdempotencyKey(t, i, ck);
+        EvidenceLedger.LedgerEntry entry = new EvidenceLedger.LedgerEntry(t, HUMAN, i, ExportService.LEDGER_EVENT_TYPE,
+                occurredAt, key, digest,
+                JsonValue.object(Map.of(
+                        "export_artifact_ref", JsonValue.of("artifact-x"),
+                        "case_key", JsonValue.of(ck),
+                        "packet_digest", JsonValue.of(digest),
+                        "claim_count", new JsonValue.JsonNumber(count))),
+                new EvidenceId(evidenceId), ledger.entries.size() + 1, "p", "h");
+        ledger.entries.add(entry);
+        return entry;
+    }
+
+    @Test
+    void receipt_recovery_after_real_export_is_completed_with_ledger_row_identity() {
+        ExportReceipt exported = export().asOptional().orElseThrow();
+        var out = service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow();
+        assertEquals("EXPORTED", out.caseState());
+        assertEquals("COMPLETED", out.transitionStatus());
+        assertEquals(exported.artifactKey(), out.artifactKey());
+        // evidenceId LEDGER SATIRININ KENDİSİNDEN (payload'da yok — R2 düzeltmesi):
+        assertEquals(exported.evidenceId(), out.evidenceId());
+        assertEquals(exported.packetDigest(), out.packetDigest());
+        assertEquals(1, out.claimCount());
+        assertEquals("2026-07-02T14:00:00Z", out.ledgerRecordedAt());
+        assertTrue(sink.emitted().stream()
+                .anyMatch(e -> "security.audit_export.receipt_recovered".equals(e.eventTypeId())),
+                "salt-okuma erişimi ID-only audit event'i üretmeli");
+    }
+
+    @Test
+    void receipt_recovery_r4_finalized_case_with_ledger_row_is_incomplete_not_a_success_claim() {
+        // Vaka FINALIZED (export HİÇ koşulmadı); ledger'a R4-benzeri satır elle eklenir
+        // (artifact+ledger yazıldı, markExported düşmüş senaryosunun kalıntısı):
+        makeExportEntry(T1, I1, caseKey, "a".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-r4");
+        var out = service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow();
+        assertEquals("FINALIZED", out.caseState());
+        assertEquals("INCOMPLETE", out.transitionStatus());
+        assertEquals("ev-r4", out.evidenceId());
+    }
+
+    @Test
+    void receipt_recovery_not_found_paths_distinguish_case_vs_ledger() {
+        Outcome<ExportService.ExportReceiptRecovery> noCase =
+                service.exportReceipt(T1, HUMAN, I1, "case-yok");
+        assertTrue(noCase instanceof Outcome.Fail<ExportService.ExportReceiptRecovery> f1
+                && f1.code() == OutcomeCode.NOT_FOUND && f1.reason().contains("vaka"));
+        Outcome<ExportService.ExportReceiptRecovery> noLedger =
+                service.exportReceipt(T1, HUMAN, I1, caseKey);
+        assertTrue(noLedger instanceof Outcome.Fail<ExportService.ExportReceiptRecovery> f2
+                && f2.code() == OutcomeCode.NOT_FOUND && f2.reason().contains("export ledger"));
+    }
+
+    @Test
+    void receipt_recovery_cross_binding_violations_fail_closed() {
+        // Yanlış eventType:
+        EvidenceLedger.LedgerEntry wrongType = makeExportEntry(T1, I1, caseKey, "b".repeat(64), 1.0,
+                "2026-07-02T15:00:00Z", "ev-1");
+        ledger.entries.set(0, new EvidenceLedger.LedgerEntry(wrongType.tenantId(), wrongType.actorId(),
+                wrongType.interviewId(), "evidence.appended", wrongType.occurredAt(),
+                wrongType.idempotencyKey(), wrongType.contentHash(), wrongType.payload(),
+                wrongType.evidenceId(), wrongType.sequence(), wrongType.previousHash(), wrongType.entryHash()));
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), "eventType mismatch");
+        ledger.entries.clear();
+
+        // payload.case_key mismatch (aynı deterministik key, farklı case_key payload'ı):
+        EvidenceLedger.LedgerEntry e2 = makeExportEntry(T1, I1, caseKey, "c".repeat(64), 1.0,
+                "2026-07-02T15:00:00Z", "ev-2");
+        ledger.entries.set(0, new EvidenceLedger.LedgerEntry(e2.tenantId(), e2.actorId(), e2.interviewId(),
+                e2.eventType(), e2.occurredAt(), e2.idempotencyKey(), e2.contentHash(),
+                JsonValue.object(Map.of(
+                        "export_artifact_ref", JsonValue.of("artifact-x"),
+                        "case_key", JsonValue.of("BASKA-case"),
+                        "packet_digest", JsonValue.of("c".repeat(64)),
+                        "claim_count", new JsonValue.JsonNumber(1.0))),
+                e2.evidenceId(), e2.sequence(), e2.previousHash(), e2.entryHash()));
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), "case_key mismatch");
+        ledger.entries.clear();
+
+        // payload.packet_digest != entry.contentHash (bütünlük bağı):
+        EvidenceLedger.LedgerEntry e3 = makeExportEntry(T1, I1, caseKey, "d".repeat(64), 1.0,
+                "2026-07-02T15:00:00Z", "ev-3");
+        ledger.entries.set(0, new EvidenceLedger.LedgerEntry(e3.tenantId(), e3.actorId(), e3.interviewId(),
+                e3.eventType(), e3.occurredAt(), e3.idempotencyKey(), "e".repeat(64),
+                e3.payload(), e3.evidenceId(), e3.sequence(), e3.previousHash(), e3.entryHash()));
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(),
+                "payload digest / contentHash ayrışması");
+    }
+
+    @Test
+    void receipt_recovery_claim_count_and_timestamp_are_strict() {
+        makeExportEntry(T1, I1, caseKey, "1".repeat(64), 2.5, "2026-07-02T15:00:00Z", "ev-a");
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), "2.5 reddedilir");
+        ledger.entries.clear();
+        makeExportEntry(T1, I1, caseKey, "2".repeat(64), 0.0, "2026-07-02T15:00:00Z", "ev-b");
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), "0 reddedilir (min 1)");
+        ledger.entries.clear();
+        makeExportEntry(T1, I1, caseKey, "3".repeat(64), 2.0, "bozuk-zaman", "ev-c");
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(), "ISO-8601 olmayan occurredAt");
+        ledger.entries.clear();
+        makeExportEntry(T1, I1, caseKey, "4".repeat(64), 2.0, "2026-07-02T15:00:00Z", "ev-d");
+        var ok = service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow();
+        assertEquals(2, ok.claimCount(), "2.0 tam-sayı olarak kabul edilir");
+    }
+
+    @Test
+    void receipt_recovery_is_read_only_and_tenant_isolated() {
+        makeExportEntry(T1, I1, caseKey, "5".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-t");
+        int artifactsBefore = ledger.entries.size();
+        service.exportReceipt(T1, HUMAN, I1, caseKey).asOptional().orElseThrow();
+        assertEquals(artifactsBefore, ledger.entries.size(), "salt-okuma: ledger'a yazmaz");
+        assertEquals(ReviewState.FINALIZED,
+                reviewStore.find(T1, I1, caseKey).asOptional().orElseThrow().state(),
+                "case state'ine dokunmaz");
+        // Başka tenant aynı caseKey'i SORAMAZ (vaka tenant-scoped → NOT_FOUND):
+        assertFalse(service.exportReceipt(T2, HUMAN, I1, caseKey).isOk());
+        // caseKey boş / actor boş → INVALID:
+        assertFalse(service.exportReceipt(T1, HUMAN, I1, "  ").isOk());
+        assertFalse(service.exportReceipt(T1, new ActorId(" "), I1, caseKey).isOk());
+    }
 }
