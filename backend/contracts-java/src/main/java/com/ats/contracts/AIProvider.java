@@ -73,13 +73,29 @@ public interface AIProvider {
     }
 
     record TranscriptResult(String language, List<TranscriptSegment> segments,
-                            ReportedModelIdentity modelIdentity) {}
+                            ReportedModelIdentity modelIdentity) {
+        public TranscriptResult {
+            // non-null invariant MAKİNE-ENFORCE (dokümante-yalnız değil): raporlanmadıysa
+            // ReportedModelIdentity.notReported() verilmeli — null contract ihlali, fail-fast.
+            if (modelIdentity == null) {
+                throw new IllegalArgumentException(
+                        "modelIdentity zarfı zorunlu (fail-closed; yoksa ReportedModelIdentity.notReported())");
+            }
+        }
+    }
 
     /** Üç-değerli entailment; belirsizse INSUFFICIENT (fail-closed). */
     enum Entailment { SUPPORTED, NOT_SUPPORTED, INSUFFICIENT }
 
     record CitationResult(String claim, List<String> sourceSegmentRefs, Entailment entailment,
-                          ReportedModelIdentity modelIdentity) {}
+                          ReportedModelIdentity modelIdentity) {
+        public CitationResult {
+            if (modelIdentity == null) {
+                throw new IllegalArgumentException(
+                        "modelIdentity zarfı zorunlu (fail-closed; yoksa ReportedModelIdentity.notReported())");
+            }
+        }
+    }
 
     /**
      * STT (+ sağlayıcı sunuyorsa diarization; live-stt v0.1.0 SUNMAZ → tek-akış

@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ats.contracts.AIProvider.CitationResult;
+import com.ats.contracts.AIProvider.Entailment;
 import com.ats.contracts.AIProvider.ReportedModelIdentity;
+import com.ats.contracts.AIProvider.TranscriptResult;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -83,5 +87,27 @@ class ReportedModelIdentityTest {
                 () -> new ReportedModelIdentity(secretish, null));
         assertTrue(ex.getMessage() != null && !ex.getMessage().contains(secretish),
                 "ham değer mesajda görünmemeli (sızıntı guard'ı)");
+    }
+
+    // --- result-record modelIdentity zarf non-null invariant'ı MAKİNE-ENFORCE (Codex 1b) ---
+
+    @Test
+    void transcript_result_rejects_null_model_identity() {
+        // dokümante-yalnız değil: null modelIdentity contract ihlali → fail-fast (1c'de NPE önlenir)
+        assertThrows(IllegalArgumentException.class,
+                () -> new TranscriptResult("tr", List.of(), null));
+    }
+
+    @Test
+    void citation_result_rejects_null_model_identity() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new CitationResult("claim", List.of(), Entailment.SUPPORTED, null));
+    }
+
+    @Test
+    void result_records_accept_not_reported_envelope() {
+        // null zarf YASAK ama iç-alanları-null zarf (notReported) GEÇERLİ — "raporlanmadı" meşru
+        new TranscriptResult("tr", List.of(), ReportedModelIdentity.notReported());
+        new CitationResult("claim", List.of(), Entailment.SUPPORTED, ReportedModelIdentity.notReported());
     }
 }
