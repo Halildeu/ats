@@ -177,6 +177,27 @@ class ExportDsarApiTest {
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
         assertTrue(got.getBody().contains("\"state\":\"EXPORTED\""), "body: " + got.getBody());
 
+        // 39d-8d: receipt-recovery 200 — tam-fixture kontrat. Salt-okuma scope
+        // yeter (EXPORT_READ); no-store 200'de de zorunlu; alanlar export
+        // cevabıyla birebir eşleşir (makbuz ledger'dan türetilir, yeniden
+        // hesaplanmaz).
+        String readTok = token("ats.export.read", "auditor-1");
+        ResponseEntity<String> rec = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/receipt?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(200, rec.getStatusCode().value(), "body: " + rec.getBody());
+        assertEquals("no-store", rec.getHeaders().getCacheControl());
+        assertEquals("no-cache", rec.getHeaders().getFirst("Pragma"));
+        String rb = rec.getBody();
+        assertEquals(caseKey, field(rb, "caseKey"));
+        assertEquals("EXPORTED", field(rb, "caseState"));
+        assertEquals("COMPLETED", field(rb, "transitionStatus"));
+        assertEquals(artifactKey, field(rb, "artifactKey"));
+        assertEquals(field(exp.getBody(), "evidenceId"), field(rb, "evidenceId"));
+        assertEquals(field(exp.getBody(), "packetDigest"), field(rb, "packetDigest"));
+        assertTrue(rb.contains("\"claimCount\":1"), "claimCount exact-int olmalı; body: " + rb);
+        java.time.Instant.parse(field(rb, "ledgerRecordedAt"));
+
         // DSAR + ERASURE (tombstone hedefi: citation kanıtı)
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
                 "{\"subjectRef\":\"s-1\",\"reasonCode\":\"kvkk_talep\"}");
@@ -201,6 +222,17 @@ class ExportDsarApiTest {
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
         assertEquals(404, gone.getStatusCode().value(), "transcript content silinmiş olmalı");
         assertTrue(wormCount(TENANT, "evidence.tombstoned") >= 1, "tombstone WORM satırı olmalı");
+
+        // Makbuz gerçeği erasure'dan SAĞ ÇIKAR: content-plane silindi ama
+        // ledger satırı + EXPORTED vaka değişmedi → aynı digest'li COMPLETED
+        // makbuz dönmeye devam eder (pointer-only; artifact içeriği yok).
+        ResponseEntity<String> recAfter = rest.exchange(
+                "/api/v1/interviews/" + iv + "/export/receipt?caseKey=" + caseKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(readTok)), String.class);
+        assertEquals(200, recAfter.getStatusCode().value(), "body: " + recAfter.getBody());
+        assertEquals("COMPLETED", field(recAfter.getBody(), "transitionStatus"));
+        assertEquals(field(rb, "packetDigest"), field(recAfter.getBody(), "packetDigest"));
+        assertEquals(field(rb, "ledgerRecordedAt"), field(recAfter.getBody(), "ledgerRecordedAt"));
     }
 
     @Test
