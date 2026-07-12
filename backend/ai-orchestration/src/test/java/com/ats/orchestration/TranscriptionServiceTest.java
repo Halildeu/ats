@@ -13,6 +13,7 @@ import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.governance.ModelGovernanceGate;
+import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -39,6 +40,7 @@ class TranscriptionServiceTest {
     private InMemoryTranscriptStore transcriptStore;
     private FakeLedger ledger;
     private FakeModelGovernanceGate gate;
+    private FakeModelGovernanceJournal journal;
 
     // SENTETİK fixture (ATS-0016: gerçek aday verisi build'de YASAK)
     static final class FakeProvider implements AIProvider {
@@ -117,6 +119,7 @@ class TranscriptionServiceTest {
         transcriptStore = new InMemoryTranscriptStore();
         ledger = new FakeLedger();
         gate = FakeModelGovernanceGate.allowing();
+        journal = FakeModelGovernanceJournal.allowing();
     }
 
     private final InMemoryAudioAccessGrants grants =
@@ -127,8 +130,13 @@ class TranscriptionServiceTest {
     }
 
     private TranscriptionService service(AIProvider provider, EvidenceLedger l, ModelGovernanceGate g) {
+        return service(provider, l, g, journal);
+    }
+
+    private TranscriptionService service(
+            AIProvider provider, EvidenceLedger l, ModelGovernanceGate g, ModelGovernanceJournal j) {
         return new TranscriptionService(
-                new ConsentGate(consentStore, sink), g, provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
+                new ConsentGate(consentStore, sink), g, j, provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
     }
 
     private void grant() {
@@ -779,5 +787,143 @@ class TranscriptionServiceTest {
         public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
             return delegate.list(t, f);
         }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* gov1-1d — invocation WORM journal iki-fazlı ordering (call-count)   */
+    /* ------------------------------------------------------------------ */
+
+    /** put() çağrısını paylaşılan sıra-defterine kaydeden delegate store (ordering assert için). */
+    static final class OrderRecordingTranscriptStore implements TranscriptStore {
+        private final TranscriptStore delegate;
+        private final List<String> order;
+
+        OrderRecordingTranscriptStore(TranscriptStore delegate, List<String> order) {
+            this.delegate = delegate;
+            this.order = order;
+        }
+
+        @Override
+        public Outcome<String> put(Transcript transcript) {
+            order.add("store");
+            return delegate.put(transcript);
+        }
+
+        @Override
+        public Outcome<Transcript> find(TenantId t, InterviewId i, String key) {
+            return delegate.find(t, i, key);
+        }
+
+        @Override
+        public Outcome<List<TranscriptSummary>> listByInterview(TenantId t, InterviewId i) {
+            return delegate.listByInterview(t, i);
+        }
+
+        @Override
+        public Outcome<Void> delete(TenantId t, String key) {
+            return delegate.delete(t, key);
+        }
+    }
+
+    @Test
+    void journal_authorized_then_attested_recorded_before_store_on_happy_path() {
+        grant();
+        List<String> order = new ArrayList<>();
+        FakeModelGovernanceJournal orderedJournal = new FakeModelGovernanceJournal(order);
+        OrderRecordingTranscriptStore orderedStore = new OrderRecordingTranscriptStore(transcriptStore, order);
+        TranscriptionService svc = new TranscriptionService(
+                new ConsentGate(consentStore, sink), gate, orderedJournal, new FakeProvider(),
+                new SegmentSanitizer(), orderedStore, ledger, sink, grants);
+        Outcome<TranscriptionReceipt> out = svc.transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertInstanceOf(Outcome.Ok.class, out);
+        assertEquals(1, orderedJournal.authorizedCalls, "authorized bir kez yazılmalı");
+        assertEquals(1, orderedJournal.terminalCalls, "terminal bir kez yazılmalı");
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, orderedJournal.lastTerminal);
+        // Fail-closed ordering: authorized → attested-terminal → business store (attested store'DAN ÖNCE).
+        assertEquals(List.of("authorized", "terminal:Attested", "store"), order);
+    }
+
+    @Test
+    void journal_record_authorized_fail_skips_provider_and_writes_nothing() {
+        grant();
+        journal.failAuthorized = true;
+        CountingProvider provider = new CountingProvider();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(0, journal.terminalCalls, "authorized append fail → terminal yazılmamalı");
+        assertEquals(0, provider.calls, "authorized append fail → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, transcriptStore.size());
+        assertTrue(ledger.entries.isEmpty(), "authorized-fail → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_provider_failure_records_provider_rejected_terminal_no_store() {
+        grant();
+        Outcome<TranscriptionReceipt> out =
+                service(new FailingProvider(), ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.ProviderRejected.class, journal.lastTerminal);
+        assertEquals(0, transcriptStore.size(), "provider-fail → business store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.PROVIDER_REJECTED_EVENT.equals(e.eventTypeId())
+                        && "stt_provider_failed".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_verify_deny_records_verification_rejected_terminal_no_store() {
+        grant();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingVerify(ModelGovernanceGate.Reason.MODEL_ID_MISMATCH);
+        CountingProvider provider = new CountingProvider();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.VerificationRejected.class, journal.lastTerminal);
+        assertEquals(1, provider.calls, "verify için sağlayıcı çağrılmış olmalı (sonra discard)");
+        assertEquals(0, transcriptStore.size(), "verify DENY → business store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty());
+    }
+
+    @Test
+    void journal_attested_append_fail_discards_business_result_no_store() {
+        grant();
+        journal.failTerminalType = ModelGovernanceJournal.Attested.class;
+        Outcome<TranscriptionReceipt> out =
+                service(new FakeProvider(), ledger).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk(), "attested journal append fail → business sonucu TAMAMEN discard (fail-closed)");
+        assertEquals(1, journal.authorizedCalls);
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.Attested.class, journal.lastTerminal);
+        assertEquals(0, transcriptStore.size(), "attested-fail → transkript store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty(), "attested-fail → business-WORM'a satır YAZILMAMALI");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "AUDIT_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void journal_preflight_deny_records_preflight_rejected_terminal_no_authorized() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, journal.authorizedCalls, "preflight DENY → authorized yazılmamalı");
+        assertEquals(1, journal.terminalCalls);
+        assertInstanceOf(ModelGovernanceJournal.PreflightRejected.class, journal.lastTerminal);
+        assertEquals(0, provider.calls, "preflight DENY → sağlayıcı çağrılmamalı");
+        assertTrue(ledger.entries.isEmpty());
     }
 }

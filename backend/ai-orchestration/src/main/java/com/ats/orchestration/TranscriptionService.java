@@ -8,6 +8,13 @@ import com.ats.contracts.EvidenceLedger.EvidenceEvent;
 import com.ats.contracts.EvidenceLedger.LedgerEntry;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelGovernanceGate;
+import com.ats.contracts.governance.ModelGovernanceJournal;
+import com.ats.contracts.governance.ModelGovernanceJournal.Attested;
+import com.ats.contracts.governance.ModelGovernanceJournal.InvocationContext;
+import com.ats.contracts.governance.ModelGovernanceJournal.PreflightRejected;
+import com.ats.contracts.governance.ModelGovernanceJournal.ProviderRejected;
+import com.ats.contracts.governance.ModelGovernanceJournal.VerificationRejected;
+import com.ats.contracts.governance.ModelInvocationId;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
@@ -43,6 +50,7 @@ public final class TranscriptionService {
 
     private final ConsentGate consentGate;
     private final ModelGovernanceGate governanceGate;
+    private final ModelGovernanceJournal journal;
     private final AIProvider provider;
     private final SegmentSanitizer sanitizer;
     private final TranscriptStore transcriptStore;
@@ -53,6 +61,7 @@ public final class TranscriptionService {
     public TranscriptionService(
             ConsentGate consentGate,
             ModelGovernanceGate governanceGate,
+            ModelGovernanceJournal journal,
             AIProvider provider,
             SegmentSanitizer sanitizer,
             TranscriptStore transcriptStore,
@@ -61,6 +70,7 @@ public final class TranscriptionService {
             AudioAccessGrants grants) {
         this.consentGate = consentGate;
         this.governanceGate = governanceGate;
+        this.journal = journal;
         this.provider = provider;
         this.grants = grants;
         this.sanitizer = sanitizer;
@@ -123,16 +133,29 @@ public final class TranscriptionService {
                     "sourceObjectKey için recording.ingested kanıtı yok (fail-closed; önce yükleme)");
         }
 
+        // gov1-1d: her AI invocation'ı için OPAK korelasyon kimliği — preflight'tan HEMEN önce üretilir;
+        // authorized + terminal WORM event'leri bu değere bağlanır (crash-gap makine-tespiti).
+        InvocationContext journalCtx = new InvocationContext(tenantId, interviewId, actorId);
+        ModelInvocationId invocationId = ModelInvocationId.random();
+
         // gov1-1c: çağrı-ÖNCESİ model-governance kapısı. TRANSCRIBE için onaylı-model APPROVED
         // değilse sağlayıcıya HİÇ çıkılmaz (fail-closed) — ses-erişim grant'i bile verilmez.
         Outcome<ModelGovernanceGate.Permit> preflight = governanceGate.preflight(Capability.TRANSCRIBE);
         if (!(preflight instanceof Outcome.Ok<ModelGovernanceGate.Permit> permitOk)) {
-            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Permit>) preflight));
+            // Preflight RED → provider HİÇ çağrılmaz; gov1-1d terminal(PreflightRejected) WORM'a yazılır.
+            return preflightRejected(journalCtx, invocationId,
+                    safeGateReason((Outcome.Fail<ModelGovernanceGate.Permit>) preflight));
         }
         ModelGovernanceGate.Permit permit = permitOk.value();
         if (permit == null) {
-            // Fail-closed: gate Ok verdi ama Permit null (sözleşme-ihlali) → sağlayıcıya HİÇ çıkma.
-            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+            // Fail-closed: gate Ok verdi ama Permit null (sözleşme-ihlali) → preflight-red gibi ele al.
+            return preflightRejected(journalCtx, invocationId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        }
+
+        // gov1-1d: çağrı-ÖNCESİ authorized WORM event'i. Append başarısızsa sağlayıcıya HİÇ çıkılmaz
+        // (fail-closed AUDIT_UNAVAILABLE) — ses-erişim grant'i bile verilmez.
+        if (!journal.recordAuthorized(journalCtx, invocationId, permit).isOk()) {
+            return governanceDenied(tenantId, ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
         }
 
         // slice-36: provider'a orijinal key DEĞİL, tenant-bağlı one-shot capability
@@ -145,28 +168,48 @@ public final class TranscriptionService {
         Outcome<TranscriptResult> transcribed = provider.transcribe(issuedOk.value());
         if (!(transcribed instanceof Outcome.Ok<TranscriptResult> providerOk) || providerOk.value() == null) {
             // Ok(null) sonuç da sağlayıcı-başarısızlığıdır (fail-closed: aşağıda .modelIdentity() NPE'sine izin verme).
+            // gov1-1d: terminal(ProviderRejected) WORM'a yazılır (append fail → AUDIT_UNAVAILABLE).
+            Outcome<TranscriptionReceipt> audit = journalTerminal(journalCtx, invocationId, new ProviderRejected(permit));
+            if (audit != null) {
+                return audit;
+            }
             emit(tenantId, PROVIDER_REJECTED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
                     Map.of("reason_code", "stt_provider_failed"));
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "STT sağlayıcı başarısız (fail-closed)");
         }
+        AIProvider.ReportedModelIdentity reported = providerOk.value().modelIdentity();
 
         // gov1-1c: sonuç-SONRASI doğrulama. Sağlayıcının RAPORLADIĞI model kimliği onaylı spec ile
         // HARD-REQUIRED eşleşmeli; absent/mismatch/TOCTOU-revoke → sonuç TAMAMEN discard
         // (sanitize/store/WORM'a GİRMEZ). ALLOW kararı = Decision.allowed() (isOk() tek başına YETMEZ).
-        Outcome<ModelGovernanceGate.Decision> verified =
-                governanceGate.verify(permit, providerOk.value().modelIdentity());
+        Outcome<ModelGovernanceGate.Decision> verified = governanceGate.verify(permit, reported);
         if (!(verified instanceof Outcome.Ok<ModelGovernanceGate.Decision> decisionOk)) {
-            // verify yalnız permit==null'da Fail döner (buraya ulaşılmaz) — yine de fail-closed
-            // KAPALI Reason ile (ham string değil).
-            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Decision>) verified));
+            // verify yalnız permit==null'da Fail döner (buraya ulaşılmaz) — yine de fail-closed:
+            // sentetik DENY ile terminal(VerificationRejected) yaz, KAPALI Reason ile reddet.
+            return verificationRejected(journalCtx, invocationId, permit, reported,
+                    safeGateReason((Outcome.Fail<ModelGovernanceGate.Decision>) verified));
         }
         ModelGovernanceGate.Decision decision = decisionOk.value();
         if (decision == null) {
-            // Fail-closed: gate Ok verdi ama Decision null (sözleşme-ihlali) → discard (store/WORM'a girmez).
-            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+            // Fail-closed: gate Ok verdi ama Decision null (sözleşme-ihlali) → verification-red gibi ele al.
+            return verificationRejected(journalCtx, invocationId, permit, reported,
+                    ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
         }
         if (!decision.allowed()) {
+            // DENY: terminal(VerificationRejected) yaz (append fail → AUDIT_UNAVAILABLE), sonra governance-red.
+            Outcome<TranscriptionReceipt> audit =
+                    journalTerminal(journalCtx, invocationId, new VerificationRejected(permit, reported, decision));
+            if (audit != null) {
+                return audit;
+            }
             return governanceDenied(tenantId, decision.reasonCode());
+        }
+        // ALLOW: terminal(Attested) WORM'a business-store/business-WORM'DAN ÖNCE yazılır. Append başarısızsa
+        // business sonucu TAMAMEN discard (store/business-WORM'a GİRMEZ) — fail-closed AUDIT_UNAVAILABLE.
+        Outcome<TranscriptionReceipt> attestAudit =
+                journalTerminal(journalCtx, invocationId, new Attested(permit, reported, decision));
+        if (attestAudit != null) {
+            return attestAudit;
         }
 
         SegmentSanitizer.Sanitized sanitized = sanitizer.sanitize(providerOk.value().segments());
@@ -346,6 +389,51 @@ public final class TranscriptionService {
 
     private void emitAppendFailed(TenantId tenantId, String reasonCode) {
         emit(tenantId, APPEND_FAILED_EVENT, "evidence", "error", PiiClass.ID_ONLY, Map.of("reason_code", reasonCode));
+    }
+
+    /**
+     * gov1-1d preflight-red terminal'i (provider hiç çağrılmadı) WORM'a yazar + governance-red döner;
+     * WORM append başarısızsa fail-closed AUDIT_UNAVAILABLE.
+     */
+    private Outcome<TranscriptionReceipt> preflightRejected(
+            InvocationContext ctx, ModelInvocationId id, ModelGovernanceGate.Reason reason) {
+        Outcome<TranscriptionReceipt> audit =
+                journalTerminal(ctx, id, new PreflightRejected(Capability.TRANSCRIBE, reason));
+        if (audit != null) {
+            return audit;
+        }
+        return governanceDenied(ctx.tenantId(), reason);
+    }
+
+    /**
+     * gov1-1d verification-red terminal'i (sentetik DENY kararıyla) WORM'a yazar + governance-red döner.
+     * Sentetik DENY yalnız verify sözleşme-ihlali (Fail / null-Decision) fail-closed dalları içindir;
+     * gerçek DENY kararı doğrudan {@link VerificationRejected} ile taşınır (çağrı yeri).
+     */
+    private Outcome<TranscriptionReceipt> verificationRejected(
+            InvocationContext ctx, ModelInvocationId id, ModelGovernanceGate.Permit permit,
+            AIProvider.ReportedModelIdentity reported, ModelGovernanceGate.Reason reason) {
+        ModelGovernanceGate.Decision synth =
+                ModelGovernanceGate.Decision.deny(permit.approvalRef(), permit.capability(), reason);
+        Outcome<TranscriptionReceipt> audit =
+                journalTerminal(ctx, id, new VerificationRejected(permit, reported, synth));
+        if (audit != null) {
+            return audit;
+        }
+        return governanceDenied(ctx.tenantId(), reason);
+    }
+
+    /**
+     * gov1-1d terminal WORM append'i dener; başarısızsa fail-closed AUDIT_UNAVAILABLE Outcome'u döner
+     * (çağıran onu döndürür — provider-red/verify-red'de reject, attested'da business discard),
+     * başarılıysa {@code null} (çağıran devam eder).
+     */
+    private Outcome<TranscriptionReceipt> journalTerminal(
+            InvocationContext ctx, ModelInvocationId id, ModelGovernanceJournal.Terminal terminal) {
+        if (journal.recordTerminal(ctx, id, terminal).isOk()) {
+            return null;
+        }
+        return governanceDenied(ctx.tenantId(), ModelGovernanceGate.Reason.AUDIT_UNAVAILABLE);
     }
 
     /**
