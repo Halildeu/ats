@@ -37,6 +37,7 @@
 - [integrations/connector-capability-standard.md](./integrations/connector-capability-standard.md) — ATS connector yetenek registry'si: export baseline + dar write-back (aday/karar yazımı YASAK; drift-guard `connector-capability-guard`).
 - [integrations/integration-platform-v1.md](./integrations/integration-platform-v1.md) — P4 ATS/HRIS/calendar-email/SSO-SCIM/portability capability matrisi + sentetik envelope/idempotency/replay/ownership kontratı (runtime gate-locked; drift-guard `integration-platform-guard`).
   - P4.2 `contracts/portability/csv-portability.ts` — sentetik RFC 4180 mapping, atomic dry-run/apply, tenant idempotency, reconciliation ve opaque-ref-only export harness'ı; partner/runtime kanıtı değildir.
+  - P4.3 `contracts/delivery/delivery-conformance.ts` — sentetik signed-webhook replay savunması ve transactional-outbox retry/DLQ/human-redrive state machine harness'ı; network/credential/partner kanıtı değildir.
 - [integrations/deployment-profile-v1.md](./integrations/deployment-profile-v1.md) — P5 managed/dedicated/BYO-region/on-prem responsibility ve readiness zinciri; release-evidence ref-only, restore/rollback/rotation/egress/audit drill gate'leri (runtime ve partner acceptance gate-locked; drift-guard `deployment-profile-guard`).
 
 ## Ürün akışı (public, living)
