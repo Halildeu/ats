@@ -9,6 +9,7 @@
 Kanonik artefaktlar:
 
 - TypeScript: `contracts/wire/intelligence-evaluation.ts`
+- P6.1 sentetik aggregate evaluator: `contracts/fairness/fairness-evidence.ts`
 - JSON Schema: `contracts/schemas/intelligence-evaluation.schema.json`
 - Tamamen sentetik fixture: `contracts/samples/intelligence-evaluation.sample.json`
 - Drift guard: `scripts/check-intelligence-evaluation.mjs`
@@ -117,6 +118,24 @@ cohort yeterliliği, confidence/uncertainty, missingness, confounder, bağımsı
 audit ve legal/owner değerlendirmesinin yerine geçmez. Otomatik discrimination
 verdict veya aday action üretemez.
 
+P6.1 evaluator bu sınırı çalışan bir PRE-G0 kanıt yüzeyine dönüştürür. Girdi
+yalnız `grp_<16 hex>` biçimindeki opaque sentetik aggregate group ref'leri ile
+population/selected sayılarını kabul eder; group label, kişi ID'si, raw PII veya
+raw protected attribute kabul etmez. Referans grup önceden sabitlenir. Minimum
+grup büyüklüğünün altı, izin verilen missingness oranının üstü veya sıfır
+referans selection rate sonucu `INSUFFICIENT_DATA` yapar. Yeterli sentetik
+veride seçim oranları, sabit `0.8` four-fifths oranı ve Wilson %95 interval
+üretilir. Sonuç yalnız `SCREENING_SIGNAL_REVIEW_REQUIRED` ya da
+`NO_SCREENING_SIGNAL_OBSERVED` olabilir; her iki durumda da `verdict=NONE`,
+`individualActionAllowed=false` ve `productionEligible=false` kalır.
+
+Audit export'u ayrı bir insan denetçi, amaç ve aggregate-access approval ref'i
+gerektirir; evidence receipt digest'ine bağlanır, tenant-scoped idempotenttir ve
+yalnız `SYNTHETIC_AGGREGATE_AUDIT_EXPORT` üretir. Evidence gate
+`SYNTHETIC_EVIDENCE_ONLY`; legal, independent-audit ve owner gate'leri
+`NOT_MET` kalır. Bu export bağımsız audit tamamlanması, real-cohort acceptance,
+compliance sonucu veya üretim uygunluğu değildir.
+
 C2PA/provenance ve deepfake model sinyali yalnız insan incelemesine yönlendiren
 risk indicator'dır. Confidence yüksek olsa dahi otomatik red, ranking veya
 güvenilirlik/deception etiketi üretemez.
@@ -131,6 +150,11 @@ güvenilirlik/deception etiketi üretemez.
 - C2PA provenance signal boundary.
 
 Bu hizalama conformity, certification veya legal conclusion değildir.
+Rakip analytics/audit yüzeyleriyle karşılaştırma yalnız product-surface açıklığı
+içindir: Ashby/Greenhouse benzeri funnel oranı görünürlüğü hedeflenir; fakat
+sentetik hesap sonucu rakip parity, fairness etkinliği veya compliance kanıtı
+sayılmaz. Kalıcı ürün farkı; belirsizlik, missingness/confounder provenance,
+human audit export ve kapalı gate'lerin aynı receipt zincirinde görünmesidir.
 
 ## 9. Doğrulama
 
