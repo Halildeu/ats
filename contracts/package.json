@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./integration-platform-v1": "./wire/integration-platform.ts",
-    "./deployment-profile-v1": "./wire/deployment-profile.ts"
+    "./deployment-profile-v1": "./wire/deployment-profile.ts",
+    "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

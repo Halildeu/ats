@@ -350,3 +350,16 @@ jobs:
           node-version: "20"
       - name: deployment-profile drift guard
         run: node scripts/check-deployment-profile.mjs
+
+  intelligence-evaluation-guard:
+    # Faz 25 P6 intelligence-evaluation/v1: seven capability-specific metric protocols,
+    # evidence/legal/audit/owner gates and canonical human-oversight proposal binding.
+    # Scoring/ranking/affect/deception/protected optimization/autonomous action are fail-closed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: intelligence-evaluation drift guard
+        run: node scripts/check-intelligence-evaluation.mjs
