@@ -52,6 +52,7 @@ public final class ExportService {
     static final String EXPORT_GENERATED_EVENT = "security.audit_export.generated";
     static final String RECEIPT_RECOVERED_EVENT = "security.audit_export.receipt_recovered";
     static final String ARTIFACT_READ_EVENT = "security.audit_export.artifact_read";
+    static final String REPLAYED_EVENT = "security.audit_export.replayed";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String LEDGER_EVENT_TYPE = "evidence_packet.exported";
     static final String SCHEMA_VERSION = "evidence-packet/v1";
@@ -84,6 +85,56 @@ public final class ExportService {
 
     public record ExportReceipt(String artifactKey, String evidenceId, String packetDigest, int claimCount) {}
 
+    /** 39d-10: POST cevabı artık disposition taşır — CREATED=201, REPLAYED=200 (X-ATS-Replay). */
+    public enum ExportDisposition { CREATED, REPLAYED }
+
+    public record ExportPacketResult(ExportReceipt receipt, ExportDisposition disposition) {}
+
+    /**
+     * 39d-10 request-fingerprint (Codex blocker-1): replay YALNIZ "aynı istek"
+     * için — caseKey eşleşmesi yetmez. Versioned canonical temsil; occurredAt
+     * ve actor fingerprint'e GİRMEZ (meşru retry zamanı yeniden damgalar;
+     * başka yetkili operatör aynı talebin sonucunu replay alabilir — kendi
+     * actor'ıyla audit edilir). citationKeys SIRASI packet claim-sırasını
+     * belirlediği için semantiktir — sıra korunur. Ledger'a ham gövde değil
+     * yalnız digest yazılır (pointer-only disiplin).
+     */
+    static String exportRequestDigest(TenantId tenantId, InterviewId interviewId, String caseKey,
+            List<String> citationKeys, ExportContext ctx) {
+        Map<String, JsonValue> m = new HashMap<>();
+        m.put("schema", JsonValue.of("export-request/v1"));
+        m.put("tenant", JsonValue.of(tenantId.value()));
+        m.put("interview", JsonValue.of(interviewId.value()));
+        m.put("case_key", JsonValue.of(caseKey));
+        m.put("citation_keys", new JsonValue.JsonArray(citationKeys.stream()
+                .map(k -> (JsonValue) JsonValue.of(k)).toList()));
+        m.put("generator_version_ref", JsonValue.of(ctx.generatorVersionRef()));
+        m.put("locale", JsonValue.of(ctx.locale()));
+        m.put("timezone", JsonValue.of(ctx.timezone()));
+        m.put("ai_assistance_disclosure_ref", JsonValue.of(ctx.aiAssistanceDisclosureRef()));
+        m.put("consent_refs", new JsonValue.JsonArray(ctx.consentRefs().stream()
+                .map(k -> (JsonValue) JsonValue.of(k)).toList()));
+        m.put("rubric_version_ref", JsonValue.of(ctx.rubricVersionRef()));
+        m.put("criteria", new JsonValue.JsonArray(ctx.criteria().stream()
+                .map(c -> (JsonValue) JsonValue.object(Map.of(
+                        "criterion_id", JsonValue.of(c.criterionId()),
+                        "job_relatedness_rationale_ref", JsonValue.of(c.jobRelatednessRationaleRef()))))
+                .toList()));
+        Map<String, JsonValue> mapping = new HashMap<>();
+        for (Map.Entry<String, String> e : ctx.citationCriterion().entrySet()) {
+            mapping.put(e.getKey(), JsonValue.of(e.getValue()));
+        }
+        m.put("citation_criterion", JsonValue.object(mapping));
+        m.put("worm_chain_refs", new JsonValue.JsonArray(ctx.wormChainRefs().stream()
+                .map(k -> (JsonValue) JsonValue.of(k)).toList()));
+        m.put("redaction_policy_ref", JsonValue.of(ctx.redactionPolicyRef()));
+        m.put("redaction_run_ref", JsonValue.of(ctx.redactionRunRef()));
+        m.put("retention_policy_ref", JsonValue.of(ctx.retentionPolicyRef()));
+        m.put("schema_digest", JsonValue.of(ctx.schemaDigest()));
+        m.put("signature_ref", JsonValue.of(ctx.signatureRef()));
+        return sha256Hex(PacketJson.canonical(JsonValue.object(m)));
+    }
+
     private final ReviewCaseStore reviewStore;
     private final CitationStore citationStore;
     private final ExportArtifactStore artifactStore;
@@ -102,7 +153,7 @@ public final class ExportService {
         this.sink = sink;
     }
 
-    public Outcome<ExportReceipt> exportPacket(TenantId tenantId, ActorId actorId, InterviewId interviewId,
+    public Outcome<ExportPacketResult> exportPacket(TenantId tenantId, ActorId actorId, InterviewId interviewId,
             String caseKey, List<String> citationKeys, ExportContext ctx, String occurredAtIso) {
         Outcome<Void> ctxValid = validateContext(ctx);
         if (ctxValid instanceof Outcome.Fail<Void> bad) {
@@ -117,6 +168,23 @@ public final class ExportService {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope)");
         }
         ReviewCase reviewCase = caseOk.value();
+
+        // 39d-10: ÜRETİMDEN ÖNCE deterministik ledger lookup — mevcut export
+        // kaydı varsa hiçbir side-effect'e girmeden reconcile edilir (replay /
+        // R4-repair-first / farklı-istek-conflict). R4 retry'ının bugünkü
+        // "yeniden üret → 23505 → hata" davranışı da burada kapanır.
+        String requestDigest = exportRequestDigest(tenantId, interviewId, caseKey, citationKeys, ctx);
+        Outcome<LedgerEntry> prior = ledger.findByIdempotencyKey(tenantId,
+                exportIdempotencyKey(tenantId, interviewId, caseKey));
+        if (prior instanceof Outcome.Ok<LedgerEntry>) {
+            return reconcileExistingExport(tenantId, actorId, interviewId, caseKey, requestDigest);
+        }
+        if (prior instanceof Outcome.Fail<LedgerEntry> priorFail
+                && priorFail.code() != OutcomeCode.NOT_FOUND) {
+            // Ledger okunamıyorsa üretime GİRİLMEZ (kör çift-üretim riski).
+            return Outcome.fail(priorFail.code(), "export ön-kontrolü: ledger okunamadı: " + priorFail.reason());
+        }
+
         if (reviewCase.state() != ReviewState.FINALIZED) {
             return Outcome.fail(OutcomeCode.INVALID,
                     "yalnız FINALIZED vaka export edilir (EXPORTED terminal → çift-export da burada düşer): " + reviewCase.state());
@@ -257,14 +325,26 @@ public final class ExportService {
                         "case_key", JsonValue.of(caseKey),
                         "packet_digest", JsonValue.of(packetDigest),
                         "artifact_digest", JsonValue.of(artifactDigest),
+                        "request_digest", JsonValue.of(requestDigest),
                         "claim_count", JsonValue.of((double) claims.size())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
             Outcome<Void> rolledBack = artifactStore.delete(tenantId, artifactKey);
             if (rolledBack.isOk()) {
+                // 39d-10 (Codex blocker-3): kendi artifact'imiz TELAFİ EDİLDİ →
+                // append-fail bir UNIQUE yarışı olabilir; deterministik lookup ile
+                // kazanan reconcile edilir (replay / in-progress / farklı-istek).
+                // Satır YOKSA gerçek ledger arızasıdır — mevcut hata korunur.
+                Outcome<LedgerEntry> winner = ledger.findByIdempotencyKey(tenantId,
+                        exportIdempotencyKey(tenantId, interviewId, caseKey));
+                if (winner instanceof Outcome.Ok<LedgerEntry>) {
+                    return reconcileExistingExport(tenantId, actorId, interviewId, caseKey, requestDigest);
+                }
                 emit(tenantId, APPEND_FAILED_EVENT, "evidence", "error", PiiClass.ID_ONLY,
                         Map.of("reason_code", "ledger_unavailable"));
                 return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ledger append başarısız (artifact geri alındı)");
             }
+            // Rollback-fail (R1 öksüz-artifact adayı): kazanan var olsa bile başarı/
+            // replay DÖNÜLMEZ — operasyonel müdahale sinyali gizlenmez (Codex şartı).
             emit(tenantId, APPEND_FAILED_EVENT, "evidence", "error", PiiClass.ID_ONLY,
                     Map.of("reason_code", "ledger_unavailable_rollback_failed"));
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
@@ -279,7 +359,52 @@ public final class ExportService {
 
         emit(tenantId, EXPORT_GENERATED_EVENT, "security", "notice", PiiClass.ID_ONLY,
                 Map.of("actor_ref", actorId.value()));
-        return Outcome.ok(new ExportReceipt(artifactKey, entryOk.value().evidenceId().value(), packetDigest, claims.size()));
+        return Outcome.ok(new ExportPacketResult(
+                new ExportReceipt(artifactKey, entryOk.value().evidenceId().value(), packetDigest, claims.size()),
+                ExportDisposition.CREATED));
+    }
+
+    /**
+     * 39d-10: mevcut export ledger kaydının POST'a reconciliation'ı (side-effect'siz).
+     * - EXPORTED + request_digest EŞLEŞİR → REPLAYED (makbuz ledger'dan; yeni
+     *   artifact/append/markExported YOK).
+     * - EXPORTED + digest yok (legacy) → INVALID; makbuz için GET /export/receipt.
+     * - EXPORTED + digest FARKLI → INVALID (aynı vaka için farklı istek; eski
+     *   makbuz SIZDIRILMAZ — fail-closed conflict).
+     * - FINALIZED (R4/in-progress) → UNSUPPORTED_IN_GATE(409): yeni üretim yok;
+     *   repair-first (self-heal AYRI dilim — CAS'sız markExported + best-effort
+     *   audit ile güvenli değil; Codex 39d-10 blocker-2).
+     * - Diğer bütünlük ihlalleri verifyLedgerReceipt'ten aynen taşınır.
+     */
+    private Outcome<ExportPacketResult> reconcileExistingExport(TenantId tenantId, ActorId actorId,
+            InterviewId interviewId, String caseKey, String requestDigest) {
+        Outcome<VerifiedExport> verified = verifyLedgerReceipt(tenantId, actorId, interviewId, caseKey);
+        if (verified instanceof Outcome.Fail<VerifiedExport> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        VerifiedExport v = ((Outcome.Ok<VerifiedExport>) verified).value();
+        if (v.state() == ReviewState.FINALIZED) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE,
+                    "bu vaka için export kaydı var ama EXPORTED geçişi tamamlanmamış (R4/in-progress):"
+                            + " yeni üretim yapılmaz; durum için GET /export/receipt (INCOMPLETE),"
+                            + " onarım için runbook R4 (repair-first)");
+        }
+        // verifyLedgerReceipt yalnız EXPORTED/FINALIZED'ı geçirir → burada EXPORTED.
+        if (v.requestDigest() == null) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "legacy export kaydı: istek-eşleşmesi doğrulanamaz (request_digest yok) —"
+                            + " POST replay yapılmaz; makbuz için GET /export/receipt kullanın");
+        }
+        if (!v.requestDigest().equals(requestDigest)) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "aynı vaka için FARKLI export isteği: mevcut makbuz replay edilmez"
+                            + " (case başına tek export; fail-closed conflict)");
+        }
+        emit(tenantId, REPLAYED_EVENT, "security", "notice", PiiClass.ID_ONLY,
+                Map.of("actor_ref", actorId.value(), "target_ref", v.artifactKey()));
+        return Outcome.ok(new ExportPacketResult(
+                new ExportReceipt(v.artifactKey(), v.evidenceId(), v.packetDigest(), v.claimCount()),
+                ExportDisposition.REPLAYED));
     }
 
     private JsonValue.JsonObject buildPacket(TenantId tenantId, InterviewId interviewId, String caseKey,
@@ -389,7 +514,7 @@ public final class ExportService {
      */
     private record VerifiedExport(ReviewState state, String transitionStatus, String artifactKey,
             String evidenceId, String packetDigest, int claimCount, String ledgerRecordedAt,
-            String artifactDigest) {}
+            String artifactDigest, String requestDigest) {}
 
     private Outcome<VerifiedExport> verifyLedgerReceipt(TenantId tenantId, ActorId actorId,
             InterviewId interviewId, String caseKey) {
@@ -467,8 +592,14 @@ public final class ExportService {
             return Outcome.fail(OutcomeCode.INVALID,
                     "ledger artifact_digest 64-hex değil (operasyonel inceleme gerekir)");
         }
+        // request_digest OPSİYONEL (39d-10 öncesi satırlarda yok — legacy); varsa format pin.
+        String requestDigest = payloadString(obj, "request_digest");
+        if (requestDigest != null && !requestDigest.matches("[0-9a-f]{64}")) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "ledger request_digest 64-hex değil (operasyonel inceleme gerekir)");
+        }
         return Outcome.ok(new VerifiedExport(state, transition, artifactKey, evidenceId,
-                packetDigest, claimCount, recordedAt, artifactDigest));
+                packetDigest, claimCount, recordedAt, artifactDigest, requestDigest));
     }
 
     /** 39d-9 artifact-read cevabı: ledger'dan doğrulanmış key + depolanan TAM packet JSON string'i. */
