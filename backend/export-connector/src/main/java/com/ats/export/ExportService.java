@@ -51,6 +51,7 @@ public final class ExportService {
 
     static final String EXPORT_GENERATED_EVENT = "security.audit_export.generated";
     static final String RECEIPT_RECOVERED_EVENT = "security.audit_export.receipt_recovered";
+    static final String ARTIFACT_READ_EVENT = "security.audit_export.artifact_read";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String LEDGER_EVENT_TYPE = "evidence_packet.exported";
     static final String SCHEMA_VERSION = "evidence-packet/v1";
@@ -236,6 +237,10 @@ public final class ExportService {
         String packetDigest = sha256Hex(bodyJson);
         JsonValue.JsonObject packet = withIntegrity(packetBody, ctx, packetDigest);
         String packetJson = PacketJson.canonical(packet);
+        // 39d-9: artifact_digest = DEPOLANAN TAM string'in digest'i (packet_digest =
+        // integrity-ÖNCESİ body digest'i = ledger contentHash; ikisi FARKLI ve öyle
+        // kalmalı). Read-yolu bu bağla parse etmeden kriptografik bütünlük doğrular.
+        String artifactDigest = sha256Hex(packetJson);
 
         Outcome<String> storedArtifact = artifactStore.put(tenantId, interviewId, packetJson);
         if (!(storedArtifact instanceof Outcome.Ok<String> artifactOk)) {
@@ -251,6 +256,7 @@ public final class ExportService {
                         "export_artifact_ref", JsonValue.of(artifactKey),
                         "case_key", JsonValue.of(caseKey),
                         "packet_digest", JsonValue.of(packetDigest),
+                        "artifact_digest", JsonValue.of(artifactDigest),
                         "claim_count", JsonValue.of((double) claims.size())))));
         if (!(appended instanceof Outcome.Ok<LedgerEntry> entryOk)) {
             Outcome<Void> rolledBack = artifactStore.delete(tenantId, artifactKey);
@@ -358,10 +364,34 @@ public final class ExportService {
      * tamamlanmış export gibi SUNULMAZ. Tüm ledger-bağları fail-closed çapraz
      * doğrulanır (payload shape yetmez): eventType + tenant + interview +
      * idempotencyKey + payload.case_key + payload.packet_digest==entry.contentHash.
-     * Artifact VARLIĞI doğrulanamaz (store'da read/head portu yok — belgeli sınır);
+     * Artifact VARLIĞI burada doğrulanmaz (39d-9 artifact-read yolunun işi);
      * endpoint yalnız 'ledger receipt recovered' iddiasındadır.
      */
     public Outcome<ExportReceiptRecovery> exportReceipt(TenantId tenantId, ActorId actorId,
+            InterviewId interviewId, String caseKey) {
+        Outcome<VerifiedExport> verified = verifyLedgerReceipt(tenantId, actorId, interviewId, caseKey);
+        if (verified instanceof Outcome.Fail<VerifiedExport> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        VerifiedExport v = ((Outcome.Ok<VerifiedExport>) verified).value();
+        emit(tenantId, RECEIPT_RECOVERED_EVENT, "security", "notice", PiiClass.ID_ONLY,
+                Map.of("actor_ref", actorId.value(), "target_ref", caseKey));
+        return Outcome.ok(new ExportReceiptRecovery(caseKey, v.state().name(), v.transitionStatus(),
+                v.artifactKey(), v.evidenceId(), v.packetDigest(), v.claimCount(), v.ledgerRecordedAt()));
+    }
+
+    /**
+     * İki-katman doğrulama (Codex 39d-9 plan şartı): base zincir receipt için
+     * YETERLİ; artifact_digest OPSİYONEL taşınır — legacy ledger satırı (alan
+     * yok) receipt-recovery'yi DÜŞÜRMEZ, yalnız artifact-read yolunda zorunlu
+     * kılınır. Base receipt kontratına artifact_digest zorunluluğu eklemek
+     * YASAK (canlı satırlarla geriye-uyumluluk kırılır).
+     */
+    private record VerifiedExport(ReviewState state, String transitionStatus, String artifactKey,
+            String evidenceId, String packetDigest, int claimCount, String ledgerRecordedAt,
+            String artifactDigest) {}
+
+    private Outcome<VerifiedExport> verifyLedgerReceipt(TenantId tenantId, ActorId actorId,
             InterviewId interviewId, String caseKey) {
         if (caseKey == null || caseKey.isBlank()) {
             return Outcome.fail(OutcomeCode.INVALID, "caseKey zorunlu");
@@ -430,10 +460,78 @@ public final class ExportService {
             return Outcome.fail(OutcomeCode.INVALID,
                     "export ledger kaydı vaka state'iyle uyuşmuyor (yalnız FINALIZED/EXPORTED; operasyonel inceleme gerekir)");
         }
-        emit(tenantId, RECEIPT_RECOVERED_EVENT, "security", "notice", PiiClass.ID_ONLY,
-                Map.of("actor_ref", actorId.value(), "target_ref", caseKey));
-        return Outcome.ok(new ExportReceiptRecovery(caseKey, state.name(), transition,
-                artifactKey, evidenceId, packetDigest, claimCount, recordedAt));
+        // artifact_digest OPSİYONEL: 39d-9 öncesi satırlarda yok (legacy) — base
+        // doğrulamayı düşürmez; varsa format burada pin'lenir (bozuksa bütünlük hatası).
+        String artifactDigest = payloadString(obj, "artifact_digest");
+        if (artifactDigest != null && !artifactDigest.matches("[0-9a-f]{64}")) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "ledger artifact_digest 64-hex değil (operasyonel inceleme gerekir)");
+        }
+        return Outcome.ok(new VerifiedExport(state, transition, artifactKey, evidenceId,
+                packetDigest, claimCount, recordedAt, artifactDigest));
+    }
+
+    /** 39d-9 artifact-read cevabı: ledger'dan doğrulanmış key + depolanan TAM packet JSON string'i. */
+    public record ExportArtifactContent(String artifactKey, String packetJson) {}
+
+    /**
+     * 39d-9: ledger-bağlı export artifact'ini OKUR (content-plane; salt-okuma;
+     * hiçbir state'e dokunmaz). Fail-closed sıra:
+     * 1) receipt zinciri (vaka + ledger + çapraz-bağlar — verifyLedgerReceipt);
+     * 2) yalnız COMPLETED — R4/FINALIZED'de artifact store'da DURSA BİLE verilmez
+     *    (önce operasyonel repair + yeniden doğrulama);
+     * 3) ledger'da artifact_digest zorunlu — legacy satır (39d-9 öncesi export):
+     *    bütünlük doğrulanamaz → INVALID (receipt yolu ETKİLENMEZ);
+     * 4) store find — NOT_FOUND = erasure-sonrası meşru content-plane yokluğu;
+     *    DİĞER store hataları 404'e EZİLMEZ (kesinti ≠ silinme; erasure-kanıtı
+     *    yanlış-pozitifi üretilmez), Outcome code'u aynen taşınır;
+     * 5) sha256(depolanan TAM string) == ledger.artifact_digest — uyuşmazsa
+     *    içerik cevaba HİÇ çıkmaz.
+     * Başarı audit sinyali (artifact_read, target_ref=artifactKey) best-effort
+     * operasyonel sinyaldir — "audit kaydı olmadan content-egress olmaz"
+     * garantisi DEĞİLDİR (sink fail-closed değil).
+     */
+    public Outcome<ExportArtifactContent> exportArtifact(TenantId tenantId, ActorId actorId,
+            InterviewId interviewId, String caseKey) {
+        Outcome<VerifiedExport> verified = verifyLedgerReceipt(tenantId, actorId, interviewId, caseKey);
+        if (verified instanceof Outcome.Fail<VerifiedExport> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        VerifiedExport v = ((Outcome.Ok<VerifiedExport>) verified).value();
+        if (!"COMPLETED".equals(v.transitionStatus())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "export geçişi tamamlanmamış (R4); artifact erişiminden önce operasyonel repair"
+                            + " + yeniden doğrulama gerekir");
+        }
+        if (v.artifactDigest() == null) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "legacy ledger kaydı: artifact_digest yok — artifact bütünlüğü doğrulanamaz"
+                            + " (fail-closed; makbuz için receipt endpoint'i kullanılabilir)");
+        }
+        Outcome<String> found = artifactStore.find(tenantId, interviewId, v.artifactKey());
+        if (found instanceof Outcome.Fail<String> storeFail) {
+            if (storeFail.code() == OutcomeCode.NOT_FOUND) {
+                return Outcome.fail(OutcomeCode.NOT_FOUND,
+                        "artifact content-plane'de yok (erasure sonrası beklenen; makbuz receipt endpoint'inde)");
+            }
+            return Outcome.fail(storeFail.code(),
+                    "artifact deposu okunamadı (yokluk DEĞİL — operasyonel hata): " + storeFail.reason());
+        }
+        String packetJson = ((Outcome.Ok<String>) found).value();
+        if (packetJson == null || packetJson.isBlank()) {
+            // kontrat-guard: PG adapter NOT NULL + put blank'i reddeder; üçüncü-parti
+            // adapter Ok(null/blank) dönerse NPE değil fail-closed (Codex non-blocking).
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "artifact deposu boş içerik döndürdü (store-kontrat ihlali; operasyonel inceleme gerekir)");
+        }
+        if (!sha256Hex(packetJson).equals(v.artifactDigest())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "artifact bütünlük ihlali: depolanan içerik ledger artifact_digest'iyle uyuşmuyor"
+                            + " (operasyonel inceleme gerekir)");
+        }
+        emit(tenantId, ARTIFACT_READ_EVENT, "security", "notice", PiiClass.ID_ONLY,
+                Map.of("actor_ref", actorId.value(), "target_ref", v.artifactKey()));
+        return Outcome.ok(new ExportArtifactContent(v.artifactKey(), packetJson));
     }
 
     private static String payloadString(JsonValue.JsonObject obj, String key) {

@@ -3,6 +3,7 @@ package com.ats.app.web;
 import com.ats.export.ExportContext;
 import com.ats.export.ExportContext.CriterionRef;
 import com.ats.export.ExportService;
+import com.ats.export.ExportService.ExportArtifactContent;
 import com.ats.export.ExportService.ExportReceipt;
 import com.ats.export.ExportService.ExportReceiptRecovery;
 import com.ats.kernel.Ids.InterviewId;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -133,6 +135,35 @@ class ExportApiController {
                         "packetDigest", r.packetDigest(),
                         "claimCount", r.claimCount(),
                         "ledgerRecordedAt", r.ledgerRecordedAt()));
+    }
+
+    /**
+     * 39d-9 artifact-read: ledger-bağlı export artifact'ini verbatim döndürür
+     * (server parse/re-serialize ETMEZ; bütünlük serviste sha256(depolanan tam
+     * string)==ledger.artifact_digest ile). GET-only — HEAD DESTEKLENMEZ
+     * (SecurityConfig matcher'ı GET; artifact-existence oracle'ı ayrıca
+     * açılmaz). Erasure-sonrası 404 = content-plane yokluğunun API kanıtı;
+     * store operasyonel hatası 404'e EZİLMEZ (Outcome code'u aynen taşınır).
+     * no-store TÜM cevaplarda (opak ref + digest taşır).
+     */
+    @GetMapping("/api/v1/interviews/{interviewId}/export/artifact")
+    ResponseEntity<?> exportArtifact(Authentication auth,
+            @PathVariable("interviewId") String interviewId,
+            @RequestParam(name = "caseKey", required = false) String caseKey) {
+        if (caseKey == null || caseKey.isBlank() || caseKey.length() > 512
+                || caseKey.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            return noStore(ResponseEntity.badRequest()).body(Map.of("error", "INVALID",
+                    "reason", "caseKey zorunlu (opak; kontrol-karakteri ve 512 karakterden uzun değer reddedilir)"));
+        }
+        Outcome<ExportArtifactContent> out = exportService.exportArtifact(
+                tenantAccess.tenant(auth), tenantAccess.actor(auth),
+                new InterviewId(interviewId), caseKey);
+        if (out instanceof Outcome.Fail<ExportArtifactContent> fail) {
+            ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
+            return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
+        }
+        return noStore(ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON))
+                .body(((Outcome.Ok<ExportArtifactContent>) out).value().packetJson());
     }
 
     private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder b) {
