@@ -45,6 +45,10 @@ public record OperationalEvent(
                     new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code"))),
             Map.entry("ai_pipeline.citation.rejected",
                     new EventSpec("ai_pipeline", "warning", PiiClass.ID_ONLY, java.util.Set.of("reason_code"))),
+            // gov1-1c: çalışma-anı model-governance kapısı RED (preflight/verify). reason_code =
+            // tipli ModelGovernanceGate.Reason token'ı; ham reported-identity/PII TAŞIMAZ (NONE).
+            Map.entry("ai_pipeline.model_governance.denied",
+                    new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code"))),
             Map.entry("evidence.human_decision.finalized",
                     new EventSpec("evidence", "notice", PiiClass.ID_ONLY, java.util.Set.of("actor_ref", "ledger_entry_ref"))),
             Map.entry("security.audit_export.generated",

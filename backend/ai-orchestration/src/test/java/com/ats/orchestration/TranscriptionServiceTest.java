@@ -12,6 +12,7 @@ import com.ats.consent.RecordingPermission;
 import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -37,6 +38,7 @@ class TranscriptionServiceTest {
     private InMemoryEventSink sink;
     private InMemoryTranscriptStore transcriptStore;
     private FakeLedger ledger;
+    private FakeModelGovernanceGate gate;
 
     // SENTETİK fixture (ATS-0016: gerçek aday verisi build'de YASAK)
     static final class FakeProvider implements AIProvider {
@@ -114,14 +116,19 @@ class TranscriptionServiceTest {
         sink = new InMemoryEventSink();
         transcriptStore = new InMemoryTranscriptStore();
         ledger = new FakeLedger();
+        gate = FakeModelGovernanceGate.allowing();
     }
 
     private final InMemoryAudioAccessGrants grants =
             new InMemoryAudioAccessGrants(java.time.Clock.systemUTC(), java.time.Duration.ofMinutes(5));
 
     private TranscriptionService service(AIProvider provider, EvidenceLedger l) {
+        return service(provider, l, gate);
+    }
+
+    private TranscriptionService service(AIProvider provider, EvidenceLedger l, ModelGovernanceGate g) {
         return new TranscriptionService(
-                new ConsentGate(consentStore, sink), provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
+                new ConsentGate(consentStore, sink), g, provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
     }
 
     private void grant() {
@@ -219,6 +226,42 @@ class TranscriptionServiceTest {
         assertTrue(sink.emitted().stream().anyMatch(e ->
                 e.eventTypeId().equals(TranscriptionService.PROVIDER_REJECTED_EVENT)
                         && "stt_provider_failed".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_preflight_deny_skips_provider_and_writes_nothing() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight DENY → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, transcriptStore.size(), "preflight DENY → store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "preflight DENY → business-WORM'a satır yazılmamalı");
+        assertEquals(0, denying.verifyCalls, "preflight DENY → verify çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "APPROVAL_NOT_ACTIVE".equals(e.extras().get("reason_code"))),
+                "gov-deny Plane-1 event reason-code ile emit edilmeli");
+    }
+
+    @Test
+    void governance_verify_deny_discards_result_no_store_no_ledger() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingVerify(ModelGovernanceGate.Reason.MODEL_VERSION_MISMATCH);
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, provider.calls, "verify için sağlayıcı çağrılmış olmalı (sonra discard)");
+        assertEquals(0, transcriptStore.size(), "verify DENY → transkript store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty(), "verify DENY → business-WORM'a satır YAZILMAMALI (discard)");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "MODEL_VERSION_MISMATCH".equals(e.extras().get("reason_code"))));
     }
 
     @Test

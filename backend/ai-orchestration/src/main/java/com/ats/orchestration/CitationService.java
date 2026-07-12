@@ -7,6 +7,8 @@ import com.ats.contracts.AIProvider.Entailment;
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.EvidenceLedger.EvidenceEvent;
 import com.ats.contracts.EvidenceLedger.LedgerEntry;
+import com.ats.contracts.governance.Capability;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
@@ -42,6 +44,7 @@ public final class CitationService {
 
     static final String CITATION_REJECTED_EVENT = "ai_pipeline.citation.rejected";
     static final String PROVIDER_REJECTED_EVENT = "ai_pipeline.provider.request_rejected";
+    static final String MODEL_GOVERNANCE_DENIED_EVENT = "ai_pipeline.model_governance.denied";
     static final String APPEND_SUCCEEDED_EVENT = "evidence.append.succeeded";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String LEDGER_EVENT_TYPE = "claim.citation.recorded";
@@ -53,6 +56,7 @@ public final class CitationService {
     public record CitationReceipt(String citationKey, String evidenceId, Entailment entailment, int resolvedRefCount) {}
 
     private final ConsentGate consentGate;
+    private final ModelGovernanceGate governanceGate;
     private final AIProvider provider;
     private final TranscriptStore transcriptStore;
     private final CitationStore citationStore;
@@ -61,12 +65,14 @@ public final class CitationService {
 
     public CitationService(
             ConsentGate consentGate,
+            ModelGovernanceGate governanceGate,
             AIProvider provider,
             TranscriptStore transcriptStore,
             CitationStore citationStore,
             EvidenceLedger ledger,
             OperationalEventSink sink) {
         this.consentGate = consentGate;
+        this.governanceGate = governanceGate;
         this.provider = provider;
         this.transcriptStore = transcriptStore;
         this.citationStore = citationStore;
@@ -93,6 +99,14 @@ public final class CitationService {
         }
         Transcript transcript = transcriptOk.value();
 
+        // gov1-1c: çağrı-ÖNCESİ model-governance kapısı. CITE için onaylı-model APPROVED değilse
+        // sağlayıcıya HİÇ çıkılmaz (fail-closed).
+        Outcome<ModelGovernanceGate.Permit> preflight = governanceGate.preflight(Capability.CITE);
+        if (!(preflight instanceof Outcome.Ok<ModelGovernanceGate.Permit> permitOk)) {
+            return governanceDenied(tenantId, ((Outcome.Fail<ModelGovernanceGate.Permit>) preflight).reason());
+        }
+        ModelGovernanceGate.Permit permit = permitOk.value();
+
         Outcome<CitationResult> cited = provider.cite(canonicalClaim, transcriptKey);
         if (!(cited instanceof Outcome.Ok<CitationResult> citedOk) || citedOk.value() == null) {
             emit(tenantId, PROVIDER_REJECTED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
@@ -100,6 +114,17 @@ public final class CitationService {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "citation sağlayıcı başarısız (fail-closed)");
         }
         CitationResult result = citedOk.value();
+
+        // gov1-1c: sonuç-SONRASI doğrulama. Sağlayıcının RAPORLADIĞI model kimliği onaylı spec ile
+        // HARD-REQUIRED eşleşmeli; absent/mismatch/TOCTOU-revoke → sonuç TAMAMEN discard
+        // (citation-store/WORM'a GİRMEZ). ALLOW kararı = Decision.allowed() (isOk() tek başına YETMEZ).
+        Outcome<ModelGovernanceGate.Decision> verified = governanceGate.verify(permit, result.modelIdentity());
+        if (!(verified instanceof Outcome.Ok<ModelGovernanceGate.Decision> decisionOk)) {
+            return governanceDenied(tenantId, "governance_verify_unavailable");
+        }
+        if (!decisionOk.value().allowed()) {
+            return governanceDenied(tenantId, decisionOk.value().reasonCode().name());
+        }
 
         if (result.entailment() == null) {
             return reject(tenantId, "invalid_provider_result", "entailment boş (fail-closed)");
@@ -194,6 +219,17 @@ public final class CitationService {
 
     private void emitAppendFailed(TenantId tenantId, String reasonCode) {
         emit(tenantId, APPEND_FAILED_EVENT, "evidence", "error", PiiClass.ID_ONLY, Map.of("reason_code", reasonCode));
+    }
+
+    /**
+     * gov1-1c model-governance RED: Plane-1 observability event (reason-code YALNIZ; ham
+     * reported-identity TAŞIMAZ) + fail-closed Outcome. WORM invocation-journal 1d'ye aittir —
+     * burada yazılmaz. {@code reasonCode} = tipli {@link ModelGovernanceGate.Reason} token'ı.
+     */
+    private Outcome<CitationReceipt> governanceDenied(TenantId tenantId, String reasonCode) {
+        emit(tenantId, MODEL_GOVERNANCE_DENIED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
+                Map.of("reason_code", reasonCode));
+        return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "model-governance reddi (fail-closed)");
     }
 
     private void emit(TenantId tenantId, String eventTypeId, String category, String severity,
