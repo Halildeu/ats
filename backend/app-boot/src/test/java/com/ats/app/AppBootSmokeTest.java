@@ -60,6 +60,8 @@ class AppBootSmokeTest {
         registry.add("ats.security.jwks-uri", () -> "http://127.0.0.1:9/jwks.json");
         registry.add("ats.security.issuer", () -> "https://issuer.test");
         registry.add("ats.security.audience", () -> "ats-api");
+        // P3-gov0 (Codex REVISE): yaml default'u kaldırılan 3 güven girdisi — shipped kayıttan türet (drift-safe).
+        AiGovernanceTestSupport.registerHttpJson(registry);
     }
 
     @Autowired private ApplicationContext ctx;

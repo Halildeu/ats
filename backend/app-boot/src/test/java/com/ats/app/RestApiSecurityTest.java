@@ -62,6 +62,8 @@ class RestApiSecurityTest {
         registry.add("ats.security.issuer", () -> JwtTestSupport.ISSUER);
         registry.add("ats.security.audience", () -> JwtTestSupport.AUDIENCE);
         registry.add("ats.ingest.max-upload-bytes", () -> "1048576"); // 1 MiB (413 testi için)
+        // P3-gov0 (Codex REVISE): yaml default'u kaldırılan 3 güven girdisi — shipped kayıttan türet (drift-safe).
+        AiGovernanceTestSupport.registerHttpJson(registry);
     }
 
     @Autowired private TestRestTemplate rest;

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>model-governance</artifactId>
+
+  <!-- P3-gov0 onaylı-model registry adapter'ları (port contracts-java'da). Config/dosya-
+       destekli read-only + in-memory. Framework/persistence/vendor YOK (ArchUnit zorlar);
+       yalnız shared-kernel (Outcome/JsonCodec) + contracts-java (port + tipler). -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>contracts-java</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>1.3.0</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

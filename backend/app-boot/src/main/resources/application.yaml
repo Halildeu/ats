@@ -15,6 +15,21 @@ ats:
   ai:
     provider: ${ATS_AI_PROVIDER:http-json}
     base-url: ${ATS_AI_BASE_URL:}
+    # P3-gov0 boot-gate: opak deploy endpoint-referansı (URL DEĞİL). Onaylı-model kaydının
+    # endpointRef'i ile TAM eşleşmeli; endpointRef→baseUrl eşlemesi deployment-authoritative.
+    # DEFAULT YOK (fail-closed; Codex REVISE): deployment AÇIKÇA beyan ETMELİ. Sessiz geçerli-default
+    # verilirse bir deployment YALNIZ base-url'le boot eder, bundled http-json-generic onayı otomatik
+    # seçilir ve KEYFİ base-url generic-onaylı sayılır → endpointRef→baseUrl invariant'ı baypas olur.
+    endpoint-ref: ${ATS_AI_ENDPOINT_REF:}
+    # P3-gov0 boot-gate: capability-başına onaylı-model ref'i (mapr_<64hex>, içerik-adresli).
+    # DEFAULT YOK (fail-closed; Codex REVISE): deployment AÇIKÇA beyan ETMELİ (biri eksik/boş → boot FAIL).
+    # Default provider=http-json {TRANSCRIBE, CITE} → İKİSİ DE zorunlu.
+    # live-stt'e geçişte: transcribe-ref'i live-stt kaydına çevir + cite-ref'i BOŞ bırak (live-stt
+    # cite çalıştırmaz; beyan edilirse boot FAIL) + endpoint-ref'i live-stt endpoint'ine çevir.
+    # Ref hesabı: kayıt kaynağından ApprovedModelSpec.of(...).approvalRef().value() (ATS-0020).
+    approvals:
+      transcribe-ref: ${ATS_AI_APPROVAL_TRANSCRIBE_REF:}
+      cite-ref: ${ATS_AI_APPROVAL_CITE_REF:}
     bearer: ${ATS_AI_BEARER:}
     timeout: ${ATS_AI_TIMEOUT:30s}
     language: ${ATS_AI_LANGUAGE:tr}
@@ -29,6 +44,11 @@ ats:
     issuer: ${ATS_JWT_ISSUER:}
     audience: ${ATS_JWT_AUDIENCE:}
     tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
+  model-governance:
+    # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry (o durumda boot-gate,
+    # aktif provider'ın enabled-capability'lerini APPROVED'a çözemez → fail-closed düşer).
+    # Boot-gate girdileri artık ats.ai.provider + ats.ai.endpoint-ref + ats.ai.approvals.* (yukarıda).
+    approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
   retention:

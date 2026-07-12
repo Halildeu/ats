@@ -51,6 +51,8 @@ class OpenApiDriftTest {
         registry.add("ats.security.issuer", () -> "https://drift-issuer.local");
         registry.add("ats.security.audience", () -> "ats-api");
         registry.add("ats.ingest.max-upload-bytes", () -> "1048576");
+        // P3-gov0 (Codex REVISE): yaml default'u kaldırılan 3 güven girdisi — shipped kayıttan türet (drift-safe).
+        AiGovernanceTestSupport.registerHttpJson(registry);
     }
 
     @Autowired private TestRestTemplate rest;

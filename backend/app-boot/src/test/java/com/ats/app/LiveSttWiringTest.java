@@ -27,15 +27,17 @@ import org.junit.jupiter.api.Test;
 class LiveSttWiringTest {
 
     // Mevcut testler plain davranış bekler → mTLS disabled (açık beyan) ile kur.
+    // gov0 boot-gate girdileri (endpointRef/approvals) bu provider-seçim testlerinde ilgisiz →
+    // null (buildAiProvider gate'ten bağımsız seçim birimidir; gate authorizeProvider'da test edilir).
     private static AppProperties.Ai ai(String provider, String baseUrl) {
         return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
-                Duration.ofSeconds(60), new AppProperties.Mtls("disabled", null, null, null));
+                Duration.ofSeconds(60), new AppProperties.Mtls("disabled", null, null, null), null, null);
     }
 
     private static AppProperties.Ai aiMtls(String provider, String baseUrl, String mode,
             String ks, String ksPass, String ts) {
         return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
-                Duration.ofSeconds(60), new AppProperties.Mtls(mode, ks, ksPass, ts));
+                Duration.ofSeconds(60), new AppProperties.Mtls(mode, ks, ksPass, ts), null, null);
     }
 
     private static AppProperties props(AppProperties.Ai ai) {
@@ -50,7 +52,7 @@ class LiveSttWiringTest {
 
     @Test
     void default_mode_wires_http_json_provider() {
-        AIProvider provider = new WiringConfig().aiProvider(
+        AIProvider provider = new WiringConfig().buildAiProvider(
                 props(ai("http-json", "https://ai.example")), grants(), new InMemoryObjectStore());
         assertInstanceOf(HttpAIProvider.class, provider);
     }
@@ -63,7 +65,7 @@ class LiveSttWiringTest {
 
     @Test
     void live_stt_mode_wires_discovered_contract_adapter_with_https() {
-        AIProvider provider = new WiringConfig().aiProvider(
+        AIProvider provider = new WiringConfig().buildAiProvider(
                 props(ai("live-stt", "https://stt.internal.example:8243")), grants(), new InMemoryObjectStore());
         assertInstanceOf(Faz24LiveSttProvider.class, provider);
     }
@@ -71,7 +73,7 @@ class LiveSttWiringTest {
     @Test
     void live_stt_mode_rejects_plaintext_base_url_at_boot() {
         // Faz24LiveSttProvider public ctor https zorunlu — deploy yanlışı BOOT'ta patlar
-        assertThrows(IllegalArgumentException.class, () -> new WiringConfig().aiProvider(
+        assertThrows(IllegalArgumentException.class, () -> new WiringConfig().buildAiProvider(
                 props(ai("live-stt", "http://stt.internal.example:8200")), grants(), new InMemoryObjectStore()));
     }
 
@@ -82,7 +84,7 @@ class LiveSttWiringTest {
 
     @Test
     void live_stt_mode_cite_stays_not_configured_no_delegation() {
-        AIProvider provider = new WiringConfig().aiProvider(
+        AIProvider provider = new WiringConfig().buildAiProvider(
                 props(ai("live-stt", "https://stt.internal.example:8243")), grants(), new InMemoryObjectStore());
         Outcome.Fail<AIProvider.CitationResult> fail = (Outcome.Fail<AIProvider.CitationResult>)
                 provider.cite("claim", "tr-ref");
@@ -102,7 +104,7 @@ class LiveSttWiringTest {
     void live_stt_mtls_required_with_pkcs12_wires_mtls_adapter() {
         String ks = resourcePath("/mtls/client.p12");
         String ts = resourcePath("/mtls/truststore.p12");
-        AIProvider provider = new WiringConfig().aiProvider(
+        AIProvider provider = new WiringConfig().buildAiProvider(
                 props(aiMtls("live-stt", "https://stt.internal.example:8243", "required",
                         ks, "atslive-test", ts)),
                 grants(), new InMemoryObjectStore());
@@ -111,7 +113,7 @@ class LiveSttWiringTest {
 
     @Test
     void live_stt_mtls_required_with_unreadable_keystore_fails_closed_at_wiring() {
-        assertThrows(IllegalStateException.class, () -> new WiringConfig().aiProvider(
+        assertThrows(IllegalStateException.class, () -> new WiringConfig().buildAiProvider(
                 props(aiMtls("live-stt", "https://stt.internal.example:8243", "required",
                         "/nonexistent/ks.p12", "pw", "/nonexistent/ts.p12")),
                 grants(), new InMemoryObjectStore()));
