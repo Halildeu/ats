@@ -25,14 +25,15 @@ describe("contract-surface parity (TS canonical)", () => {
     expect(actual).toEqual(canonical);
   });
 
-  it("locks the 4 contracts, 10 DTOs and 2 named enums", () => {
+  it("locks the 4 contracts, 11 DTOs and 2 named enums", () => {
     expect(Object.keys(canonical.contracts).sort()).toEqual([
       "AIProvider",
       "ATSConnector",
       "EvidenceLedger",
       "IdentityTenant",
     ]);
-    expect(Object.keys(canonical.dtos).length).toBe(10);
+    // gov1-1b: +1 DTO (ReportedModelIdentity) — TranscriptResult/CitationResult zarfı
+    expect(Object.keys(canonical.dtos).length).toBe(11);
     expect(Object.keys(canonical.enums).sort()).toEqual(["ExportTarget", "OutcomeCode"]);
   });
 

@@ -182,4 +182,27 @@ class HttpAIProviderTest {
         assertNotNull(result.segments());
         assertEquals(0, result.segments().size(), "boş segment listesi wire-valid (fail-closed kararı üst katmanda)");
     }
+
+    @Test
+    void reported_model_identity_carried_when_present_absent_otherwise() {
+        // gov1-1b envelope-only: kök seviyedeki opsiyonel model_id/model_version → zarfa taşınır
+        nextBody.set("""
+                {"language":"tr","model_id":"whisper-large-v3","model_version":"2024.01","segments":[]}""");
+        TranscriptResult withModel = provider().transcribe("ref").asOptional().orElseThrow();
+        assertEquals("whisper-large-v3", withModel.modelIdentity().reportedModelId());
+        assertEquals("2024.01", withModel.modelIdentity().reportedModelVersion());
+
+        // alanlar yoksa → raporlanmadı (null); transcript geçerli kalır
+        nextBody.set("{\"language\":\"tr\",\"segments\":[]}");
+        TranscriptResult noModel = provider().transcribe("ref").asOptional().orElseThrow();
+        assertEquals(null, noModel.modelIdentity().reportedModelId());
+        assertEquals(null, noModel.modelIdentity().reportedModelVersion());
+
+        // cite yolu da zarfı taşır (sadece model_id raporlanmış → version null)
+        nextBody.set("""
+                {"claim":"x","source_segment_refs":[],"entailment":"insufficient","model_id":"entail-v2"}""");
+        CitationResult cited = provider().cite("x", "t").asOptional().orElseThrow();
+        assertEquals("entail-v2", cited.modelIdentity().reportedModelId());
+        assertEquals(null, cited.modelIdentity().reportedModelVersion());
+    }
 }

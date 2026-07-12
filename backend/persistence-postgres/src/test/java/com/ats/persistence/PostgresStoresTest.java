@@ -286,7 +286,8 @@ class PostgresStoresTest {
 
             @Override
             public Outcome<CitationResult> cite(String claim, String transcriptRef) {
-                return Outcome.ok(new CitationResult(claim, List.of("seg-0"), Entailment.SUPPORTED));
+                return Outcome.ok(new CitationResult(claim, List.of("seg-0"), Entailment.SUPPORTED,
+                        AIProvider.ReportedModelIdentity.notReported()));
             }
         };
         CitationService service = new CitationService(new ConsentGate(consents, sink), scripted,

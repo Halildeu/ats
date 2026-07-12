@@ -84,7 +84,7 @@ public final class HttpAIProvider implements AIProvider {
                 segments.add(new TranscriptSegment(
                         asString(seg, "speaker"), startMs, endMs, asString(seg, "text")));
             }
-            return Outcome.ok(new TranscriptResult(language, segments));
+            return Outcome.ok(new TranscriptResult(language, segments, reportedModelIdentity(root)));
         } catch (WireContractException e) {
             return Outcome.fail(OutcomeCode.INVALID, "sağlayıcı cevabı wire-contract dışı (fail-closed): " + e.getMessage());
         }
@@ -117,7 +117,7 @@ public final class HttpAIProvider implements AIProvider {
                 // fail-closed: bilinmeyen entailment ASLA bir değere yuvarlanmaz
                 default -> throw new WireContractException("bilinmeyen entailment");
             };
-            return Outcome.ok(new CitationResult(resultClaim, refs, entailment));
+            return Outcome.ok(new CitationResult(resultClaim, refs, entailment, reportedModelIdentity(root)));
         } catch (WireContractException e) {
             return Outcome.fail(OutcomeCode.INVALID, "sağlayıcı cevabı wire-contract dışı (fail-closed): " + e.getMessage());
         }
@@ -178,6 +178,23 @@ public final class HttpAIProvider implements AIProvider {
             throw new WireContractException(field + " non-blank string olmalı");
         }
         return s.value();
+    }
+
+    /**
+     * gov1-1b: sağlayıcının RAPORLADIĞI (untrusted) model kimliği zarfı — cevabın kök
+     * seviyesindeki opsiyonel {@code model_id}/{@code model_version} alanlarından okunur
+     * (varsa). Enforcement gov1-1c'de; burada yalnız taşıma + doğrulama. Eksik/malformed →
+     * {@link AIProvider.ReportedModelIdentity#fromProvider} null'a indirir (ham değer log'lanmaz).
+     */
+    private static AIProvider.ReportedModelIdentity reportedModelIdentity(JsonValue.JsonObject root) {
+        return AIProvider.ReportedModelIdentity.fromProvider(
+                optString(root, "model_id"), optString(root, "model_version"));
+    }
+
+    /** OPSİYONEL string alan: yok/blank/string-değil → null (fail-closed DEĞİL; zarf-yalnız). */
+    private static String optString(JsonValue.JsonObject o, String field) {
+        JsonValue v = o.values().get(field);
+        return (v instanceof JsonValue.JsonString s && !s.value().isBlank()) ? s.value() : null;
     }
 
     /** double tamsayı-hassasiyet sınırı (2^53-1) — Codex blocker-2: 1e20 gibi long-dışı değerler fail. */

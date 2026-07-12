@@ -214,6 +214,13 @@ public final class Faz24LiveSttProvider implements AIProvider {
         try {
             JsonValue.JsonObject root = asObject(parsed, "root");
             String language = asString(root, "language");
+            // gov1-1b: sağlayıcının RAPORLADIĞI model kimliği artık DISCARD edilmez, zarfa taşınır
+            // (enforcement gov1-1c'de). live-stt yalnız "model" verir; model-VERSİYONU SUNMAZ
+            // (/health.version = servis-sürümü, model DEĞİL → KULLANILMAZ) → reportedModelVersion=null.
+            // Untrusted → fromProvider doğrular: eksik/malformed → null'a indirilir; ham değer
+            // log/WORM'a gitmez.
+            ReportedModelIdentity modelIdentity =
+                    ReportedModelIdentity.fromProvider(optString(root, "model"), null);
             // Not: spec'te segments "required" listesinde değil; adaptör bilinçli olarak
             // spec'ten SIKI davranır (segments'siz cevap işlenemez → fail-closed).
             JsonValue.JsonArray segmentsJson = asArray(root, "segments");
@@ -233,7 +240,7 @@ public final class Faz24LiveSttProvider implements AIProvider {
                 String text = asString(seg, "text");
                 segments.add(new TranscriptSegment(UNDIARIZED_STREAM, startMs, endMs, text));
             }
-            return Outcome.ok(new TranscriptResult(language, segments));
+            return Outcome.ok(new TranscriptResult(language, segments, modelIdentity));
         } catch (WireContractException e) {
             return Outcome.fail(OutcomeCode.INVALID,
                     "sağlayıcı cevabı wire-contract dışı (fail-closed): " + e.getMessage());
@@ -327,5 +334,15 @@ public final class Faz24LiveSttProvider implements AIProvider {
             throw new WireContractException(field + " non-blank string olmalı");
         }
         return s.value();
+    }
+
+    /**
+     * OPSİYONEL string alan: yok/blank/string-değil → null (fail-closed DEĞİL — gov1-1b
+     * reported model kimliği zarf-yalnız; eksik alan sonucu düşürmez). ReportedModelIdentity.
+     * fromProvider ayrıca allowlist doğrular → malformed değer de null'a indirilir.
+     */
+    private static String optString(JsonValue.JsonObject o, String field) {
+        JsonValue v = o.values().get(field);
+        return (v instanceof JsonValue.JsonString s && !s.value().isBlank()) ? s.value() : null;
     }
 }

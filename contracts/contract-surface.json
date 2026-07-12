@@ -238,10 +238,30 @@
         "nullable": false
       }
     ],
+    "ReportedModelIdentity": [
+      {
+        "name": "reportedModelId",
+        "type": "string",
+        "optional": false,
+        "nullable": true
+      },
+      {
+        "name": "reportedModelVersion",
+        "type": "string",
+        "optional": false,
+        "nullable": true
+      }
+    ],
     "TranscriptResult": [
       {
         "name": "language",
         "type": "string",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "modelIdentity",
+        "type": "dto:ReportedModelIdentity",
         "optional": false,
         "nullable": false
       },
@@ -262,6 +282,12 @@
       {
         "name": "entailment",
         "type": "enum:INSUFFICIENT|NOT_SUPPORTED|SUPPORTED",
+        "optional": false,
+        "nullable": false
+      },
+      {
+        "name": "modelIdentity",
+        "type": "dto:ReportedModelIdentity",
         "optional": false,
         "nullable": false
       },

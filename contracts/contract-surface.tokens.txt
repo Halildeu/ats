@@ -12,6 +12,7 @@ C IdentityTenant.assertTenantScope(dto:TenantContext,id:TenantId):outcome:void
 C IdentityTenant.resolveTenant(string):outcome:dto:TenantContext
 D CitationResult.claim:string
 D CitationResult.entailment:enum:INSUFFICIENT|NOT_SUPPORTED|SUPPORTED
+D CitationResult.modelIdentity:dto:ReportedModelIdentity
 D CitationResult.sourceSegmentRefs:array:string
 D EvidenceEvent.actorId:id:ActorId
 D EvidenceEvent.contentHash:string
@@ -40,9 +41,12 @@ D LedgerEntry.sequence:number
 D LedgerEntry.tenantId:id:TenantId
 D LedgerListFilter.eventType:string
 D LedgerListFilter.interviewId:id:InterviewId
+D ReportedModelIdentity.reportedModelId:string
+D ReportedModelIdentity.reportedModelVersion:string
 D TenantContext.actorId:id:ActorId
 D TenantContext.tenantId:id:TenantId
 D TranscriptResult.language:string
+D TranscriptResult.modelIdentity:dto:ReportedModelIdentity
 D TranscriptResult.segments:array:dto:TranscriptSegment
 D TranscriptSegment.endMs:number
 D TranscriptSegment.speaker:string
