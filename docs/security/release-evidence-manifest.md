@@ -4,6 +4,10 @@
 > **Gate sınırı (No Fake Work):** Bu **şema + örnek + guard bir SÖZLEŞMEdir**; CI yeşili = şema/sample drift. **Gerçek build evidence** (cosign imza, gerçek SBOM, SLSA attestation, gerçek vuln-scan) = release pipeline P3/gate-locked — bu doküman onların üretildiğini iddia ETMEZ.
 > **Şema:** [contracts/schemas/release-evidence.schema.json](../../contracts/schemas/release-evidence.schema.json) · **Örnek:** [contracts/samples/release-evidence.sample.json](../../contracts/samples/release-evidence.sample.json) · **Drift guard:** `scripts/check-release-evidence.mjs` (CI `release-evidence-guard`).
 
+P5.2 PRE-G0 offline bundle conformance çekirdeği [`offline-bundle-verifier.ts`](../../contracts/release/offline-bundle-verifier.ts) içindedir. Şema/sample guard'dan farklı olarak gerçek `Uint8Array` byte'ları üzerinden path, file type, size ve SHA-256 doğrular; exact inventory closure, image/model subject coverage, SPDX 2.3/CycloneDX 1.6 JSON sürümü, SLSA v1/in-toto predicate, trust/revocation freshness ve signature-verifier receipt bağlarını kontrol eder. Signature portu `networkAllowed=false` alır; receipt `networkUsed=false` olmadan kabul edilmez. Private-key/credential dosya adı ve içerik heuristiği ile symlink/path traversal ve bundle-size/count limit ihlalleri fail-closed'dur.
+
+Sonuç yalnız `SYNTHETIC_BUNDLE_CONSISTENT` ve `deployReadyClaim=false` olabilir. Bu çekirdek cosign/notation'ın gerçek kriptografik çalışmasını taklit etmez; dış offline verifier adapter'ının identity/trust/revocation bağlı receipt'ini doğrular. Gerçek image registry, production trust root, key, imza, certification veya deployment acceptance iddiası P5.5'e kadar kapalıdır. Contract testleri [`offline-bundle-verifier.contract.test.ts`](../../contracts/test/offline-bundle-verifier.contract.test.ts) dosyasındadır.
+
 ## 0. İlke (fail-closed)
 
 - **Digest-pin:** image/release **moving-tag** (`:latest`/`:main`/`:stable`/`:edge`/`:dev`) YASAK; her image `sha256:` digest taşır (D30 immutable-artifact disiplini).

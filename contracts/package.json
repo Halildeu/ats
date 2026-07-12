@@ -10,6 +10,7 @@
     "./csv-portability-v1": "./portability/csv-portability.ts",
     "./delivery-conformance-v1": "./delivery/delivery-conformance.ts",
     "./adapter-sandbox-v1": "./adapters/adapter-sandbox.ts",
+    "./offline-bundle-v1": "./release/offline-bundle-verifier.ts",
     "./deployment-profile-v1": "./wire/deployment-profile.ts",
     "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
   },
