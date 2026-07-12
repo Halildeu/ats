@@ -50,6 +50,7 @@ import java.util.Set;
 public final class ExportService {
 
     static final String EXPORT_GENERATED_EVENT = "security.audit_export.generated";
+    static final String RECEIPT_RECOVERED_EVENT = "security.audit_export.receipt_recovered";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String LEDGER_EVENT_TYPE = "evidence_packet.exported";
     static final String SCHEMA_VERSION = "evidence-packet/v1";
@@ -244,7 +245,7 @@ public final class ExportService {
 
         Outcome<LedgerEntry> appended = ledger.append(new EvidenceEvent(
                 tenantId, actorId, interviewId, LEDGER_EVENT_TYPE, occurredAtIso,
-                tenantId.value() + ":" + interviewId.value() + ":export:" + caseKey,
+                exportIdempotencyKey(tenantId, interviewId, caseKey),
                 packetDigest,
                 JsonValue.object(Map.of(
                         "export_artifact_ref", JsonValue.of(artifactKey),
@@ -333,6 +334,111 @@ public final class ExportService {
                 "packet_digest", JsonValue.of(packetDigest),
                 "signature_ref", JsonValue.of(ctx.signatureRef()))));
         return JsonValue.object(m);
+    }
+
+    /**
+     * 39d-8: export + receipt-recovery AYNI deterministik ledger key'ini kullanır
+     * (drift = recovery'nin yanlış/eski key araması). V1 format canlı ledger
+     * kayıtlarıyla uyumluluk için SABİT — sessizce değiştirilmez (tuple-safe V2
+     * ancak migration/backward-lookup ile).
+     */
+    static String exportIdempotencyKey(TenantId tenantId, InterviewId interviewId, String caseKey) {
+        return tenantId.value() + ":" + interviewId.value() + ":export:" + caseKey;
+    }
+
+    /** 39d-8 receipt-recovery cevabı (R2 residual — Codex 019f535a plan şartları). */
+    public record ExportReceiptRecovery(String caseKey, String caseState, String transitionStatus,
+            String artifactKey, String evidenceId, String packetDigest, int claimCount,
+            String ledgerRecordedAt) {}
+
+    /**
+     * 39d-8: ledger-bağlı export makbuzunu KURTARIR (salt-okuma; artifact/ledger/
+     * case state'ine DOKUNMAZ). caseState=FINALIZED + ledger-satırı = R4 (transition
+     * düşmüş; repair runbook'u) — transitionStatus=INCOMPLETE ile AÇIKÇA işaretlenir,
+     * tamamlanmış export gibi SUNULMAZ. Tüm ledger-bağları fail-closed çapraz
+     * doğrulanır (payload shape yetmez): eventType + tenant + interview +
+     * idempotencyKey + payload.case_key + payload.packet_digest==entry.contentHash.
+     * Artifact VARLIĞI doğrulanamaz (store'da read/head portu yok — belgeli sınır);
+     * endpoint yalnız 'ledger receipt recovered' iddiasındadır.
+     */
+    public Outcome<ExportReceiptRecovery> exportReceipt(TenantId tenantId, ActorId actorId,
+            InterviewId interviewId, String caseKey) {
+        if (caseKey == null || caseKey.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "caseKey zorunlu");
+        }
+        if (actorId == null || isBlank(actorId.value())) {
+            return Outcome.fail(OutcomeCode.INVALID, "actor zorunlu (ID-only erişim denetimi)");
+        }
+        Outcome<ReviewCase> found = reviewStore.find(tenantId, interviewId, caseKey);
+        if (!(found instanceof Outcome.Ok<ReviewCase> caseOk)) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka bulunamadı (tenant scope)");
+        }
+        String expectedKey = exportIdempotencyKey(tenantId, interviewId, caseKey);
+        Outcome<LedgerEntry> looked = ledger.findByIdempotencyKey(tenantId, expectedKey);
+        if (!(looked instanceof Outcome.Ok<LedgerEntry> entryOk)) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "bu vaka için export ledger kaydı bulunamadı");
+        }
+        LedgerEntry entry = entryOk.value();
+        // Çapraz-bağ doğrulamaları — herhangi biri tutmazsa bütünlük hatası (fail-closed):
+        if (!LEDGER_EVENT_TYPE.equals(entry.eventType())
+                || !entry.tenantId().value().equals(tenantId.value())
+                || !entry.interviewId().value().equals(interviewId.value())
+                || !expectedKey.equals(entry.idempotencyKey())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "ledger kaydı export-makbuz bağlarıyla uyuşmuyor (operasyonel inceleme gerekir)");
+        }
+        if (!(entry.payload() instanceof JsonValue.JsonObject obj)) {
+            return Outcome.fail(OutcomeCode.INVALID, "ledger payload'ı nesne değil (operasyonel inceleme gerekir)");
+        }
+        String payloadCase = payloadString(obj, "case_key");
+        String artifactKey = payloadString(obj, "export_artifact_ref");
+        String packetDigest = payloadString(obj, "packet_digest");
+        if (payloadCase == null || !payloadCase.equals(caseKey)
+                || artifactKey == null || artifactKey.isBlank()
+                || packetDigest == null || !packetDigest.matches("[0-9a-f]{64}")
+                || !packetDigest.equals(entry.contentHash())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "ledger payload'ı makbuz şekliyle/bütünlük bağıyla uyuşmuyor (operasyonel inceleme gerekir)");
+        }
+        JsonValue rawCount = obj.values().get("claim_count");
+        if (!(rawCount instanceof JsonValue.JsonNumber num) || !Double.isFinite(num.value())
+                || num.value() < 1 || num.value() > Integer.MAX_VALUE
+                || num.value() != Math.rint(num.value())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "claim_count geçersiz (1..MAX_INT tam sayı olmalı; operasyonel inceleme gerekir)");
+        }
+        int claimCount = (int) num.value();
+        String evidenceId = entry.evidenceId() == null ? null : entry.evidenceId().value();
+        if (evidenceId == null || evidenceId.isBlank()) {
+            return Outcome.fail(OutcomeCode.INVALID, "ledger evidence_id boş (operasyonel inceleme gerekir)");
+        }
+        final String recordedAt;
+        try {
+            recordedAt = java.time.Instant.parse(entry.occurredAt()).toString();
+        } catch (RuntimeException ex) {
+            return Outcome.fail(OutcomeCode.INVALID, "ledger occurredAt ISO-8601 değil (operasyonel inceleme gerekir)");
+        }
+        ReviewState state = caseOk.value().state();
+        final String transition;
+        if (state == ReviewState.EXPORTED) {
+            transition = "COMPLETED";
+        } else if (state == ReviewState.FINALIZED) {
+            transition = "INCOMPLETE"; // R4: artifact+ledger var, markExported düşmüş
+        } else {
+            // OPEN/IN_REVIEW (+ gelecekteki state'ler) export-ledger'la BİRLİKTE var
+            // olamaz — bu sıradan R4 değil state/ledger bütünlük ihlalidir (fail-closed).
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "export ledger kaydı vaka state'iyle uyuşmuyor (yalnız FINALIZED/EXPORTED; operasyonel inceleme gerekir)");
+        }
+        emit(tenantId, RECEIPT_RECOVERED_EVENT, "security", "notice", PiiClass.ID_ONLY,
+                Map.of("actor_ref", actorId.value(), "target_ref", caseKey));
+        return Outcome.ok(new ExportReceiptRecovery(caseKey, state.name(), transition,
+                artifactKey, evidenceId, packetDigest, claimCount, recordedAt));
+    }
+
+    private static String payloadString(JsonValue.JsonObject obj, String key) {
+        JsonValue v = obj.values().get(key);
+        return v instanceof JsonValue.JsonString str ? str.value() : null;
     }
 
     private static Outcome<Void> validateContext(ExportContext ctx) {

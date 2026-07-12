@@ -50,19 +50,22 @@ import org.springframework.security.web.SecurityFilterChain;
 class SecurityConfig {
 
     /** Endpoint-bazlı scope ayrımı (Codex #64 blocker-1): tek genel scope YOK. */
-    private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.of(
-            "ats.consent.write", "CONSENT_WRITE",
-            "ats.recording.write", "RECORDING_WRITE",
+    // Map.of 10-çift sınırı: 11. scope (39d-8 ats.export.read) ile ofEntries'e geçildi.
+    private static final Map<String, String> SCOPE_TO_AUTHORITY = Map.ofEntries(
+            Map.entry("ats.consent.write", "CONSENT_WRITE"),
+            Map.entry("ats.recording.write", "RECORDING_WRITE"),
             // STT işleme = PII-üreten ayrı yetenek (upload'dan ayrık yetki sınıfı)
-            "ats.transcription.write", "TRANSCRIPTION_WRITE",
-            "ats.transcript.read", "TRANSCRIPT_READ",
-            "ats.citation.write", "CITATION_WRITE",
-            "ats.review.write", "REVIEW_WRITE",
-            "ats.review.read", "REVIEW_READ",
-            "ats.export.write", "EXPORT_WRITE",
-            "ats.dsar.write", "DSAR_WRITE",
+            Map.entry("ats.transcription.write", "TRANSCRIPTION_WRITE"),
+            Map.entry("ats.transcript.read", "TRANSCRIPT_READ"),
+            Map.entry("ats.citation.write", "CITATION_WRITE"),
+            Map.entry("ats.review.write", "REVIEW_WRITE"),
+            Map.entry("ats.review.read", "REVIEW_READ"),
+            // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
+            Map.entry("ats.export.read", "EXPORT_READ"),
+            Map.entry("ats.export.write", "EXPORT_WRITE"),
+            Map.entry("ats.dsar.write", "DSAR_WRITE"),
             // yıkıcı content-silme AYRI yetki sınıfı (Codex #66 blocker-1): intake ≠ execute
-            "ats.erasure.execute", "ERASURE_EXECUTE");
+            Map.entry("ats.erasure.execute", "ERASURE_EXECUTE"));
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder, AppProperties props)
@@ -92,6 +95,10 @@ class SecurityConfig {
                                 "/api/v1/interviews/*/review-case/transition",
                                 "/api/v1/interviews/*/review-case/finalize")
                             .hasAuthority("REVIEW_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/export/receipt")
+                            // Salt-okuma recovery: read YA DA write (yazan okuyabilir;
+                            // ops/audit'e write vermeden recovery — least-privilege).
+                            .hasAnyAuthority("EXPORT_READ", "EXPORT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/export")
                             .hasAuthority("EXPORT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar")

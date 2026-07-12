@@ -352,4 +352,59 @@ class RestApiSecurityTest {
         h.setContentType(MediaType.APPLICATION_JSON);
         return h;
     }
+
+    // ---- 39d-8: export/receipt GET matcher + EXPORT_READ least-privilege ----
+
+    private String roleToken(String role, String subject) {
+        // scope-only → JwtTestSupport resource_access'i aynı rolle türetir (entitled persona)
+        return JWT.token(Map.of("tenant", "t-export", "scope", role),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), subject);
+    }
+
+    @Test
+    void export_receipt_without_token_is_401() {
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt?caseKey=case-1",
+                HttpMethod.GET, HttpEntity.EMPTY, String.class);
+        assertEquals(401, r.getStatusCode().value());
+    }
+
+    @Test
+    void unrelated_role_cannot_read_export_receipt() {
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-1/export/receipt?caseKey=case-1",
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.review.read", "reviewer-1"))),
+                String.class);
+        assertEquals(403, r.getStatusCode().value());
+    }
+
+    @Test
+    void export_read_passes_matcher_and_reaches_service() {
+        // Vaka fixture'da yok — 404 dönmesi security-filter'ın GEÇİLDİĞİNİ kanıtlar
+        // (matcher kaybolsaydı denyAll→403 olurdu; 39d-8 regresyon dersi).
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-missing/export/receipt?caseKey=case-missing",
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.export.read", "auditor-1"))),
+                String.class);
+        assertEquals(404, r.getStatusCode().value());
+    }
+
+    @Test
+    void export_write_can_also_reach_receipt_endpoint() {
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-missing/export/receipt?caseKey=case-missing",
+                HttpMethod.GET, new HttpEntity<>(bearer(roleToken("ats.export.write", "exporter-1"))),
+                String.class);
+        assertEquals(404, r.getStatusCode().value());
+    }
+
+    @Test
+    void export_read_cannot_post_export() {
+        HttpHeaders h = bearer(roleToken("ats.export.read", "auditor-1"));
+        h.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> r = rest.exchange(
+                "/api/v1/interviews/iv-1/export",
+                HttpMethod.POST, new HttpEntity<>("{}", h), String.class);
+        assertEquals(403, r.getStatusCode().value(), "salt-okuma rolü export ÜRETEMEZ");
+    }
 }
