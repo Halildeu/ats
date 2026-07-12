@@ -518,6 +518,12 @@ public final class ExportService {
                     "artifact deposu okunamadı (yokluk DEĞİL — operasyonel hata): " + storeFail.reason());
         }
         String packetJson = ((Outcome.Ok<String>) found).value();
+        if (packetJson == null || packetJson.isBlank()) {
+            // kontrat-guard: PG adapter NOT NULL + put blank'i reddeder; üçüncü-parti
+            // adapter Ok(null/blank) dönerse NPE değil fail-closed (Codex non-blocking).
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "artifact deposu boş içerik döndürdü (store-kontrat ihlali; operasyonel inceleme gerekir)");
+        }
         if (!sha256Hex(packetJson).equals(v.artifactDigest())) {
             return Outcome.fail(OutcomeCode.INVALID,
                     "artifact bütünlük ihlali: depolanan içerik ledger artifact_digest'iyle uyuşmuyor"

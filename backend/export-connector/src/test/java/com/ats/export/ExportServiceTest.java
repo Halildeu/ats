@@ -673,6 +673,33 @@ class ExportServiceTest {
     }
 
     @Test
+    void artifact_read_rejects_blank_store_content_as_contract_violation_not_npe() {
+        export().asOptional().orElseThrow();
+        ExportArtifactStore blankStore = new ExportArtifactStore() {
+            @Override
+            public Outcome<String> put(TenantId t, InterviewId i, String p) {
+                return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "test");
+            }
+
+            @Override
+            public Outcome<String> find(TenantId t, InterviewId i, String k) {
+                return Outcome.ok(" ");
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String k) {
+                return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "test");
+            }
+        };
+        ExportService degraded = new ExportService(reviewStore, citationStore, blankStore,
+                humanReview, ledger, sink);
+        Outcome<ExportService.ExportArtifactContent> out = degraded.exportArtifact(T1, HUMAN, I1, caseKey);
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportArtifactContent> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("store-kontrat"),
+                "Ok(blank) NPE değil fail-closed kontrat ihlali olmalı");
+    }
+
+    @Test
     void artifact_read_rejects_blank_case_key_and_blank_actor() {
         assertFalse(service.exportArtifact(T1, HUMAN, I1, " ").isOk());
         assertFalse(service.exportArtifact(T1, new ActorId(" "), I1, caseKey).isOk());
