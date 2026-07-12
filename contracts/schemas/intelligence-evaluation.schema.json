@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ats.local/schemas/intelligence-evaluation.schema.json",
+  "title": "ATS Intelligence Evaluation v1",
+  "description": "Evidence-first evaluation and proposal protocol for P6 capabilities. It references the canonical human-oversight state machine and cannot produce ranking, scoring, affect/personality/deception inference or autonomous employment decisions.",
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(?::[a-z0-9-]+)+$",
+      "minLength": 3,
+      "maxLength": 240
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "status"],
+      "properties": {
+        "kind": { "enum": ["EVIDENCE", "LEGAL", "INDEPENDENT_AUDIT", "OWNER"] },
+        "status": { "enum": ["NOT_MET", "EVIDENCE_SUBMITTED", "VERIFIED", "OWNER_ACCEPTED"] },
+        "evidence_ref": { "$ref": "#/$defs/ref" },
+        "verifier_ref": { "$ref": "#/$defs/ref" },
+        "verified_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "metric_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_result_ref",
+        "confidence_interval_ref",
+        "evidence_ref",
+        "screening_indicator_only",
+        "verdict"
+      ],
+      "properties": {
+        "metric_result_ref": { "$ref": "#/$defs/ref" },
+        "confidence_interval_ref": { "$ref": "#/$defs/ref" },
+        "evidence_ref": { "$ref": "#/$defs/ref" },
+        "screening_indicator_only": { "const": true },
+        "verdict": { "const": "NONE" }
+      }
+    },
+    "metric_protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "metric_kind",
+        "cohort_origin",
+        "contains_raw_pii",
+        "contains_raw_protected_attributes",
+        "protected_attribute_access",
+        "cohort_definition_ref",
+        "minimum_sample_size_defined",
+        "observed_sample_size",
+        "ground_truth_owner",
+        "missingness_plan_ref",
+        "confounder_plan_refs",
+        "uncertainty_method",
+        "provenance_chain_ref"
+      ],
+      "properties": {
+        "state": { "enum": ["NOT_DEFINED", "DESIGNED", "MEASURED", "INDEPENDENTLY_REVIEWED", "OWNER_ACCEPTED"] },
+        "metric_kind": {
+          "enum": [
+            "OUTCOME_ASSOCIATION",
+            "SELECTION_RATE_SCREENING",
+            "CITATION_COVERAGE",
+            "ONTOLOGY_PROVENANCE_COVERAGE",
+            "PROVENANCE_RISK_SIGNAL",
+            "HUMAN_REVIEWED_SKILL_MATCH",
+            "PROPOSAL_SAFETY"
+          ]
+        },
+        "cohort_origin": { "enum": ["SYNTHETIC", "AGGREGATED_RUNTIME"] },
+        "contains_raw_pii": { "const": false },
+        "contains_raw_protected_attributes": { "const": false },
+        "protected_attribute_access": { "enum": ["NONE", "AUDIT_ONLY_AGGREGATED"] },
+        "cohort_definition_ref": { "$ref": "#/$defs/ref" },
+        "minimum_sample_size_defined": { "type": "boolean" },
+        "minimum_sample_size": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "observed_sample_size": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+        "ground_truth_owner": { "enum": ["UNASSIGNED", "CUSTOMER_HUMAN", "INDEPENDENT_AUDITOR", "SHARED_DOCUMENTED"] },
+        "missingness_plan_ref": { "$ref": "#/$defs/ref" },
+        "confounder_plan_refs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ref" }
+        },
+        "uncertainty_method": { "enum": ["NOT_DEFINED", "BOOTSTRAP_CI", "EXACT_CI", "BAYESIAN_INTERVAL"] },
+        "provenance_chain_ref": { "$ref": "#/$defs/ref" },
+        "result": { "$ref": "#/$defs/metric_result" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_mode",
+        "individual_action_scope",
+        "human_screening_only",
+        "four_fifths_indicator_role",
+        "deepfake_signal_role",
+        "citation_required",
+        "ontology_provenance_required",
+        "human_review_required",
+        "appeal_required",
+        "rollback_required",
+        "produces_decision",
+        "numeric_scoring",
+        "ranking",
+        "automated_employment_decision",
+        "affect_emotion_inference",
+        "personality_inference",
+        "deception_inference",
+        "protected_attribute_optimization",
+        "provenance_sole_adverse_action",
+        "autonomous_mutation",
+        "batch_approval"
+      ],
+      "properties": {
+        "output_mode": { "enum": ["AGGREGATE_EVIDENCE", "SCREENING_INDICATOR", "CITATION_BACKED_PROPOSAL", "PROVENANCE_BACKED_PROPOSAL", "NO_OUTPUT"] },
+        "individual_action_scope": { "enum": ["NO_INDIVIDUAL_ACTION", "HUMAN_REVIEWED_PROPOSAL"] },
+        "human_screening_only": { "type": "boolean" },
+        "four_fifths_indicator_role": { "enum": ["NOT_APPLICABLE", "SCREENING_ONLY"] },
+        "deepfake_signal_role": { "enum": ["NOT_APPLICABLE", "SCREENING_ONLY"] },
+        "citation_required": { "type": "boolean" },
+        "ontology_provenance_required": { "type": "boolean" },
+        "human_review_required": { "const": true },
+        "appeal_required": { "const": true },
+        "rollback_required": { "const": true },
+        "produces_decision": { "const": false },
+        "numeric_scoring": { "const": "DISALLOWED" },
+        "ranking": { "const": "DISALLOWED" },
+        "automated_employment_decision": { "const": "DISALLOWED" },
+        "affect_emotion_inference": { "const": "DISALLOWED" },
+        "personality_inference": { "const": "DISALLOWED" },
+        "deception_inference": { "const": "DISALLOWED" },
+        "protected_attribute_optimization": { "const": "DISALLOWED" },
+        "provenance_sole_adverse_action": { "const": "DISALLOWED" },
+        "autonomous_mutation": { "const": "DISALLOWED" },
+        "batch_approval": { "const": "DISALLOWED" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "kind",
+        "lifecycle",
+        "synthetic",
+        "metric_protocol",
+        "policy",
+        "gates",
+        "evidence_verified",
+        "legal_review_verified",
+        "independent_audit_verified",
+        "owner_accepted",
+        "full_ats_accepted",
+        "proposal_generation_allowed",
+        "human_action_allowed",
+        "production_eligible"
+      ],
+      "properties": {
+        "capability_id": { "$ref": "#/$defs/ref" },
+        "kind": { "enum": ["QOH", "FAIRNESS", "COACHING", "SKILLS_ONTOLOGY", "DEEPFAKE_PROVENANCE", "INTERNAL_MOBILITY", "AGENTIC_PROPOSAL"] },
+        "lifecycle": { "enum": ["RESEARCH_ONLY", "EVIDENCE_REQUIRED", "BLOCKED", "PROPOSAL_ONLY", "GOVERNED_ACTIVE", "DISALLOWED"] },
+        "synthetic": { "type": "boolean" },
+        "metric_protocol": { "$ref": "#/$defs/metric_protocol" },
+        "policy": { "$ref": "#/$defs/policy" },
+        "gates": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/gate" }
+        },
+        "evidence_verified": { "type": "boolean" },
+        "legal_review_verified": { "type": "boolean" },
+        "independent_audit_verified": { "type": "boolean" },
+        "owner_accepted": { "type": "boolean" },
+        "full_ats_accepted": { "type": "boolean" },
+        "full_ats_acceptance_ref": { "$ref": "#/$defs/ref" },
+        "proposal_generation_allowed": { "type": "boolean" },
+        "human_action_allowed": { "type": "boolean" },
+        "production_eligible": { "type": "boolean" }
+      }
+    },
+    "approval_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "human_actor_ref",
+        "oversight_role_ref",
+        "human_authored_rationale_ref",
+        "source_evidence_refs",
+        "ai_output_version_ref",
+        "decision_outcome_ref",
+        "audit_receipt_ref",
+        "finalized_at"
+      ],
+      "properties": {
+        "human_actor_ref": { "$ref": "#/$defs/ref" },
+        "oversight_role_ref": { "$ref": "#/$defs/ref" },
+        "human_authored_rationale_ref": { "$ref": "#/$defs/ref" },
+        "source_evidence_refs": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/ref" } },
+        "ai_output_version_ref": { "$ref": "#/$defs/ref" },
+        "decision_outcome_ref": { "$ref": "#/$defs/ref" },
+        "audit_receipt_ref": { "$ref": "#/$defs/ref" },
+        "finalized_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proposal_id",
+        "capability_id",
+        "synthetic",
+        "scope_ref",
+        "action_type",
+        "oversight_state",
+        "human_oversight_standard_ref",
+        "source_evidence_refs",
+        "citation_refs",
+        "ai_output_version_ref",
+        "content_digest",
+        "created_at",
+        "expires_at",
+        "human_review_required",
+        "human_rationale_required",
+        "auto_execute",
+        "batch_approval",
+        "mutation_allowed",
+        "action_allowed",
+        "appeal_path_ref",
+        "rollback_plan_ref"
+      ],
+      "properties": {
+        "proposal_id": { "$ref": "#/$defs/ref" },
+        "capability_id": { "$ref": "#/$defs/ref" },
+        "synthetic": { "type": "boolean" },
+        "scope_ref": { "$ref": "#/$defs/ref" },
+        "action_type": { "enum": ["COACHING_DRAFT", "SKILL_SUGGESTION", "RISK_REVIEW_REQUEST", "MOBILITY_REVIEW_SUGGESTION", "NO_ACTION"] },
+        "oversight_state": { "enum": ["AI_SUGGESTED", "HUMAN_REVIEWING", "HUMAN_EDITED", "HUMAN_REVIEWED_NO_CHANGE", "AI_SUGGESTION_REJECTED", "HUMAN_RATIONALE_RECORDED", "FINALIZED", "EXPORTED", "WITHDRAWN"] },
+        "human_oversight_standard_ref": { "$ref": "#/$defs/ref" },
+        "source_evidence_refs": { "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/ref" } },
+        "citation_refs": { "type": "array", "minItems": 0, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/ref" } },
+        "ai_output_version_ref": { "$ref": "#/$defs/ref" },
+        "content_digest": { "$ref": "#/$defs/digest" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "expires_at": { "$ref": "#/$defs/timestamp" },
+        "human_review_required": { "const": true },
+        "human_rationale_required": { "const": true },
+        "auto_execute": { "const": false },
+        "batch_approval": { "const": false },
+        "mutation_allowed": { "const": false },
+        "action_allowed": { "type": "boolean" },
+        "appeal_path_ref": { "$ref": "#/$defs/ref" },
+        "rollback_plan_ref": { "$ref": "#/$defs/ref" },
+        "approval_receipt": { "$ref": "#/$defs/approval_receipt" }
+      }
+    },
+    "hard_bans": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numeric_scoring",
+        "ranking",
+        "automated_employment_decision",
+        "affect_emotion_inference",
+        "personality_inference",
+        "deception_inference",
+        "protected_attribute_optimization",
+        "provenance_sole_adverse_action",
+        "autonomous_mutation",
+        "batch_approval"
+      ],
+      "properties": {
+        "numeric_scoring": { "const": "DISALLOWED" },
+        "ranking": { "const": "DISALLOWED" },
+        "automated_employment_decision": { "const": "DISALLOWED" },
+        "affect_emotion_inference": { "const": "DISALLOWED" },
+        "personality_inference": { "const": "DISALLOWED" },
+        "deception_inference": { "const": "DISALLOWED" },
+        "protected_attribute_optimization": { "const": "DISALLOWED" },
+        "provenance_sole_adverse_action": { "const": "DISALLOWED" },
+        "autonomous_mutation": { "const": "DISALLOWED" },
+        "batch_approval": { "const": "DISALLOWED" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "activation_gate",
+    "human_oversight_standard_ref",
+    "hard_bans",
+    "max_pending_proposals",
+    "proposal_ttl_hours",
+    "capabilities",
+    "proposals"
+  ],
+  "properties": {
+    "schema_version": { "const": "intelligence-evaluation/v1" },
+    "activation_gate": { "enum": ["PRE_G0_CONTRACT_ONLY", "GATED_RUNTIME"] },
+    "human_oversight_standard_ref": { "const": "human-oversight:canonical:v1" },
+    "hard_bans": { "$ref": "#/$defs/hard_bans" },
+    "max_pending_proposals": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "proposal_ttl_hours": { "type": "integer", "minimum": 1, "maximum": 168 },
+    "capabilities": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/capability" }
+    },
+    "proposals": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/proposal" }
+    }
+  }
+}

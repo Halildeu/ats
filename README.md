@@ -35,6 +35,8 @@ P4 land-and-expand kontratı bu dört interface'i büyütmez: [`integration-plat
 
 P5 sovereign packaging kontratı [`deployment-profile/v1`](./docs/integrations/deployment-profile-v1.md) ile managed/dedicated/BYO-region/on-prem kabul zincirlerini ayırır; gerçek cluster, partner veya release kanıtı olmadan tüm profiller fail-closed kalır.
 
+P6 governed-intelligence kontratı [`intelligence-evaluation/v1`](./docs/ai-governance/intelligence-evaluation-v1.md) ile QoH/fairness/coaching/skills/deepfake/internal-mobility/agentic proposal metric ve action gate'lerini ayırır; scoring/ranking/affect/otonom karar kalıcı olarak yasaktır.
+
 ## Geliştirme (contracts)
 
 ```bash
