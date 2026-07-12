@@ -4,10 +4,15 @@ import com.ats.export.ExportContext;
 import com.ats.export.ExportContext.CriterionRef;
 import com.ats.export.ExportService;
 import com.ats.export.ExportService.ExportArtifactContent;
+import com.ats.export.ExportService.ExportDisposition;
+import com.ats.export.ExportService.ExportPacketResult;
 import com.ats.export.ExportService.ExportReceipt;
 import com.ats.export.ExportService.ExportReceiptRecovery;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Outcome;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +64,14 @@ class ExportApiController {
 
     record ExportBody(String caseKey, List<String> citationKeys, ContextDto context) {}
 
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Yeni kanıt paketi üretildi"),
+            @ApiResponse(responseCode = "200",
+                    description = "İdempotent replay: aynı request_digest'li mevcut makbuz döndü"
+                            + " (yeni side-effect yok)",
+                    headers = @Header(name = "X-ATS-Replay",
+                            description = "Doğrulanmış replay işareti (true)")),
+    })
     @PostMapping("/api/v1/interviews/{interviewId}/export")
     ResponseEntity<?> exportPacket(Authentication auth,
             @PathVariable("interviewId") String interviewId, @RequestBody ExportBody body) {
@@ -86,18 +99,25 @@ class ExportApiController {
                 c.wormChainRefs() == null ? List.of() : c.wormChainRefs(),
                 c.redactionPolicyRef(), c.redactionRunRef(), c.retentionPolicyRef(),
                 c.schemaDigest(), c.signatureRef());
-        Outcome<ExportReceipt> out = exportService.exportPacket(
+        Outcome<ExportPacketResult> out = exportService.exportPacket(
                 tenantAccess.tenant(auth), tenantAccess.actor(auth), new InterviewId(interviewId),
                 body.caseKey(), body.citationKeys(), ctx, Instant.now().toString());
-        if (out instanceof Outcome.Fail<ExportReceipt> fail) {
+        if (out instanceof Outcome.Fail<ExportPacketResult> fail) {
             return OutcomeHttp.fail(fail);
         }
-        ExportReceipt r = ((Outcome.Ok<ExportReceipt>) out).value();
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+        ExportPacketResult result = ((Outcome.Ok<ExportPacketResult>) out).value();
+        ExportReceipt r = result.receipt();
+        Map<String, Object> bodyMap = Map.of(
                 "artifactKey", r.artifactKey(),
                 "evidenceId", r.evidenceId(),
                 "packetDigest", r.packetDigest(),
-                "claimCount", r.claimCount()));
+                "claimCount", r.claimCount());
+        // 39d-10: yeni üretim 201; DOĞRULANMIŞ idempotent replay 200 + X-ATS-Replay
+        // (aynı request_digest — gövde birebir; farklı istek 400 conflict alır).
+        if (result.disposition() == ExportDisposition.REPLAYED) {
+            return ResponseEntity.ok().header("X-ATS-Replay", "true").body(bodyMap);
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(bodyMap);
     }
 
     /**

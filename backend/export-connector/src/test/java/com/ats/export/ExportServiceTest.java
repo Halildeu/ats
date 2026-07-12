@@ -118,8 +118,17 @@ class ExportServiceTest {
                 "0".repeat(64), "sig-01");
     }
 
-    private Outcome<ExportReceipt> export() {
+    private Outcome<ExportService.ExportPacketResult> exportResult() {
         return service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
+    }
+
+    /** Eski testlerin makbuz-görünümü: fail'i AYNEN taşır, başarıyı receipt'e indirger. */
+    private Outcome<ExportReceipt> export() {
+        Outcome<ExportService.ExportPacketResult> out = exportResult();
+        if (out instanceof Outcome.Fail<ExportService.ExportPacketResult> f) {
+            return Outcome.fail(f.code(), f.reason());
+        }
+        return Outcome.ok(((Outcome.Ok<ExportService.ExportPacketResult>) out).value().receipt());
     }
 
     @Test
@@ -153,7 +162,7 @@ class ExportServiceTest {
         humanReview.recordRationale(T1, new com.ats.kernel.Ids.ActorId("human-opaque-1"), I1, orphanCase, "rat").asOptional();
         humanReview.finalizeDecision(T1, HUMAN, I1, orphanCase, "karar-sonuc-a", "2026-07-02T13:00:00Z").asOptional().orElseThrow();
         ledger.entries.clear();
-        Outcome<ExportReceipt> out = service.exportPacket(T1, HUMAN, I1, orphanCase, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
+        Outcome<ExportService.ExportPacketResult> out = service.exportPacket(T1, HUMAN, I1, orphanCase, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
         assertFalse(out.isOk(), "karar-kanıtı claims dışıysa export fail-closed (manifest cross-invariant)");
         assertTrue(ledger.entries.isEmpty());
     }
@@ -173,7 +182,7 @@ class ExportServiceTest {
                 Map.of(unsupportedKey, "c-comm"), List.of("ledger-entry-501"),
                 "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
                 "0".repeat(64), "sig-01");
-        Outcome<ExportReceipt> out = service.exportPacket(T1, HUMAN, I1, c2, List.of(unsupportedKey), c, "2026-07-02T14:00:00Z");
+        Outcome<ExportService.ExportPacketResult> out = service.exportPacket(T1, HUMAN, I1, c2, List.of(unsupportedKey), c, "2026-07-02T14:00:00Z");
         assertFalse(out.isOk(), "unsupported claim karar-kanıtı olamaz (flag-and-exclude-from-decision)");
     }
 
@@ -199,19 +208,29 @@ class ExportServiceTest {
     }
 
     @Test
-    void only_finalized_cases_exportable_and_double_export_blocked() {
+    void only_finalized_cases_exportable_and_same_request_replays_without_side_effects() {
         String draft = humanReview.open(T1, I1, List.of("ev-x"), "aiout-v1").asOptional().orElseThrow();
         assertFalse(service.exportPacket(T1, HUMAN, I1, draft, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z").isOk(),
                 "AI_SUGGESTED export edilemez");
-        assertTrue(export().isOk());
-        assertFalse(export().isOk(), "EXPORTED terminal → çift-export reddedilir");
-        assertEquals(1, artifactStore.size());
+        ExportService.ExportPacketResult first = exportResult().asOptional().orElseThrow();
+        assertEquals(ExportService.ExportDisposition.CREATED, first.disposition());
+        // 39d-10: AYNI istek ikinci kez → REPLAYED; hiçbir yeni side-effect yok
+        // ("tek ETKİLİ export" invariant'ı korunur — ikinci POST artık hata değil).
+        ExportService.ExportPacketResult second = exportResult().asOptional().orElseThrow();
+        assertEquals(ExportService.ExportDisposition.REPLAYED, second.disposition());
+        assertEquals(first.receipt(), second.receipt(), "replay makbuzu birebir aynı");
+        assertEquals(1, artifactStore.size(), "yeni artifact üretilmez");
+        assertEquals(1, ledger.entries.size(), "yeni ledger satırı yazılmaz");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())
+                        && first.receipt().artifactKey().equals(e.extras().get("target_ref"))),
+                "replay audit sinyali: target_ref=artifactKey");
     }
 
     @Test
     void unknown_or_cross_tenant_citation_rejected() {
         assertFalse(service.exportPacket(T1, HUMAN, I1, caseKey, List.of("i1/cit-999"), ctx(), "2026-07-02T14:00:00Z").isOk());
-        Outcome<ExportReceipt> cross = service.exportPacket(T2, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
+        Outcome<ExportService.ExportPacketResult> cross = service.exportPacket(T2, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T14:00:00Z");
         assertFalse(cross.isOk(), "cross-tenant vaka/citation erişimi yapısal kapalı");
         assertTrue(ledger.entries.isEmpty());
     }
@@ -294,7 +313,7 @@ class ExportServiceTest {
                 "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
                 "0".repeat(64), "sig-01");
         ExportReceipt receipt = service.exportPacket(T1, HUMAN, I1, caseKey, List.of(citationKey, notSupKey), c, "2026-07-02T14:00:00Z")
-                .asOptional().orElseThrow();
+                .asOptional().orElseThrow().receipt();
         String packet = artifactStore.find(T1, I1, receipt.artifactKey()).asOptional().orElseThrow();
         assertTrue(packet.contains("\"unsupported\""), "NOT_SUPPORTED → schema enum 'unsupported'");
         assertFalse(packet.contains("not_supported"), "schema-dışı 'not_supported' üretimi yasak");
@@ -703,6 +722,250 @@ class ExportServiceTest {
     void artifact_read_rejects_blank_case_key_and_blank_actor() {
         assertFalse(service.exportArtifact(T1, HUMAN, I1, " ").isOk());
         assertFalse(service.exportArtifact(T1, new ActorId(" "), I1, caseKey).isOk());
+    }
+
+    // ---- 39d-10 idempotent-replay (Codex plan-REVISE matrisi) ----
+
+    private ExportContext ctxWithSignature(String sig) {
+        return new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-cand-01", "consent-interviewer-01"),
+                "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm"),
+                List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), sig);
+    }
+
+    @Test
+    void replay_requires_same_request_digest_different_context_is_conflict() {
+        exportResult().asOptional().orElseThrow();
+        int worm = ledger.entries.size();
+        Outcome<ExportService.ExportPacketResult> out = service.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctxWithSignature("sig-DIFFERENT"),
+                "2026-07-02T15:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI export isteği"),
+                "farklı gövde eski makbuzu replay EDEMEZ (fail-closed conflict)");
+        assertEquals(worm, ledger.entries.size(), "conflict side-effect üretmez");
+        assertEquals(1, artifactStore.size());
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())),
+                "request_digest conflict replay audit'i ÜRETEMEZ");
+    }
+
+    @Test
+    void replay_rejected_when_citation_list_differs_even_for_same_case() {
+        exportResult().asOptional().orElseThrow();
+        String cit2 = citationStore.put(new Citation(T1, I1, "i1/tr-1", "ikinci iddia",
+                List.of(1), Entailment.SUPPORTED)).asOptional().orElseThrow();
+        ExportContext c = new ExportContext(
+                "gen-v1", "tr-TR", "Europe/Istanbul", "disclosure-ai-assist-v1",
+                List.of("consent-cand-01", "consent-interviewer-01"),
+                "rubric-v1", List.of(new CriterionRef("c-comm", "jr-comm-v1")),
+                Map.of(citationKey, "c-comm", cit2, "c-comm"),
+                List.of("ledger-entry-501"),
+                "redaction-policy-v1", "redaction-run-77", "retention-policy-t1",
+                "0".repeat(64), "sig-01");
+        Outcome<ExportService.ExportPacketResult> out = service.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey, cit2), c, "2026-07-02T15:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI export isteği"));
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())));
+    }
+
+    @Test
+    void legacy_exported_row_without_request_digest_rejects_post_replay_but_receipt_get_works() {
+        makeExportEntry(T1, I1, caseKey, "9".repeat(64), 1.0, "2026-07-02T15:00:00Z", "ev-leg");
+        assertTrue(humanReview.markExported(T1, I1, caseKey, "artifact-x").isOk());
+        Outcome<ExportService.ExportPacketResult> out = exportResult();
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("legacy")
+                && f.reason().contains("receipt"),
+                "legacy satırda POST replay yok; receipt GET'e yönlendirilir");
+        assertTrue(service.exportReceipt(T1, HUMAN, I1, caseKey).isOk(),
+                "receipt-recovery legacy satırda ÇALIŞIR");
+        assertEquals(0, artifactStore.size(), "yeni üretim yok");
+    }
+
+    @Test
+    void r4_finalized_with_ledger_row_is_repair_first_no_new_production() {
+        // Bugünkü davranış "yeniden üret → 23505 → hata" idi; artık üretime hiç girilmez.
+        makeArtifactEntry(caseKey, "artifact-r4", "a".repeat(64), sha256Hex("{\"x\":1}"), "ev-r4p");
+        Outcome<ExportService.ExportPacketResult> out = exportResult();
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.UNSUPPORTED_IN_GATE
+                && f.reason().contains("repair-first"),
+                "R4: deterministik in-progress/repair-first; body: " + out);
+        assertEquals(0, artifactStore.size(), "packet YENİDEN üretilmez");
+        assertEquals(1, ledger.entries.size(), "append denenmez");
+        assertFalse(sink.emitted().stream().anyMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())));
+    }
+
+    /** Yarış simülatörü: ilk lookup NOT_FOUND (üretime girilir); append fail;
+     *  sonraki lookup kazananı görür — o anda onWinnerVisible (ör. kazananın
+     *  markExported'ı) koşturulur. */
+    private EvidenceLedger raceLedger(EvidenceLedger.LedgerEntry winnerRow, Runnable onWinnerVisible) {
+        return new EvidenceLedger() {
+            int lookups = 0;
+            boolean flipped = false;
+
+            @Override
+            public Outcome<LedgerEntry> append(EvidenceEvent e) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
+            }
+
+            @Override
+            public Outcome<LedgerEntry> findByIdempotencyKey(TenantId t, String key) {
+                lookups++;
+                if (lookups == 1) {
+                    return Outcome.fail(OutcomeCode.NOT_FOUND, "yok (henüz)");
+                }
+                if (winnerRow == null) {
+                    return Outcome.fail(OutcomeCode.NOT_FOUND, "yok");
+                }
+                if (!flipped && onWinnerVisible != null) {
+                    flipped = true;
+                    onWinnerVisible.run();
+                }
+                return Outcome.ok(winnerRow);
+            }
+
+            @Override
+            public Outcome<LedgerEntry> appendTombstoneEvent(TenantId t, ActorId a, InterviewId i,
+                    EvidenceId target, String reason) {
+                return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "slice dışı");
+            }
+
+            @Override
+            public Outcome<LedgerEntry> getById(TenantId t, EvidenceId id) {
+                return Outcome.fail(OutcomeCode.NOT_FOUND, "yok");
+            }
+
+            @Override
+            public Outcome<List<LedgerEntry>> list(TenantId t, LedgerListFilter f) {
+                return Outcome.ok(winnerRow == null ? List.of() : List.of(winnerRow));
+            }
+        };
+    }
+
+    private EvidenceLedger.LedgerEntry winnerRow(String requestDigest, String artifactRef) {
+        String key = ExportService.exportIdempotencyKey(T1, I1, caseKey);
+        return new EvidenceLedger.LedgerEntry(T1, HUMAN, I1, ExportService.LEDGER_EVENT_TYPE,
+                "2026-07-02T15:00:00Z", key, "b".repeat(64),
+                JsonValue.object(Map.of(
+                        "export_artifact_ref", JsonValue.of(artifactRef),
+                        "case_key", JsonValue.of(caseKey),
+                        "packet_digest", JsonValue.of("b".repeat(64)),
+                        "artifact_digest", JsonValue.of("c".repeat(64)),
+                        "request_digest", JsonValue.of(requestDigest),
+                        "claim_count", new JsonValue.JsonNumber(1.0))),
+                new EvidenceId("ev-win"), 1, "p", "h");
+    }
+
+    @Test
+    void append_race_loser_reconciles_to_replay_when_winner_exported_same_digest() {
+        String digest = ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx());
+        ExportService raced = new ExportService(reviewStore, citationStore, artifactStore,
+                humanReview, raceLedger(winnerRow(digest, "artifact-win"),
+                        () -> humanReview.markExported(T1, I1, caseKey, "artifact-win")), sink);
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        ExportService.ExportPacketResult r = out.asOptional().orElseThrow();
+        assertEquals(ExportService.ExportDisposition.REPLAYED, r.disposition());
+        assertEquals("artifact-win", r.receipt().artifactKey());
+        assertEquals(0, artifactStore.size(), "kaybedenin artifact'i TELAFİ EDİLDİ (rollback)");
+    }
+
+    @Test
+    void append_race_loser_gets_deterministic_in_progress_when_winner_still_finalized() {
+        String digest = ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx());
+        ExportService raced = new ExportService(reviewStore, citationStore, artifactStore,
+                humanReview, raceLedger(winnerRow(digest, "artifact-win"), null), sink);
+        // vaka FINALIZED kalır (kazanan markExported'a HENÜZ ulaşmadı)
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.UNSUPPORTED_IN_GATE,
+                "generic 503/400 değil: açık in-progress/R4; body: " + out);
+        assertEquals(0, artifactStore.size());
+    }
+
+    @Test
+    void append_race_with_different_request_digest_never_leaks_winner_receipt() {
+        ExportService raced = new ExportService(reviewStore, citationStore, artifactStore,
+                humanReview, raceLedger(winnerRow("e".repeat(64), "artifact-win"),
+                        () -> humanReview.markExported(T1, I1, caseKey, "artifact-win")), sink);
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.INVALID && f.reason().contains("FARKLI export isteği"),
+                "yarışı farklı istek kazandıysa makbuz SIZDIRILMAZ");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())),
+                "yanlış replay audit'i de üretilmez");
+    }
+
+    @Test
+    void rollback_fail_never_returns_replay_even_when_winner_is_visible() {
+        // R1 şartı (Codex): telafi silmesi BAŞARISIZSA kazanan görünür olsa bile
+        // replay/success dönülmez — öksüz-artifact alarmı gizlenmez.
+        String digest = ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx());
+        ExportArtifactStore stickyStore = new ExportArtifactStore() {
+            @Override
+            public Outcome<String> put(TenantId t, InterviewId i, String pk) {
+                return artifactStore.put(t, i, pk);
+            }
+
+            @Override
+            public Outcome<String> find(TenantId t, InterviewId i, String k) {
+                return artifactStore.find(t, i, k);
+            }
+
+            @Override
+            public Outcome<Void> delete(TenantId t, String k) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "delete down (test)");
+            }
+        };
+        ExportService raced = new ExportService(reviewStore, citationStore, stickyStore,
+                humanReview, raceLedger(winnerRow(digest, "artifact-win"),
+                        () -> humanReview.markExported(T1, I1, caseKey, "artifact-win")), sink);
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.NOT_CONFIGURED
+                && f.reason().contains("telafi silmesi başarısız"),
+                "rollback-fail'de kazanan GÖRÜNSE BİLE replay dönülmez; body: " + out);
+        assertEquals(1, artifactStore.size(), "öksüz artifact store'da kaldı (R1 sinyali)");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                ExportService.REPLAYED_EVENT.equals(e.eventTypeId())));
+    }
+
+    @Test
+    void append_fail_without_winner_row_stays_operational_error_with_rollback() {
+        ExportService raced = new ExportService(reviewStore, citationStore, artifactStore,
+                humanReview, raceLedger(null, null), sink);
+        Outcome<ExportService.ExportPacketResult> out = raced.exportPacket(
+                T1, HUMAN, I1, caseKey, List.of(citationKey), ctx(), "2026-07-02T16:00:00Z");
+        assertTrue(out instanceof Outcome.Fail<ExportService.ExportPacketResult> f
+                && f.code() == OutcomeCode.NOT_CONFIGURED
+                && f.reason().contains("artifact geri alındı"),
+                "satır yoksa gerçek ledger arızası: mevcut hata korunur; body: " + out);
+        assertEquals(0, artifactStore.size(), "rollback gerçekleşti");
+    }
+
+    @Test
+    void export_payload_request_digest_is_canonical_and_matches_recomputation() {
+        exportResult().asOptional().orElseThrow();
+        JsonValue.JsonObject payload = (JsonValue.JsonObject) ledger.entries.get(0).payload();
+        String rd = ((JsonValue.JsonString) payload.values().get("request_digest")).value();
+        assertTrue(rd.matches("[0-9a-f]{64}"));
+        assertEquals(ExportService.exportRequestDigest(T1, I1, caseKey, List.of(citationKey), ctx()), rd,
+                "payload digest'i aynı girdilerin yeniden-hesabıyla birebir");
+        assertFalse(rd.equals(((JsonValue.JsonString) payload.values().get("packet_digest")).value()));
     }
 
     @Test

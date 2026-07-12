@@ -181,6 +181,27 @@ class ExportDsarApiTest {
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
         assertTrue(got.getBody().contains("\"state\":\"EXPORTED\""), "body: " + got.getBody());
 
+        // 39d-10: AYNI gövdeyle ikinci POST → idempotent replay: 200 + X-ATS-Replay
+        // + birebir aynı 4 alan + HİÇBİR yeni side-effect (WORM satır sayısı sabit).
+        int wormAfterExport = wormTotal(TENANT);
+        ResponseEntity<String> replay = post(tok, "/api/v1/interviews/" + iv + "/export", exportBody);
+        assertEquals(200, replay.getStatusCode().value(), "body: " + replay.getBody());
+        assertEquals("true", replay.getHeaders().getFirst("X-ATS-Replay"));
+        JsonNode createdJson = JSON_READER.readTree(exp.getBody());
+        JsonNode replayJson = JSON_READER.readTree(replay.getBody());
+        for (String f : List.of("artifactKey", "evidenceId", "packetDigest", "claimCount")) {
+            assertEquals(createdJson.get(f), replayJson.get(f),
+                    "replay makbuz alanı birebir olmalı: " + f);
+        }
+        assertTrue(replayJson.path("claimCount").isIntegralNumber());
+        assertTrue(replayJson.path("claimCount").intValue() >= 1);
+        assertEquals(wormAfterExport, wormTotal(TENANT), "replay WORM'a satır YAZMAZ");
+        // DEĞİŞTİRİLMİŞ gövde (farklı signatureRef) → replay DEĞİL, fail-closed conflict:
+        ResponseEntity<String> conflict = post(tok, "/api/v1/interviews/" + iv + "/export",
+                exportBody.replace("\"signatureRef\":\"sig-1\"", "\"signatureRef\":\"sig-BAŞKA\""));
+        assertEquals(400, conflict.getStatusCode().value(), "body: " + conflict.getBody());
+        assertEquals(wormAfterExport, wormTotal(TENANT));
+
         // 39d-8d: receipt-recovery 200 — tam-fixture kontrat. Salt-okuma scope
         // yeter (EXPORT_READ); no-store 200'de de zorunlu; alanlar export
         // cevabıyla birebir eşleşir (makbuz ledger'dan türetilir, yeniden
