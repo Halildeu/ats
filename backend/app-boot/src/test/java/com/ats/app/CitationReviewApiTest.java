@@ -64,9 +64,12 @@ class CitationReviewApiTest {
             s.createContext("/v1/transcribe", exchange -> {
                 TRANSCRIBE_CALLS.incrementAndGet();
                 exchange.getRequestBody().readAllBytes(); // audio_ref taşır; stub sentetik döner
+                // gov1-1c: raporlanan model kimliği shipped approved-models.json http-json-stt/v1 ile eşleşir
+                // → verify ALLOW (aksi halde fail-closed DENY). Enforcement kanıtı ayrı unit/E2E'de.
                 String body = "{\"language\":\"tr-TR\",\"segments\":["
                         + "{\"speaker\":\"S1\",\"start_ms\":0,\"end_ms\":4000,\"text\":\"Soru (stub)\"},"
-                        + "{\"speaker\":\"S2\",\"start_ms\":4000,\"end_ms\":9000,\"text\":\"Yanit (stub)\"}]}";
+                        + "{\"speaker\":\"S2\",\"start_ms\":4000,\"end_ms\":9000,\"text\":\"Yanit (stub)\"}],"
+                        + "\"model_id\":\"http-json-stt\",\"model_version\":\"v1\"}";
                 byte[] b = body.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, b.length);
@@ -80,9 +83,12 @@ class CitationReviewApiTest {
                 String marker = "\"claim\":\"";
                 int i = req.indexOf(marker) + marker.length();
                 String claim = req.substring(i, req.indexOf('"', i));
+                // gov1-1c: model kimliği http-json-cite/v1 (approved) → verify ALLOW; claim-swap dalı da
+                // GEÇERLİ kimlik taşır ki iş-katmanı claim_mismatch kontrolüne ULAŞsın (governance'tan sonra).
+                String identity = ",\"model_id\":\"http-json-cite\",\"model_version\":\"v1\"}";
                 String body = claim.contains("degistir")
-                        ? "{\"claim\":\"BAMBASKA BIR CLAIM\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\"}"
-                        : "{\"claim\":\"" + claim + "\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\"}";
+                        ? "{\"claim\":\"BAMBASKA BIR CLAIM\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\"" + identity
+                        : "{\"claim\":\"" + claim + "\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\"" + identity;
                 byte[] b = body.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, b.length);

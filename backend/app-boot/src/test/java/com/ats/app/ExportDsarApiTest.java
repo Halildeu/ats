@@ -61,8 +61,10 @@ class ExportDsarApiTest {
                 String marker = "\"claim\":\"";
                 int i = req.indexOf(marker) + marker.length();
                 String claim = req.substring(i, req.indexOf('"', i));
+                // gov1-1c: raporlanan model kimliği shipped approved http-json-cite/v1 ile eşleşir → verify ALLOW.
                 byte[] b = ("{\"claim\":\"" + claim
-                        + "\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\"}")
+                        + "\",\"source_segment_refs\":[\"seg-0\"],\"entailment\":\"supported\","
+                        + "\"model_id\":\"http-json-cite\",\"model_version\":\"v1\"}")
                         .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, b.length);

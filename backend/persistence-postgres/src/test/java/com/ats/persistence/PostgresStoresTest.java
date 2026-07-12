@@ -9,6 +9,9 @@ import com.ats.consent.RecordingPermission;
 import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.AIProvider.Entailment;
+import com.ats.contracts.governance.Capability;
+import com.ats.contracts.governance.ModelApprovalRef;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.dsr.DsarRequest;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
@@ -267,6 +270,26 @@ class PostgresStoresTest {
         assertTrue(cases.find(T1, I1, caseKey).isOk(), "state satırı duruyor");
     }
 
+    /**
+     * PG-smoke için allow-all model-governance kapısı: governance semantiği burada test EDİLMEZ
+     * (adapter + orkestrasyon testlerinin işi); bu yalnız PG store round-trip'ini çalıştırmak için
+     * gate constructor-param'ını karşılar.
+     */
+    private static ModelGovernanceGate allowAllGate() {
+        ModelApprovalRef ref = new ModelApprovalRef("mapr_" + "0".repeat(64));
+        return new ModelGovernanceGate() {
+            @Override
+            public Outcome<Permit> preflight(Capability capability) {
+                return Outcome.ok(new Permit(capability, ref, "prov", "model", "v1", "ep", "ip1"));
+            }
+
+            @Override
+            public Outcome<Decision> verify(Permit permit, AIProvider.ReportedModelIdentity reported) {
+                return Outcome.ok(Decision.allow(permit.approvalRef(), permit.capability(), "model", "v1"));
+            }
+        };
+    }
+
     /** Orkestrasyon PG-smoke: CitationService, TAMAMEN PG store'lar + PG WORM ledger ile uçtan uca. */
     @Test
     void citation_service_end_to_end_on_postgres_stores() {
@@ -290,7 +313,7 @@ class PostgresStoresTest {
                         AIProvider.ReportedModelIdentity.notReported()));
             }
         };
-        CitationService service = new CitationService(new ConsentGate(consents, sink), scripted,
+        CitationService service = new CitationService(new ConsentGate(consents, sink), allowAllGate(), scripted,
                 transcripts, citations, ledger, sink);
         CitationService.CitationReceipt receipt = service
                 .citeClaim(T1, HUMAN, iv, trKey, "Aday backend'de bes yil calisti", "2026-07-02T12:00:00Z")

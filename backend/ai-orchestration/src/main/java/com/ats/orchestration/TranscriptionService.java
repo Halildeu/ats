@@ -6,6 +6,8 @@ import com.ats.contracts.AIProvider.TranscriptResult;
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.EvidenceLedger.EvidenceEvent;
 import com.ats.contracts.EvidenceLedger.LedgerEntry;
+import com.ats.contracts.governance.Capability;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
@@ -31,6 +33,7 @@ import java.util.Map;
 public final class TranscriptionService {
 
     static final String PROVIDER_REJECTED_EVENT = "ai_pipeline.provider.request_rejected";
+    static final String MODEL_GOVERNANCE_DENIED_EVENT = "ai_pipeline.model_governance.denied";
     static final String APPEND_SUCCEEDED_EVENT = "evidence.append.succeeded";
     static final String APPEND_FAILED_EVENT = "evidence.append.failed";
     static final String APPEND_DEDUPLICATED_EVENT = "evidence.append.deduplicated";
@@ -39,6 +42,7 @@ public final class TranscriptionService {
     public record TranscriptionReceipt(String transcriptKey, String evidenceId, int segmentCount) {}
 
     private final ConsentGate consentGate;
+    private final ModelGovernanceGate governanceGate;
     private final AIProvider provider;
     private final SegmentSanitizer sanitizer;
     private final TranscriptStore transcriptStore;
@@ -48,6 +52,7 @@ public final class TranscriptionService {
 
     public TranscriptionService(
             ConsentGate consentGate,
+            ModelGovernanceGate governanceGate,
             AIProvider provider,
             SegmentSanitizer sanitizer,
             TranscriptStore transcriptStore,
@@ -55,6 +60,7 @@ public final class TranscriptionService {
             OperationalEventSink sink,
             AudioAccessGrants grants) {
         this.consentGate = consentGate;
+        this.governanceGate = governanceGate;
         this.provider = provider;
         this.grants = grants;
         this.sanitizer = sanitizer;
@@ -117,6 +123,18 @@ public final class TranscriptionService {
                     "sourceObjectKey için recording.ingested kanıtı yok (fail-closed; önce yükleme)");
         }
 
+        // gov1-1c: çağrı-ÖNCESİ model-governance kapısı. TRANSCRIBE için onaylı-model APPROVED
+        // değilse sağlayıcıya HİÇ çıkılmaz (fail-closed) — ses-erişim grant'i bile verilmez.
+        Outcome<ModelGovernanceGate.Permit> preflight = governanceGate.preflight(Capability.TRANSCRIBE);
+        if (!(preflight instanceof Outcome.Ok<ModelGovernanceGate.Permit> permitOk)) {
+            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Permit>) preflight));
+        }
+        ModelGovernanceGate.Permit permit = permitOk.value();
+        if (permit == null) {
+            // Fail-closed: gate Ok verdi ama Permit null (sözleşme-ihlali) → sağlayıcıya HİÇ çıkma.
+            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        }
+
         // slice-36: provider'a orijinal key DEĞİL, tenant-bağlı one-shot capability
         // handle'ı gider (Codex slice-33 sınırı). Handle sırdır: log/WORM/hata
         // mesajına yazılmaz; WORM kaydında kaynak orijinal sourceObjectKey kalır.
@@ -125,10 +143,30 @@ public final class TranscriptionService {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "ses-erişim grant'i verilemedi (fail-closed)");
         }
         Outcome<TranscriptResult> transcribed = provider.transcribe(issuedOk.value());
-        if (!(transcribed instanceof Outcome.Ok<TranscriptResult> providerOk)) {
+        if (!(transcribed instanceof Outcome.Ok<TranscriptResult> providerOk) || providerOk.value() == null) {
+            // Ok(null) sonuç da sağlayıcı-başarısızlığıdır (fail-closed: aşağıda .modelIdentity() NPE'sine izin verme).
             emit(tenantId, PROVIDER_REJECTED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
                     Map.of("reason_code", "stt_provider_failed"));
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "STT sağlayıcı başarısız (fail-closed)");
+        }
+
+        // gov1-1c: sonuç-SONRASI doğrulama. Sağlayıcının RAPORLADIĞI model kimliği onaylı spec ile
+        // HARD-REQUIRED eşleşmeli; absent/mismatch/TOCTOU-revoke → sonuç TAMAMEN discard
+        // (sanitize/store/WORM'a GİRMEZ). ALLOW kararı = Decision.allowed() (isOk() tek başına YETMEZ).
+        Outcome<ModelGovernanceGate.Decision> verified =
+                governanceGate.verify(permit, providerOk.value().modelIdentity());
+        if (!(verified instanceof Outcome.Ok<ModelGovernanceGate.Decision> decisionOk)) {
+            // verify yalnız permit==null'da Fail döner (buraya ulaşılmaz) — yine de fail-closed
+            // KAPALI Reason ile (ham string değil).
+            return governanceDenied(tenantId, safeGateReason((Outcome.Fail<ModelGovernanceGate.Decision>) verified));
+        }
+        ModelGovernanceGate.Decision decision = decisionOk.value();
+        if (decision == null) {
+            // Fail-closed: gate Ok verdi ama Decision null (sözleşme-ihlali) → discard (store/WORM'a girmez).
+            return governanceDenied(tenantId, ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        }
+        if (!decision.allowed()) {
+            return governanceDenied(tenantId, decision.reasonCode());
         }
 
         SegmentSanitizer.Sanitized sanitized = sanitizer.sanitize(providerOk.value().segments());
@@ -308,6 +346,39 @@ public final class TranscriptionService {
 
     private void emitAppendFailed(TenantId tenantId, String reasonCode) {
         emit(tenantId, APPEND_FAILED_EVENT, "evidence", "error", PiiClass.ID_ONLY, Map.of("reason_code", reasonCode));
+    }
+
+    /**
+     * gov1-1c model-governance RED: Plane-1 observability event (reason-code YALNIZ; ham
+     * reported-identity TAŞIMAZ) + fail-closed Outcome. WORM invocation-journal 1d'ye aittir —
+     * burada yazılmaz. {@code reasonCode} = tipli {@link ModelGovernanceGate.Reason} token'ı.
+     */
+    private Outcome<TranscriptionReceipt> governanceDenied(TenantId tenantId, ModelGovernanceGate.Reason reason) {
+        // reason_code = KAPALI enum adı (ham/serbest string ASLA); business code = reason.outcomeCode()
+        // (sürekli NOT_CONFIGURED değil — DENIED governance reddi 403'e, REGISTRY_UNAVAILABLE 503'e eşlenir).
+        emit(tenantId, MODEL_GOVERNANCE_DENIED_EVENT, "ai_pipeline", "warning", PiiClass.NONE,
+                Map.of("reason_code", reason.name()));
+        return Outcome.fail(reason.outcomeCode(), "model-governance reddi (fail-closed)");
+    }
+
+    /**
+     * Gate'ten dönen serbest-string Fail token'ını KAPALI {@link ModelGovernanceGate.Reason}'a
+     * güvenli çevirir: bilinmeyen token VEYA OutcomeCode-tutarsız (bozuk/alternatif gate) →
+     * fail-closed {@link ModelGovernanceGate.Reason#REGISTRY_UNAVAILABLE}. Böylece OperationalEvent
+     * reason_code'una ham string (newline/secret/enjekte) ASLA girmez (kapalı enum invariant'ı).
+     */
+    private static ModelGovernanceGate.Reason safeGateReason(Outcome.Fail<?> fail) {
+        String token = fail.reason();
+        if (token == null) {
+            return ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        }
+        try {
+            ModelGovernanceGate.Reason reason = ModelGovernanceGate.Reason.valueOf(token);
+            return reason.outcomeCode() == fail.code()
+                    ? reason : ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        } catch (IllegalArgumentException e) {
+            return ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE;
+        }
     }
 
     private void emit(TenantId tenantId, String eventTypeId, String category, String severity,

@@ -12,6 +12,7 @@ import com.ats.consent.RecordingPermission;
 import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -37,6 +38,7 @@ class TranscriptionServiceTest {
     private InMemoryEventSink sink;
     private InMemoryTranscriptStore transcriptStore;
     private FakeLedger ledger;
+    private FakeModelGovernanceGate gate;
 
     // SENTETİK fixture (ATS-0016: gerçek aday verisi build'de YASAK)
     static final class FakeProvider implements AIProvider {
@@ -114,14 +116,19 @@ class TranscriptionServiceTest {
         sink = new InMemoryEventSink();
         transcriptStore = new InMemoryTranscriptStore();
         ledger = new FakeLedger();
+        gate = FakeModelGovernanceGate.allowing();
     }
 
     private final InMemoryAudioAccessGrants grants =
             new InMemoryAudioAccessGrants(java.time.Clock.systemUTC(), java.time.Duration.ofMinutes(5));
 
     private TranscriptionService service(AIProvider provider, EvidenceLedger l) {
+        return service(provider, l, gate);
+    }
+
+    private TranscriptionService service(AIProvider provider, EvidenceLedger l, ModelGovernanceGate g) {
         return new TranscriptionService(
-                new ConsentGate(consentStore, sink), provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
+                new ConsentGate(consentStore, sink), g, provider, new SegmentSanitizer(), transcriptStore, l, sink, grants);
     }
 
     private void grant() {
@@ -219,6 +226,142 @@ class TranscriptionServiceTest {
         assertTrue(sink.emitted().stream().anyMatch(e ->
                 e.eventTypeId().equals(TranscriptionService.PROVIDER_REJECTED_EVENT)
                         && "stt_provider_failed".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_preflight_deny_skips_provider_and_writes_nothing() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE);
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight DENY → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, transcriptStore.size(), "preflight DENY → store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "preflight DENY → business-WORM'a satır yazılmamalı");
+        assertEquals(0, denying.verifyCalls, "preflight DENY → verify çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "APPROVAL_NOT_ACTIVE".equals(e.extras().get("reason_code"))),
+                "gov-deny Plane-1 event reason-code ile emit edilmeli");
+    }
+
+    @Test
+    void governance_verify_deny_discards_result_no_store_no_ledger() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingVerify(ModelGovernanceGate.Reason.MODEL_VERSION_MISMATCH);
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, denying).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, provider.calls, "verify için sağlayıcı çağrılmış olmalı (sonra discard)");
+        assertEquals(0, transcriptStore.size(), "verify DENY → transkript store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty(), "verify DENY → business-WORM'a satır YAZILMAMALI (discard)");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "MODEL_VERSION_MISMATCH".equals(e.extras().get("reason_code"))));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex REVISE — fail-closed null-Ok guard'ları + typed-reason (kapalı)*/
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void governance_preflight_ok_but_null_permit_fails_closed_before_provider() {
+        grant();
+        CountingProvider provider = new CountingProvider();
+        FakeModelGovernanceGate nullPermit = FakeModelGovernanceGate.allowingNullPermit();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, nullPermit).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "permit==null → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, transcriptStore.size(), "permit==null → store'a yazılmamalı");
+        assertEquals(0, nullPermit.verifyCalls, "permit==null → verify çağrılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "permit==null → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))),
+                "gate sözleşme-ihlali → KAPALI Reason fallback ile deny emit edilmeli");
+    }
+
+    @Test
+    void provider_ok_but_null_result_fails_closed_no_store() {
+        grant();
+        FakeModelGovernanceGate allowing = FakeModelGovernanceGate.allowing();
+        Outcome<TranscriptionReceipt> out =
+                service(new NullResultProvider(), ledger, allowing).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, transcriptStore.size(), "provider Ok(null) → store'a yazılmamalı");
+        assertEquals(0, allowing.verifyCalls, "provider Ok(null) → verify çağrılmamalı (provider-failed)");
+        assertTrue(ledger.entries.isEmpty());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.PROVIDER_REJECTED_EVENT.equals(e.eventTypeId())
+                        && "stt_provider_failed".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_verify_ok_but_null_decision_fails_closed_no_store() {
+        grant();
+        FakeModelGovernanceGate nullDecision = FakeModelGovernanceGate.allowingNullDecision();
+        Outcome<TranscriptionReceipt> out =
+                service(new FakeProvider(), ledger, nullDecision).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, nullDecision.verifyCalls, "verify çağrılmış olmalı (sonra null-Decision guard)");
+        assertEquals(0, transcriptStore.size(), "verify Ok(null) → discard, store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "verify Ok(null) → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void malformed_gate_raw_reason_string_never_leaks_into_event_reason_code() {
+        grant();
+        // Bozuk/alternatif gate ham serbest-string (newline + secret) döndürürse reason_code'a SIZMAMALI;
+        // KAPALI enum fallback (REGISTRY_UNAVAILABLE) emit edilmeli.
+        String raw = "arbitrary\nsecret=sk-EVIL not-a-reason";
+        FakeModelGovernanceGate rawGate =
+                FakeModelGovernanceGate.denyingPreflightRaw(OutcomeCode.NOT_CONFIGURED, raw);
+        CountingProvider provider = new CountingProvider();
+        Outcome<TranscriptionReceipt> out =
+                service(provider, ledger, rawGate).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight ham-deny → sağlayıcı çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))),
+                "ham token KAPALI enum fallback'e çevrilmeli");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                        e.extras().values().stream().anyMatch(v -> v.contains("secret") || v.contains("\n"))),
+                "ham string/secret hiçbir event alanına SIZMAMALI");
+    }
+
+    @Test
+    void gate_reason_token_with_inconsistent_outcome_code_falls_back_closed() {
+        grant();
+        // Geçerli enum token ("APPROVAL_NOT_ACTIVE") ama TUTARSIZ code (NOT_CONFIGURED; beklenen DENIED):
+        // bozuk/alternatif gate imzası → fail-closed REGISTRY_UNAVAILABLE fallback (token'a güvenilmez).
+        FakeModelGovernanceGate rawGate = FakeModelGovernanceGate.denyingPreflightRaw(
+                OutcomeCode.NOT_CONFIGURED, ModelGovernanceGate.Reason.APPROVAL_NOT_ACTIVE.name());
+        Outcome<TranscriptionReceipt> out =
+                service(new CountingProvider(), ledger, rawGate).transcribeStored(T1, A1, I1, SRC, "2026-07-02T11:00:00Z");
+        assertFalse(out.isOk());
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                TranscriptionService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    static final class NullResultProvider implements AIProvider {
+        @Override
+        public Outcome<TranscriptResult> transcribe(String audioRef) {
+            return Outcome.ok(null); // sözleşme-ihlali: Ok ama null result
+        }
+        @Override
+        public Outcome<CitationResult> cite(String claim, String transcriptRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "test dışı");
+        }
     }
 
     @Test

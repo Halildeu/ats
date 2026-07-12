@@ -10,6 +10,7 @@ import com.ats.consent.RecordingPermission;
 import com.ats.consent.RecordingPermission.PermissionState;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -37,6 +38,7 @@ class CitationServiceTest {
     private InMemoryTranscriptStore transcriptStore;
     private InMemoryCitationStore citationStore;
     private FakeLedger ledger;
+    private FakeModelGovernanceGate gate;
     private String transcriptKey;
 
     /** Sağlayıcı cevabı test-başına programlanabilir (fail-closed doğrulamalar için). */
@@ -94,6 +96,7 @@ class CitationServiceTest {
         transcriptStore = new InMemoryTranscriptStore();
         citationStore = new InMemoryCitationStore();
         ledger = new FakeLedger();
+        gate = FakeModelGovernanceGate.allowing();
         // SENTETİK transkript (slice-2 çıktısı şekli: S1..Sn takma-ad + lexical-only)
         transcriptKey = transcriptStore.put(new Transcript(T1, I1, "i1/rec-" + "a".repeat(64), "tr", List.of(
                 new Transcript.Segment(0, "S1", 0, 900, "Backend projesinde beş yıl çalıştım"),
@@ -106,8 +109,12 @@ class CitationServiceTest {
     }
 
     private CitationService service(AIProvider provider, EvidenceLedger l) {
+        return service(provider, l, gate);
+    }
+
+    private CitationService service(AIProvider provider, EvidenceLedger l, ModelGovernanceGate g) {
         return new CitationService(
-                new ConsentGate(consentStore, sink), provider, transcriptStore, citationStore, l, sink);
+                new ConsentGate(consentStore, sink), g, provider, transcriptStore, citationStore, l, sink);
     }
 
     private void grant() {
@@ -243,6 +250,126 @@ class CitationServiceTest {
                         && "citation_provider_failed".equals(e.extras().get("reason_code"))));
     }
 
+    /** cite'ı call-count'layan sağlayıcı (fail-closed discard kanıtı için). */
+    static final class CountingCiteProvider implements AIProvider {
+        int calls = 0;
+        private final AIProvider.CitationResult result;
+
+        CountingCiteProvider(AIProvider.CitationResult result) {
+            this.result = result;
+        }
+
+        @Override
+        public Outcome<TranscriptResult> transcribe(String audioRef) {
+            return Outcome.fail(OutcomeCode.UNSUPPORTED_IN_GATE, "slice-3 dışı");
+        }
+
+        @Override
+        public Outcome<CitationResult> cite(String claim, String transcriptRef) {
+            calls++;
+            return Outcome.ok(result);
+        }
+    }
+
+    @Test
+    void governance_preflight_deny_skips_provider_and_writes_nothing() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingPreflight(ModelGovernanceGate.Reason.REGISTRY_UNAVAILABLE);
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight DENY → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, citationStore.size(), "preflight DENY → citation store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "preflight DENY → business-WORM'a satır yazılmamalı");
+        assertEquals(0, denying.verifyCalls, "preflight DENY → verify çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_verify_deny_discards_result_no_store_no_ledger() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate denying =
+                FakeModelGovernanceGate.denyingVerify(ModelGovernanceGate.Reason.MODEL_ID_MISMATCH);
+        Outcome<CitationReceipt> out = service(provider, ledger, denying)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, provider.calls, "verify için sağlayıcı çağrılmış olmalı (sonra discard)");
+        assertEquals(0, citationStore.size(), "verify DENY → citation store'a YAZILMAMALI (discard)");
+        assertTrue(ledger.entries.isEmpty(), "verify DENY → business-WORM'a satır YAZILMAMALI (discard)");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "MODEL_ID_MISMATCH".equals(e.extras().get("reason_code"))));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Codex REVISE — fail-closed null-Ok guard'ları + typed-reason (kapalı)*/
+    /* ------------------------------------------------------------------ */
+
+    @Test
+    void governance_preflight_ok_but_null_permit_fails_closed_before_provider() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate nullPermit = FakeModelGovernanceGate.allowingNullPermit();
+        Outcome<CitationReceipt> out = service(provider, ledger, nullPermit)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "permit==null → sağlayıcı HİÇ çağrılmamalı (fail-closed)");
+        assertEquals(0, citationStore.size(), "permit==null → citation store'a yazılmamalı");
+        assertEquals(0, nullPermit.verifyCalls, "permit==null → verify çağrılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "permit==null → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void governance_verify_ok_but_null_decision_fails_closed_no_store() {
+        grant();
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        FakeModelGovernanceGate nullDecision = FakeModelGovernanceGate.allowingNullDecision();
+        Outcome<CitationReceipt> out = service(provider, ledger, nullDecision)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(1, provider.calls, "verify öncesi sağlayıcı çağrılır (sonra null-Decision discard)");
+        assertEquals(0, citationStore.size(), "verify Ok(null) → discard, store'a yazılmamalı");
+        assertTrue(ledger.entries.isEmpty(), "verify Ok(null) → business-WORM'a satır yazılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))));
+    }
+
+    @Test
+    void malformed_gate_raw_reason_string_never_leaks_into_event_reason_code() {
+        grant();
+        // Bozuk/alternatif gate ham serbest-string (newline + secret) döndürürse reason_code'a SIZMAMALI;
+        // KAPALI enum fallback (REGISTRY_UNAVAILABLE) emit edilmeli.
+        String raw = "arbitrary\nsecret=sk-EVIL not-a-reason";
+        FakeModelGovernanceGate rawGate =
+                FakeModelGovernanceGate.denyingPreflightRaw(OutcomeCode.NOT_CONFIGURED, raw);
+        CountingCiteProvider provider = new CountingCiteProvider(new AIProvider.CitationResult(
+                CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported()));
+        Outcome<CitationReceipt> out = service(provider, ledger, rawGate)
+                .citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");
+        assertFalse(out.isOk());
+        assertEquals(0, provider.calls, "preflight ham-deny → sağlayıcı çağrılmamalı");
+        assertTrue(sink.emitted().stream().anyMatch(e ->
+                CitationService.MODEL_GOVERNANCE_DENIED_EVENT.equals(e.eventTypeId())
+                        && "REGISTRY_UNAVAILABLE".equals(e.extras().get("reason_code"))),
+                "ham token KAPALI enum fallback'e çevrilmeli");
+        assertTrue(sink.emitted().stream().noneMatch(e ->
+                        e.extras().values().stream().anyMatch(v -> v.contains("secret") || v.contains("\n"))),
+                "ham string/secret hiçbir event alanına SIZMAMALI");
+    }
+
     @Test
     void unknown_transcript_and_cross_tenant_access_blocked() {
         grant();
@@ -301,7 +428,7 @@ class CitationServiceTest {
                 return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "store down (test)");
             }
         };
-        CitationService svc = new CitationService(new ConsentGate(consentStore, sink),
+        CitationService svc = new CitationService(new ConsentGate(consentStore, sink), gate,
                 providerReturning(new AIProvider.CitationResult(CLAIM, List.of("seg-0"), AIProvider.Entailment.SUPPORTED, AIProvider.ReportedModelIdentity.notReported())),
                 transcriptStore, failingDelete, ledger, sink);
         Outcome<CitationReceipt> out = svc.citeClaim(T1, A1, I1, transcriptKey, CLAIM, "2026-07-02T12:00:00Z");

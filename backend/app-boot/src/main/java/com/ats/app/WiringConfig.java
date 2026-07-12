@@ -6,6 +6,9 @@ import com.ats.consent.ConsentStore;
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.governance.ApprovedModelRegistry;
+import com.ats.contracts.governance.Capability;
+import com.ats.contracts.governance.ModelApprovalRef;
+import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
 import com.ats.dsr.RetentionScanner;
@@ -13,6 +16,7 @@ import com.ats.export.ExportArtifactStore;
 import com.ats.export.ExportService;
 import com.ats.governance.FileBackedApprovedModelRegistry;
 import com.ats.governance.InMemoryApprovedModelRegistry;
+import com.ats.governance.RegistryBackedModelGovernanceGate;
 import com.ats.ingest.InMemoryObjectStore;
 import com.ats.ingest.IngestService;
 import com.ats.ingest.LocalPatternScanAdapter;
@@ -41,6 +45,8 @@ import com.ats.review.ReviewCaseStore;
 import com.zaxxer.hikari.HikariConfig;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.EnumMap;
+import java.util.Map;
 import javax.net.ssl.SSLContext;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
@@ -225,17 +231,17 @@ class WiringConfig {
     }
 
     @Bean
-    TranscriptionService transcriptionService(ConsentGate gate, AIProvider provider,
-            SegmentSanitizer sanitizer, TranscriptStore transcriptStore,
+    TranscriptionService transcriptionService(ConsentGate gate, ModelGovernanceGate governanceGate,
+            AIProvider provider, SegmentSanitizer sanitizer, TranscriptStore transcriptStore,
             EvidenceLedger ledger, OperationalEventSink sink, AudioAccessGrants grants) {
-        return new TranscriptionService(gate, provider, sanitizer, transcriptStore, ledger, sink, grants);
+        return new TranscriptionService(gate, governanceGate, provider, sanitizer, transcriptStore, ledger, sink, grants);
     }
 
     @Bean
-    CitationService citationService(ConsentGate gate, AIProvider provider,
-            TranscriptStore transcriptStore, CitationStore citationStore,
+    CitationService citationService(ConsentGate gate, ModelGovernanceGate governanceGate,
+            AIProvider provider, TranscriptStore transcriptStore, CitationStore citationStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
-        return new CitationService(gate, provider, transcriptStore, citationStore, ledger, sink);
+        return new CitationService(gate, governanceGate, provider, transcriptStore, citationStore, ledger, sink);
     }
 
     // --- model governance (P3-gov0): onaylı-model registry + fail-closed boot-doğrulama ---
@@ -273,6 +279,20 @@ class WiringConfig {
         LOG.info("model-governance boot-gate tamam: provider={} enabled-capabilities={} (hepsi APPROVED onaylı).",
                 bindings.provider(), bindings.bindings().keySet());
         return bindings;
+    }
+
+    /**
+     * gov1-1c çalışma-anı model-governance kapısı: boot-gate çıktısından (capability→onaylı spec)
+     * capability→onay-ref binding'i türetir ve {@link ApprovedModelRegistry} PORTU'yla sarar.
+     * Orkestrasyon YALNIZ {@link ModelGovernanceGate} porta bağlıdır (adapter/binding'e değil —
+     * ArchUnit boundary). Kapı {@link AuthorizedModelBindings}'e depend eder → yalnız boot-gate
+     * geçtikten sonra kurulur (gate-then-construct ile aynı ordering).
+     */
+    @Bean
+    ModelGovernanceGate modelGovernanceGate(ApprovedModelRegistry registry, AuthorizedModelBindings bindings) {
+        Map<Capability, ModelApprovalRef> capabilityBindings = new EnumMap<>(Capability.class);
+        bindings.bindings().forEach((cap, spec) -> capabilityBindings.put(cap, spec.approvalRef()));
+        return new RegistryBackedModelGovernanceGate(registry, capabilityBindings);
     }
 
     // --- review / export / DSR ---
