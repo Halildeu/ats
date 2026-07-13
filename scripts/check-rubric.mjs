@@ -48,6 +48,48 @@ const PROTECTED = [
 const ALLOW_STRIP = /race condition|data race|health domain|medical domain|health tech|healthcare domain/g;
 const SCORING = [/score|skor|puan/, /weight|agirlik/, /\brank|ranking|siralama/, /rating/, /affect|sentiment|emotion|duygu/];
 
+// ATS 156-a — korumalı-özellik KATEGORİ ekseni TEK kanonik registry'den beslenir
+// (backend/compliance-screening/.../protected-attribute-screening-policy.v1.json). Bu drift-guard,
+// rubric-artifact tarayıcısı (bu script) ile transkript kernel'inin (Java ProtectedAttributeScreener)
+// AYNI kategori kümesini paylaşmasını makine-zorlar: kategori eklenir/çıkarılırsa iki taraf da
+// hizalanmadıkça kırmızı (iki-bağımsız-vokabüler drift'i engeli — tek-kaynak otorite).
+const CANONICAL_POLICY = join(REPO, "backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v1.json");
+const LABEL_TO_CODE = {
+  "hamilelik": "PREGNANCY_MATERNITY",
+  "yaş": "AGE",
+  "din/inanç": "RELIGION_BELIEF",
+  "etnik/ırk": "ETHNICITY_RACE",
+  "sendika": "TRADE_UNION",
+  "sağlık/engellilik": "HEALTH_DISABILITY",
+  "cinsiyet/yönelim": "SEX_GENDER_ORIENTATION",
+  "medeni/ebeveyn": "MARITAL_PARENTAL_STATUS",
+  "siyasi": "POLITICAL_OPINION",
+  "felsefi inanç": "PHILOSOPHICAL_BELIEF",
+  "sabıka kaydı": "CRIMINAL_RECORD",
+  "ana-dil/aksan": "NATIVE_LANGUAGE_ACCENT",
+  "dernek/vakıf üyeliği": "ASSOCIATION_MEMBERSHIP",
+};
+function canonicalRegistryBinding() {
+  const errs = [];
+  let registryCodes;
+  try {
+    const reg = JSON.parse(readFileSync(CANONICAL_POLICY, "utf8"));
+    registryCodes = new Set(reg.categories.map((c) => c.code));
+  } catch (e) {
+    return [`kanonik registry okunamadı (${CANONICAL_POLICY}): ${e.message}`];
+  }
+  for (const p of PROTECTED) {
+    const code = LABEL_TO_CODE[p.label];
+    if (!code) errs.push(`PROTECTED etiketi kanonik koda map edilmemiş: "${p.label}"`);
+    else if (!registryCodes.has(code)) errs.push(`kanonik registry kategoriyi tanımıyor: ${code} (etiket "${p.label}")`);
+  }
+  const mapped = new Set(Object.values(LABEL_TO_CODE));
+  for (const code of registryCodes) {
+    if (!mapped.has(code)) errs.push(`kanonik kategori ${code} rubric drift-guard'ında karşılanmıyor (single-source drift)`);
+  }
+  return errs;
+}
+
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern"]);
 const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const typeOf = (n) => (Array.isArray(n) ? "array" : n === null ? "null" : typeof n);
@@ -163,10 +205,11 @@ function selfTest() {
 
 const errors = runChecks(SCHEMA, SAMPLE);
 for (const n of selfTest()) errors.push(`SELF-TEST: ${n}`);
+for (const e of canonicalRegistryBinding()) errors.push(`CANONICAL-REGISTRY: ${e}`);
 
 if (errors.length > 0) {
   console.error("rubric drift guard FAILED:");
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize + safe-phrase-strip) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 31 neg + 3 allow doğrulandı.`);
+console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize + safe-phrase-strip) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 31 neg + 3 allow doğrulandı; korumalı-özellik kategori ekseni TEK kanonik registry (compliance-screening) ile bağlı (13/13 single-source).`);

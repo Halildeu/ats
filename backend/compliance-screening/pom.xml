@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.ats</groupId>
+    <artifactId>ats-core-parent</artifactId>
+    <version>0.0.0</version>
+  </parent>
+  <artifactId>compliance-screening</artifactId>
+
+  <!-- ATS 156-a — protected-attribute screening KERNEL (framework-free saf çekirdek).
+       Deterministik LEKSİK korumalı-özellik + soru-kalıbı tarayıcısı; İNSAN-reviewer için
+       compliance-SİNYALİ üretir (aday-karar/score/outcome YAPISAL olarak YOK).
+       Bağımlılık: yalnız shared-kernel (JsonCodec fail-closed parser). Framework/persistence/
+       vendor + orchestration/provider/export/governance/contracts YASAK (ArchUnit).
+       Runtime-wiring/WORM/store/transcript-değişimi bu modülde YOK (156-b/c/d ayrı slice). -->
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>shared-kernel</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>1.3.0</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,251 @@
+{
+  "policyRef": "paspolicy_v1",
+  "version": "protected-attribute-screening-policy/v1",
+  "supportedLanguages": ["tr", "en"],
+  "categories": [
+    {
+      "code": "AGE",
+      "terms": [
+        { "text": "yas", "kind": "WORD" },
+        { "text": "yasi", "kind": "WORD" },
+        { "text": "yasin", "kind": "WORD" },
+        { "text": "yasiniz", "kind": "WORD" },
+        { "text": "yasinda", "kind": "WORD" },
+        { "text": "yasindasiniz", "kind": "WORD" },
+        { "text": "age", "kind": "WORD" },
+        { "text": "aged", "kind": "WORD" },
+        { "text": "kac yasinda", "kind": "PHRASE" },
+        { "text": "kac yasindasiniz", "kind": "PHRASE" },
+        { "text": "dogum tarihi", "kind": "PHRASE" },
+        { "text": "dogum tarihiniz", "kind": "PHRASE" },
+        { "text": "dogum yili", "kind": "PHRASE" },
+        { "text": "how old", "kind": "PHRASE" },
+        { "text": "date of birth", "kind": "PHRASE" },
+        { "text": "year of birth", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "RELIGION_BELIEF",
+      "terms": [
+        { "text": "din", "kind": "WORD" },
+        { "text": "dini", "kind": "WORD" },
+        { "text": "dininiz", "kind": "WORD" },
+        { "text": "inanc", "kind": "WORD" },
+        { "text": "inanciniz", "kind": "WORD" },
+        { "text": "mezhep", "kind": "WORD" },
+        { "text": "namaz", "kind": "WORD" },
+        { "text": "oruc", "kind": "WORD" },
+        { "text": "religio", "kind": "STEM", "minLen": 7 },
+        { "text": "dini inanc", "kind": "PHRASE" },
+        { "text": "hangi din", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "ETHNICITY_RACE",
+      "terms": [
+        { "text": "irk", "kind": "WORD" },
+        { "text": "irkiniz", "kind": "WORD" },
+        { "text": "irkci", "kind": "WORD" },
+        { "text": "irkcilik", "kind": "WORD" },
+        { "text": "etnik", "kind": "WORD" },
+        { "text": "koken", "kind": "WORD" },
+        { "text": "kokeniniz", "kind": "WORD" },
+        { "text": "milliyet", "kind": "WORD" },
+        { "text": "race", "kind": "WORD" },
+        { "text": "nationality", "kind": "WORD" },
+        { "text": "ancestry", "kind": "WORD" },
+        { "text": "ethnic", "kind": "STEM", "minLen": 6 },
+        { "text": "etnik koken", "kind": "PHRASE" },
+        { "text": "hangi irk", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "TRADE_UNION",
+      "terms": [
+        { "text": "sendika", "kind": "STEM", "minLen": 7 },
+        { "text": "trade union", "kind": "PHRASE" },
+        { "text": "union member", "kind": "PHRASE" },
+        { "text": "labor union", "kind": "PHRASE" },
+        { "text": "union membership", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "HEALTH_DISABILITY",
+      "terms": [
+        { "text": "saglik", "kind": "WORD" },
+        { "text": "hastalik", "kind": "WORD" },
+        { "text": "hastaliginiz", "kind": "WORD" },
+        { "text": "engelli", "kind": "WORD" },
+        { "text": "engellilik", "kind": "WORD" },
+        { "text": "kronik", "kind": "WORD" },
+        { "text": "health", "kind": "WORD" },
+        { "text": "disability", "kind": "WORD" },
+        { "text": "chronic", "kind": "WORD" },
+        { "text": "saglik durumu", "kind": "PHRASE" },
+        { "text": "saglik sorunu", "kind": "PHRASE" },
+        { "text": "kronik hastalik", "kind": "PHRASE" },
+        { "text": "health condition", "kind": "PHRASE" },
+        { "text": "medical condition", "kind": "PHRASE" },
+        { "text": "sick leave", "kind": "PHRASE" },
+        { "text": "health status", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "SEX_GENDER_ORIENTATION",
+      "terms": [
+        { "text": "cinsiyet", "kind": "WORD" },
+        { "text": "cinsiyetiniz", "kind": "WORD" },
+        { "text": "cinsel", "kind": "WORD" },
+        { "text": "cinsellik", "kind": "WORD" },
+        { "text": "gender", "kind": "WORD" },
+        { "text": "sex", "kind": "WORD" },
+        { "text": "lgbt", "kind": "WORD" },
+        { "text": "lgbti", "kind": "WORD" },
+        { "text": "escinsel", "kind": "WORD" },
+        { "text": "nonbinary", "kind": "WORD" },
+        { "text": "transseksuel", "kind": "WORD" },
+        { "text": "biseksuel", "kind": "WORD" },
+        { "text": "sexual", "kind": "STEM", "minLen": 6 },
+        { "text": "cinsel yonelim", "kind": "PHRASE" },
+        { "text": "cinsel tercih", "kind": "PHRASE" },
+        { "text": "sexual orientation", "kind": "PHRASE" },
+        { "text": "gender identity", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "MARITAL_PARENTAL_STATUS",
+      "terms": [
+        { "text": "evli", "kind": "WORD" },
+        { "text": "evliyim", "kind": "WORD" },
+        { "text": "evlimisiniz", "kind": "WORD" },
+        { "text": "evlilik", "kind": "WORD" },
+        { "text": "bekar", "kind": "WORD" },
+        { "text": "bekarim", "kind": "WORD" },
+        { "text": "bosanmis", "kind": "WORD" },
+        { "text": "nisanli", "kind": "WORD" },
+        { "text": "married", "kind": "WORD" },
+        { "text": "divorced", "kind": "WORD" },
+        { "text": "cocugunuz", "kind": "WORD" },
+        { "text": "ebeveyn", "kind": "WORD" },
+        { "text": "medeni hal", "kind": "PHRASE" },
+        { "text": "medeni durumunuz", "kind": "PHRASE" },
+        { "text": "cocuk sahibi", "kind": "PHRASE" },
+        { "text": "family status", "kind": "PHRASE" },
+        { "text": "marital status", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "POLITICAL_OPINION",
+      "terms": [
+        { "text": "siyasi", "kind": "WORD" },
+        { "text": "siyaset", "kind": "WORD" },
+        { "text": "politik", "kind": "WORD" },
+        { "text": "parti", "kind": "WORD" },
+        { "text": "partili", "kind": "WORD" },
+        { "text": "political", "kind": "WORD" },
+        { "text": "siyasi gorus", "kind": "PHRASE" },
+        { "text": "hangi parti", "kind": "PHRASE" },
+        { "text": "political view", "kind": "PHRASE" },
+        { "text": "political opinion", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "PHILOSOPHICAL_BELIEF",
+      "terms": [
+        { "text": "felsefi", "kind": "WORD" },
+        { "text": "felsefe", "kind": "WORD" },
+        { "text": "ideoloji", "kind": "WORD" },
+        { "text": "ideolojik", "kind": "WORD" },
+        { "text": "philosophical", "kind": "WORD" },
+        { "text": "ideology", "kind": "WORD" },
+        { "text": "worldview", "kind": "WORD" },
+        { "text": "felsefi inanc", "kind": "PHRASE" },
+        { "text": "dunya gorusu", "kind": "PHRASE" },
+        { "text": "world view", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "CRIMINAL_RECORD",
+      "terms": [
+        { "text": "sabika", "kind": "WORD" },
+        { "text": "sabikaniz", "kind": "WORD" },
+        { "text": "mahkumiyet", "kind": "WORD" },
+        { "text": "suc", "kind": "WORD" },
+        { "text": "criminal", "kind": "WORD" },
+        { "text": "conviction", "kind": "WORD" },
+        { "text": "convicted", "kind": "WORD" },
+        { "text": "adli sicil", "kind": "PHRASE" },
+        { "text": "sabika kaydi", "kind": "PHRASE" },
+        { "text": "criminal record", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "NATIVE_LANGUAGE_ACCENT",
+      "terms": [
+        { "text": "aksan", "kind": "WORD" },
+        { "text": "aksaniniz", "kind": "WORD" },
+        { "text": "sive", "kind": "WORD" },
+        { "text": "anadil", "kind": "WORD" },
+        { "text": "anadiliniz", "kind": "WORD" },
+        { "text": "accent", "kind": "WORD" },
+        { "text": "ana dil", "kind": "PHRASE" },
+        { "text": "native language", "kind": "PHRASE" },
+        { "text": "mother tongue", "kind": "PHRASE" },
+        { "text": "native speaker", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "ASSOCIATION_MEMBERSHIP",
+      "terms": [
+        { "text": "dernek", "kind": "WORD" },
+        { "text": "dernege", "kind": "WORD" },
+        { "text": "vakif", "kind": "WORD" },
+        { "text": "dernek uyeligi", "kind": "PHRASE" },
+        { "text": "vakif uyeligi", "kind": "PHRASE" },
+        { "text": "association member", "kind": "PHRASE" },
+        { "text": "foundation member", "kind": "PHRASE" }
+      ]
+    },
+    {
+      "code": "PREGNANCY_MATERNITY",
+      "terms": [
+        { "text": "hamile", "kind": "WORD" },
+        { "text": "hamilelik", "kind": "WORD" },
+        { "text": "gebe", "kind": "WORD" },
+        { "text": "gebelik", "kind": "WORD" },
+        { "text": "pregnan", "kind": "STEM", "minLen": 7 },
+        { "text": "matern", "kind": "STEM", "minLen": 6 },
+        { "text": "dogum izni", "kind": "PHRASE" },
+        { "text": "hamile misiniz", "kind": "PHRASE" },
+        { "text": "maternity leave", "kind": "PHRASE" }
+      ]
+    }
+  ],
+  "safePhrases": [
+    "race condition",
+    "data race",
+    "health domain",
+    "medical domain",
+    "health tech",
+    "healthcare domain"
+  ],
+  "questionCues": [
+    "misiniz",
+    "musunuz",
+    "misin",
+    "musun",
+    "kac",
+    "nedir",
+    "hangi",
+    "nerede",
+    "kimlerle",
+    "are you",
+    "do you",
+    "did you",
+    "have you",
+    "how old",
+    "what is your",
+    "when were you",
+    "where are you from"
+  ]
+}
