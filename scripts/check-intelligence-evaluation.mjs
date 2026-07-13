@@ -106,6 +106,16 @@ const HARD_BANS = {
   batch_approval: "DISALLOWED",
 };
 
+const EXPECTED_RESULT_ROLE = {
+  QOH: ["DESCRIPTIVE_ASSOCIATION", false],
+  FAIRNESS: ["SCREENING_INDICATOR", true],
+  COACHING: ["EVIDENCE_METRIC", false],
+  SKILLS_ONTOLOGY: ["EVIDENCE_METRIC", false],
+  DEEPFAKE_PROVENANCE: ["SCREENING_INDICATOR", true],
+  INTERNAL_MOBILITY: ["EVIDENCE_METRIC", false],
+  AGENTIC_PROPOSAL: ["EVIDENCE_METRIC", false],
+};
+
 const EXPECTED = {
   QOH: {
     lifecycle: "RESEARCH_ONLY",
@@ -447,6 +457,22 @@ function runChecks(schema, sample) {
         errors.push(`${capability.kind}: measured state lacks cohort/ground-truth/uncertainty/result`);
       }
     }
+    if (metric.result) {
+      const [expectedRole, expectedScreeningOnly] = EXPECTED_RESULT_ROLE[capability.kind] ?? [];
+      const legacyResult = !("result_role" in metric.result);
+      if (legacyResult) {
+        if (metric.result.screening_indicator_only !== true) {
+          errors.push(`${capability.kind}: legacy metric result requires screening_indicator_only=true`);
+        }
+      } else {
+        if (metric.result.result_role !== expectedRole) {
+          errors.push(`${capability.kind}: metric result_role mismatch`);
+        }
+        if (metric.result.screening_indicator_only !== expectedScreeningOnly) {
+          errors.push(`${capability.kind}: metric screening_indicator_only mismatch`);
+        }
+      }
+    }
     if (metric.state === "INDEPENDENTLY_REVIEWED" && !auditVerified) {
       errors.push(`${capability.kind}: independent metric state requires audit gate`);
     }
@@ -641,7 +667,8 @@ function makeAcceptedRuntime() {
       metric_result_ref: `metric-result:${kindRef}:v1`,
       confidence_interval_ref: `confidence-interval:${kindRef}:v1`,
       evidence_ref: `metric-evidence:${kindRef}:v1`,
-      screening_indicator_only: true,
+      result_role: EXPECTED_RESULT_ROLE[capability.kind][0],
+      screening_indicator_only: EXPECTED_RESULT_ROLE[capability.kind][1],
       verdict: "NONE",
     };
     capability.gates = capability.gates.map((gate) => ({
@@ -767,7 +794,8 @@ function selfTest() {
         metric_result_ref: "metric-result:qoh:v1",
         confidence_interval_ref: "confidence:qoh:v1",
         evidence_ref: "evidence:qoh:v1",
-        screening_indicator_only: true,
+        result_role: "DESCRIPTIVE_ASSOCIATION",
+        screening_indicator_only: false,
         verdict: "NONE",
       };
     }],
@@ -822,6 +850,18 @@ function selfTest() {
       capability.independent_audit_verified = false;
     }, "runtime"],
     ["runtime-result-missing", (sample) => delete sample.capabilities[0].metric_protocol.result, "runtime"],
+    ["runtime-qoh-screening-role", (sample) => {
+      sample.capabilities[0].metric_protocol.result.result_role = "SCREENING_INDICATOR";
+      sample.capabilities[0].metric_protocol.result.screening_indicator_only = true;
+    }, "runtime"],
+    ["runtime-fairness-descriptive-role", (sample) => {
+      sample.capabilities[1].metric_protocol.result.result_role = "DESCRIPTIVE_ASSOCIATION";
+      sample.capabilities[1].metric_protocol.result.screening_indicator_only = false;
+    }, "runtime"],
+    ["runtime-invalid-legacy-screening", (sample) => {
+      delete sample.capabilities[0].metric_protocol.result.result_role;
+      sample.capabilities[0].metric_protocol.result.screening_indicator_only = false;
+    }, "runtime"],
     ["runtime-below-minimum", (sample) => (sample.capabilities[0].metric_protocol.observed_sample_size = 29), "runtime"],
     ["runtime-internal-full-ats-missing", (sample) => (sample.capabilities[5].full_ats_accepted = false), "runtime"],
     ["runtime-full-ats-receipt-missing", (sample) => delete sample.capabilities[5].full_ats_acceptance_ref, "runtime"],
@@ -840,13 +880,22 @@ function selfTest() {
 
   const escaped = [];
   const positiveRuntimeErrors = runChecks(SCHEMA, makeAcceptedRuntime());
+  const legacyRuntime = makeAcceptedRuntime();
+  delete legacyRuntime.capabilities[0].metric_protocol.result.result_role;
+  legacyRuntime.capabilities[0].metric_protocol.result.screening_indicator_only = true;
+  const positiveLegacyRuntimeErrors = runChecks(SCHEMA, legacyRuntime);
   for (const [name, mutate, fixture = "pre-g0"] of cases) {
     const sample = fixture === "runtime" ? makeAcceptedRuntime() : clone(SAMPLE);
     const schema = clone(SCHEMA);
     mutate(sample, schema);
     if (runChecks(schema, sample).length === 0) escaped.push(name);
   }
-  return { escaped, total: cases.length, positiveRuntimeErrors };
+  return {
+    escaped,
+    total: cases.length,
+    positiveRuntimeErrors,
+    positiveLegacyRuntimeErrors,
+  };
 }
 
 const errors = runChecks(SCHEMA, SAMPLE);
@@ -854,6 +903,9 @@ const selfTestResult = selfTest();
 for (const name of selfTestResult.escaped) errors.push(`SELF-TEST escaped: ${name}`);
 for (const error of selfTestResult.positiveRuntimeErrors) {
   errors.push(`RUNTIME POSITIVE fixture rejected: ${error}`);
+}
+for (const error of selfTestResult.positiveLegacyRuntimeErrors) {
+  errors.push(`LEGACY RUNTIME POSITIVE fixture rejected: ${error}`);
 }
 
 if (errors.length > 0) {
@@ -863,5 +915,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `intelligence-evaluation/v1 OK — ${SAMPLE.capabilities.length} governed capabilities, ${SAMPLE.proposals.length} synthetic proposal preview, ${selfTestResult.total} negative vectors fail-closed; positive gated-runtime fixture accepted; no live cohort/action claimed`,
+  `intelligence-evaluation/v1 OK — ${SAMPLE.capabilities.length} governed capabilities, ${SAMPLE.proposals.length} synthetic proposal preview, ${selfTestResult.total} negative vectors fail-closed; canonical and controlled-legacy gated-runtime fixtures accepted; no live cohort/action claimed`,
 );

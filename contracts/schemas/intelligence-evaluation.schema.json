@@ -44,7 +44,11 @@
         "metric_result_ref": { "$ref": "#/$defs/ref" },
         "confidence_interval_ref": { "$ref": "#/$defs/ref" },
         "evidence_ref": { "$ref": "#/$defs/ref" },
-        "screening_indicator_only": { "const": true },
+        "result_role": {
+          "description": "Capability-bound canonical role. Optional only for deprecated intelligence-evaluation/v1 legacy results; the public runtime normalizer derives and re-emits it before use.",
+          "enum": ["DESCRIPTIVE_ASSOCIATION", "SCREENING_INDICATOR", "EVIDENCE_METRIC"]
+        },
+        "screening_indicator_only": { "type": "boolean" },
         "verdict": { "const": "NONE" }
       }
     },

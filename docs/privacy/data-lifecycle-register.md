@@ -23,6 +23,7 @@
 4. `kms-vault` plane → `sensitivity=secret`.
 5. `ai_provider_payload` → `transfer ∈ {self-host-only, no-train-DPA, SCC, KVKK-açık-rıza}` (düz `none` YASAK — T-I5 provider kanalı saklanamaz).
 6. Her satır `legal_basis` + `retention` dolu (`[DOLDUR]` YASAK); data-class **tekil** (duplicate YASAK).
+7. `qoh_aggregate_evidence` → `pseudonymized + primary-db + hard-delete + HAYIR + n/a + none + gate-locked`; legal-basis hücresi müşteri/controller + legal-review kapısını, retention hücresi gerçek veri için kayıt-yok sınırını açıkça taşır.
 
 ## 1. Veri-sınıfı yaşam-döngüsü matrisi
 
@@ -53,6 +54,7 @@
 | **retention_timer_state** | otomatik imha timer state | processor | id-only | primary-db | meşru-menfaat | tenant-policy | hard-delete | HAYIR | n/a | none | gate-locked |
 | **audit_event** | operasyonel telemetri ([[ATS-0010]]) | processor | id-only | telemetry | meşru-menfaat (güvenlik) | tenant-policy (≥yasal-güvenlik) | hard-delete | HAYIR | n/a | none | gate-locked |
 | **connector_metadata** | ATS entegrasyon meta | processor | id-only | primary-db | sözleşme (m.5/2-c) | tenant-policy | hard-delete | HAYIR | n/a | none | design |
+| **qoh_aggregate_evidence** | QoH sentetik aggregate receipt; kişi outcome/raw performans yok | processor | pseudonymized | primary-db | müşteri/controller amaç+dayanak kararı ve legal-review gate; kabul olmadan gerçek veri yok | sentetik-fixture ömrü; gerçek veride owner-approved tenant-policy olmadan kayıt yok | hard-delete | HAYIR | n/a | none | gate-locked |
 | **ai_provider_payload** | provider'a giden geçici girdi | processor | content | none | açık-rıza | persist-yok | transient | HAYIR | n/a | self-host-only | gate-locked |
 | **backup_copy** | şifreli yedek (tüm plane) | processor | mixed | backup | meşru-menfaat (süreklilik) | RPO/RTO-policy | crypto-erase | miras | n/a | none | gate-locked |
 
@@ -60,9 +62,9 @@
 
 ## 2. Doğrulama (drift-guard `scripts/check-data-lifecycle.mjs`)
 
-- Tüm required veri-sınıfları (sentinel, 27) mevcut + **tekil** (duplicate fail).
+- Tüm required veri-sınıfları (sentinel, 28) mevcut + **tekil** (duplicate fail).
 - Sözlük geçerliliği (sensitivity/plane/deletion/WORM/identity-binding/transfer/status).
-- §0 invariant 1–6 (WORM-içerik-yasağı; worm-ledger→EVET+tombstone+subject-binding; content/raw/secret silinebilir; kms-vault→secret; provider transfer-tipi; legal/retention dolu+duplicate).
+- §0 invariant 1–7 (WORM-içerik-yasağı; worm-ledger→EVET+tombstone+subject-binding; content/raw/secret silinebilir; kms-vault→secret; provider transfer-tipi; legal/retention dolu+duplicate; QoH gerçek-veri kapısı).
 - Header-eşlemeli sütun parse.
 
 ## 3. Bağlantı

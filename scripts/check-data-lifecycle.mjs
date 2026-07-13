@@ -3,7 +3,7 @@
  * Data-lifecycle register drift guard (ATS-0003 operationalized · Codex 019f13be REVISE absorb).
  *
  * docs/privacy/data-lifecycle-register.md (header-eşlemeli sütun parse):
- *  1. 27 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
+ *  1. 28 required veri-sınıfı (sentinel) mevcut + TEKİL (duplicate fail).
  *  2. Sözlük: sensitivity/plane/deletion/WORM/WORM-identity-binding/transfer/status.
  *  3. İnvariantlar:
  *     1) content/raw-pii/secret/mixed 'worm-ledger'de OLAMAZ.
@@ -12,6 +12,8 @@
  *     4) kms-vault → sensitivity=secret.
  *     5) ai_provider_payload → transfer∈{self-host-only,no-train-DPA,SCC,KVKK-açık-rıza} (düz none yasak).
  *     6) legal_basis + retention dolu, [DOLDUR] yok.
+ *     7) qoh_aggregate_evidence pseudonymized/gate-locked ve gerçek veri için
+ *        müşteri-controller + legal-review + kayıt-yok sınırına bağlı.
  *
  * Bağımsız (npm dep YOK), CI job `data-lifecycle-guard`.
  */
@@ -37,7 +39,7 @@ const REQUIRED = [
   "recording_permission_state", "consent_record", "worm_metadata", "model_version_log",
   "human_decision_rationale", "claim_citation_ref", "evidence_packet", "dsar_request_log",
   "dsar_response_artifact", "retention_policy", "retention_timer_state", "audit_event",
-  "connector_metadata", "ai_provider_payload", "backup_copy",
+  "connector_metadata", "qoh_aggregate_evidence", "ai_provider_payload", "backup_copy",
 ];
 
 const lines = readFileSync(FILE, "utf8").split("\n");
@@ -97,6 +99,21 @@ for (const line of lines) {
   // inv 6
   if (!legal || /\[DOLDUR/.test(legal)) errors.push(`${cls}: İNV6 — legal_basis boş/[DOLDUR]`);
   if (!ret || /\[DOLDUR/.test(ret)) errors.push(`${cls}: İNV6 — retention boş/[DOLDUR]`);
+  // inv 7 — QoH aggregate çıktısı anonim varsayılmaz; gerçek veri gate-locked kalır.
+  if (cls === "qoh_aggregate_evidence") {
+    if (
+      sens !== "pseudonymized" || plane !== "primary-db" || del !== "hard-delete" ||
+      worm !== "HAYIR" || idb !== "n/a" || tr !== "none" || st !== "gate-locked"
+    ) {
+      errors.push(`${cls}: İNV7 — pseudonymized/primary-db/hard-delete/HAYIR/n-a/none/gate-locked zorunlu`);
+    }
+    if (!/controller/i.test(legal) || !/legal-review/i.test(legal) || !/gerçek veri yok/i.test(legal)) {
+      errors.push(`${cls}: İNV7 — legal_basis müşteri/controller + legal-review + gerçek-veri-yok kapısını taşımalı`);
+    }
+    if (!/gerçek veride/i.test(ret) || !/kayıt yok/i.test(ret)) {
+      errors.push(`${cls}: İNV7 — retention gerçek veri için owner-policy öncesi kayıt-yok sınırını taşımalı`);
+    }
+  }
 }
 
 for (const r of REQUIRED) if (!seen.has(r)) errors.push(`eksik required veri-sınıfı: ${r}`);
@@ -106,4 +123,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`data-lifecycle OK — ${seen.size}/${REQUIRED.length} veri-sınıfı (tekil), sözlük+6 invariant geçerli, WORM-içerik-yasağı + subject-binding + provider-transfer korunuyor.`);
+console.log(`data-lifecycle OK — ${seen.size}/${REQUIRED.length} veri-sınıfı (tekil), sözlük+7 invariant geçerli, WORM-içerik-yasağı + subject-binding + provider-transfer + QoH real-data gate korunuyor.`);

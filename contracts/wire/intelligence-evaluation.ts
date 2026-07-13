@@ -75,12 +75,160 @@ export interface IntelligenceGateV1 {
   readonly verifiedAt?: string;
 }
 
-export interface IntelligenceMetricResultV1 {
+export type IntelligenceMetricResultRoleV1 =
+  | "DESCRIPTIVE_ASSOCIATION"
+  | "SCREENING_INDICATOR"
+  | "EVIDENCE_METRIC";
+
+type IntelligenceMetricResultBaseV1 = {
   readonly metricResultRef: string;
   readonly confidenceIntervalRef: string;
   readonly evidenceRef: string;
-  readonly screeningIndicatorOnly: true;
   readonly verdict: "NONE";
+};
+
+export type IntelligenceCanonicalMetricResultV1 = IntelligenceMetricResultBaseV1 &
+  (
+    | {
+        readonly resultRole: "DESCRIPTIVE_ASSOCIATION";
+        readonly screeningIndicatorOnly: false;
+      }
+    | {
+        readonly resultRole: "SCREENING_INDICATOR";
+        readonly screeningIndicatorOnly: true;
+      }
+    | {
+        readonly resultRole: "EVIDENCE_METRIC";
+        readonly screeningIndicatorOnly: false;
+      }
+  );
+
+/**
+ * Compatibility shape emitted before resultRole was added to
+ * intelligence-evaluation/v1. It is accepted only by the controlled runtime
+ * normalizer below and is always converted to the capability-bound canonical
+ * role. New producers must not emit this shape.
+ */
+export type IntelligenceLegacyMetricResultV1 = IntelligenceMetricResultBaseV1 & {
+  readonly resultRole?: never;
+  readonly screeningIndicatorOnly: true;
+};
+
+export type IntelligenceMetricResultV1 =
+  | IntelligenceCanonicalMetricResultV1
+  | IntelligenceLegacyMetricResultV1;
+
+export const INTELLIGENCE_METRIC_RESULT_LEGACY_DEPRECATION =
+  "intelligence-evaluation/v1 metric results without resultRole are deprecated; normalize and re-emit the capability-bound canonical role" as const;
+
+export interface IntelligenceMetricResultNormalizationV1 {
+  readonly result: IntelligenceCanonicalMetricResultV1;
+  readonly compatibility: "CANONICAL" | "LEGACY_SCREENING_ONLY_V1";
+  readonly deprecation: typeof INTELLIGENCE_METRIC_RESULT_LEGACY_DEPRECATION | null;
+}
+
+const INTELLIGENCE_REF = /^[a-z][a-z0-9-]*(?::[a-z0-9-]+)+$/;
+
+function expectedMetricResultBinding(kind: IntelligenceCapabilityKind): readonly [
+  IntelligenceMetricResultRoleV1,
+  boolean,
+] {
+  switch (kind) {
+    case "QOH":
+      return ["DESCRIPTIVE_ASSOCIATION", false];
+    case "FAIRNESS":
+    case "DEEPFAKE_PROVENANCE":
+      return ["SCREENING_INDICATOR", true];
+    case "COACHING":
+    case "SKILLS_ONTOLOGY":
+    case "INTERNAL_MOBILITY":
+    case "AGENTIC_PROPOSAL":
+      return ["EVIDENCE_METRIC", false];
+    default:
+      throw new TypeError("INTELLIGENCE_CAPABILITY_KIND_INVALID");
+  }
+}
+
+/**
+ * Public runtime boundary for a metric result. The JSON schema preserves the
+ * legacy v1 omission, while this parser enforces the capability-to-role and
+ * role-to-screening binding before application use.
+ */
+export function normalizeAndValidateIntelligenceMetricResultV1(
+  capabilityKind: IntelligenceCapabilityKind,
+  value: unknown,
+): IntelligenceMetricResultNormalizationV1 {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("INTELLIGENCE_METRIC_RESULT_OBJECT_REQUIRED");
+  }
+  const candidate = value as Record<string, unknown>;
+  const allowedKeys = new Set([
+    "metricResultRef",
+    "confidenceIntervalRef",
+    "evidenceRef",
+    "resultRole",
+    "screeningIndicatorOnly",
+    "verdict",
+  ]);
+  for (const key of Object.keys(candidate)) {
+    if (!allowedKeys.has(key)) {
+      throw new TypeError(`INTELLIGENCE_METRIC_RESULT_UNKNOWN_FIELD:${key}`);
+    }
+  }
+  for (const key of [
+    "metricResultRef",
+    "confidenceIntervalRef",
+    "evidenceRef",
+    "screeningIndicatorOnly",
+    "verdict",
+  ]) {
+    if (!(key in candidate)) {
+      throw new TypeError(`INTELLIGENCE_METRIC_RESULT_REQUIRED_FIELD:${key}`);
+    }
+  }
+  for (const key of ["metricResultRef", "confidenceIntervalRef", "evidenceRef"] as const) {
+    const ref = candidate[key];
+    if (
+      typeof ref !== "string" ||
+      ref.length < 3 ||
+      ref.length > 240 ||
+      !INTELLIGENCE_REF.test(ref)
+    ) {
+      throw new TypeError(`INTELLIGENCE_METRIC_RESULT_REF_INVALID:${key}`);
+    }
+  }
+  if (candidate.verdict !== "NONE") {
+    throw new TypeError("INTELLIGENCE_METRIC_RESULT_VERDICT_DISALLOWED");
+  }
+
+  const [expectedRole, expectedScreening] = expectedMetricResultBinding(capabilityKind);
+  const legacy = !("resultRole" in candidate);
+  if (legacy) {
+    if (candidate.screeningIndicatorOnly !== true) {
+      throw new TypeError("INTELLIGENCE_LEGACY_RESULT_REQUIRES_SCREENING_TRUE");
+    }
+  } else {
+    if (candidate.resultRole !== expectedRole) {
+      throw new TypeError("INTELLIGENCE_CAPABILITY_RESULT_ROLE_MISMATCH");
+    }
+    if (candidate.screeningIndicatorOnly !== expectedScreening) {
+      throw new TypeError("INTELLIGENCE_RESULT_ROLE_SCREENING_MISMATCH");
+    }
+  }
+
+  const result = {
+    metricResultRef: candidate.metricResultRef,
+    confidenceIntervalRef: candidate.confidenceIntervalRef,
+    evidenceRef: candidate.evidenceRef,
+    resultRole: expectedRole,
+    screeningIndicatorOnly: expectedScreening,
+    verdict: "NONE",
+  } as IntelligenceCanonicalMetricResultV1;
+  return {
+    result,
+    compatibility: legacy ? "LEGACY_SCREENING_ONLY_V1" : "CANONICAL",
+    deprecation: legacy ? INTELLIGENCE_METRIC_RESULT_LEGACY_DEPRECATION : null,
+  };
 }
 
 export interface IntelligenceMetricProtocolV1 {
