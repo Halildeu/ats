@@ -1,12 +1,14 @@
 package com.ats.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.consent.ConsentGate;
 import com.ats.contracts.EvidenceLedger;
+import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.dsr.DsrService;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.ExportService;
@@ -121,5 +123,20 @@ class AppBootSmokeTest {
                 new TenantId("boot-smoke-tenant"), new InterviewId("boot-smoke-iv"));
         assertInstanceOf(Outcome.Fail.class, out,
                 "rıza kaydı olmadan kayıt izni VERİLEMEZ (deny-by-default)");
+    }
+
+    @Test
+    void model_governance_ledger_bean_exposes_reader_only_never_write_surface() {
+        // gov1-1e-b (Codex REVISE): normal app context YALNIZ Reader'ı görmeli; WRITE cephesi
+        // (Appender / ModelGovernanceAdminAppender) BİLİNÇLE wire EDİLMEZ. Reader bean'in RUNTIME
+        // nesnesi Appender'a CAST EDİLEMEZ olmalı (delegate::readAll wrapper) — capability sınırı
+        // nesne seviyesinde kilitli; DB SELECT-only rol ikinci savunma katmanı.
+        ModelGovernanceLedger.Reader reader = ctx.getBean(ModelGovernanceLedger.Reader.class);
+        assertFalse(reader instanceof ModelGovernanceLedger.Appender,
+                "Reader bean runtime nesnesi Appender'a cast edilebilir OLMAMALI (write-yüzeyi sızıntısı)");
+        assertTrue(ctx.getBeansOfType(ModelGovernanceLedger.Appender.class).isEmpty(),
+                "normal context'te Appender bean'i BULUNMAMALI (least-privilege)");
+        assertTrue(ctx.getBeansOfType(com.ats.persistence.ModelGovernanceAdminAppender.class).isEmpty(),
+                "normal context'te admin-writer bean'i BULUNMAMALI (yazım ayrı owner-gated CLI/workflow)");
     }
 }

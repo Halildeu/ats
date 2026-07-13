@@ -320,7 +320,13 @@ class WiringConfig {
      */
     @Bean
     ModelGovernanceLedger.Reader modelGovernanceLedgerReader(DataSource ds, Flyway flyway) {
-        return new PostgresModelGovernanceLedger(ds, Clock.systemUTC());
+        // Codex 1e-b: PostgresModelGovernanceLedger concrete'i hem Reader hem Appender implement eder.
+        // Doğrudan dönersek bean'in runtime nesnesi `instanceof Appender`=true olur → runtime kodu
+        // Reader'ı Appender'a CAST edip write-yüzeyine ulaşabilir (interface-split compile-time sınırı
+        // delinir). Yalnız readAll'ı ifşa eden Reader-only wrapper döndür → capability sınırı nesne
+        // seviyesinde kilitli (DB SELECT-only rol ikinci savunma katmanı; bu birinci).
+        PostgresModelGovernanceLedger delegate = new PostgresModelGovernanceLedger(ds, Clock.systemUTC());
+        return delegate::readAll;
     }
 
     // --- review / export / DSR ---
