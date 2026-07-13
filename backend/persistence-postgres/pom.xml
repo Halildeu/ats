@@ -70,6 +70,16 @@
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- gov1-1e-b: PostgresModelGovernanceLedger kabul-matrisi READ tarafını ModelGovernanceStatusProjection
+         (SAF; shared-kernel + contracts-java) ile doğrular — full-chain recompute + tamper chainIntact=false.
+         TEST-scope: adapter main kodu model-governance'a bağlanmaz (ArchUnit korunur); döngü yok
+         (model-governance yalnız shared-kernel + contracts-java'ya bağlı). -->
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>model-governance</artifactId>
+      <version>0.0.0</version>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
