@@ -9,7 +9,6 @@
       "allowedReportedModelVersionAliases": [],
       "endpointRef": "http-json-generic-endpoint",
       "invocationProfileVersion": "ip-http-json-1",
-      "status": "APPROVED",
       "scope": "GLOBAL"
     },
     {
@@ -21,7 +20,6 @@
       "allowedReportedModelVersionAliases": [],
       "endpointRef": "http-json-generic-endpoint",
       "invocationProfileVersion": "ip-http-json-1",
-      "status": "APPROVED",
       "scope": "GLOBAL"
     },
     {
@@ -33,7 +31,6 @@
       "allowedReportedModelVersionAliases": [],
       "endpointRef": "faz24-stt-prod",
       "invocationProfileVersion": "ip-live-stt-1",
-      "status": "APPROVED",
       "scope": "GLOBAL"
     }
   ]

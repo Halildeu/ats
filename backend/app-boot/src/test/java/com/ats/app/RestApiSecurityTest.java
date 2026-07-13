@@ -40,6 +40,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.springframework.context.annotation.Import(WormGovernanceTestSeed.class)
 class RestApiSecurityTest {
 
     @Container

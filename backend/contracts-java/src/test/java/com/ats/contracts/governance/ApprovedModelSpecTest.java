@@ -10,21 +10,25 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** P3-gov0 ApprovedModelSpec / ModelApprovalRef: içerik-adresli ref + fail-closed değer doğrulama + matchesReported. */
+/**
+ * P3-gov0 ApprovedModelSpec / ModelApprovalRef: içerik-adresli ref + fail-closed değer doğrulama +
+ * matchesReported. gov1-1e-c: {@code status} kayıt alanı DEĞİL (WORM tek status-otorite) → spec yalnız
+ * değişmez politika-içeriği; ref politika-türevi (status girdi değil, zaten alan yok).
+ */
 class ApprovedModelSpecTest {
 
     private static ApprovedModelSpec spec(String modelId, String version, Set<String> idAliases,
-            Set<String> versionAliases, ApprovalStatus status) {
+            Set<String> versionAliases) {
         return ApprovedModelSpec.of(Capability.TRANSCRIBE, "prov-a", modelId, version,
-                idAliases, versionAliases, "endpoint-a", "ip-1", status, ModelScope.GLOBAL);
+                idAliases, versionAliases, "endpoint-a", "ip-1", ModelScope.GLOBAL);
     }
 
     // ---- içerik-adresli ref: determinizm + alias sıra-varyansı + politika-değişimi ----
 
     @Test
     void same_fields_same_ref_deterministic() {
-        ApprovedModelSpec a = spec("m1", "v1", Set.of("a", "b"), Set.of(), ApprovalStatus.APPROVED);
-        ApprovedModelSpec b = spec("m1", "v1", Set.of("a", "b"), Set.of(), ApprovalStatus.APPROVED);
+        ApprovedModelSpec a = spec("m1", "v1", Set.of("a", "b"), Set.of());
+        ApprovedModelSpec b = spec("m1", "v1", Set.of("a", "b"), Set.of());
         assertEquals(a.approvalRef(), b.approvalRef());
         assertEquals(a.approvalRef(), a.canonicalDigest());
         assertTrue(a.approvalRef().value().matches("mapr_[0-9a-f]{64}"), a.approvalRef().value());
@@ -40,27 +44,20 @@ class ApprovedModelSpecTest {
         reverse.add("gamma");
         reverse.add("beta");
         reverse.add("alpha");
-        ApprovedModelSpec a = spec("m1", "v1", forward, Set.of(), ApprovalStatus.APPROVED);
-        ApprovedModelSpec b = spec("m1", "v1", reverse, Set.of(), ApprovalStatus.APPROVED);
+        ApprovedModelSpec a = spec("m1", "v1", forward, Set.of());
+        ApprovedModelSpec b = spec("m1", "v1", reverse, Set.of());
         assertEquals(a.approvalRef(), b.approvalRef(), "alias sıra-varyansı ref'i değiştirmemeli");
     }
 
     @Test
-    void status_change_does_not_change_ref() {
-        ApprovedModelSpec approved = spec("m1", "v1", Set.of("a"), Set.of(), ApprovalStatus.APPROVED);
-        ApprovedModelSpec revoked = spec("m1", "v1", Set.of("a"), Set.of(), ApprovalStatus.REVOKED);
-        assertEquals(approved.approvalRef(), revoked.approvalRef(), "status ref girdisi değildir");
-    }
-
-    @Test
     void different_policy_field_changes_ref() {
-        ApprovedModelSpec base = spec("m1", "v1", Set.of("a"), Set.of(), ApprovalStatus.APPROVED);
-        assertNotEquals(base.approvalRef(), spec("m2", "v1", Set.of("a"), Set.of(), ApprovalStatus.APPROVED).approvalRef());
-        assertNotEquals(base.approvalRef(), spec("m1", "v2", Set.of("a"), Set.of(), ApprovalStatus.APPROVED).approvalRef());
-        assertNotEquals(base.approvalRef(), spec("m1", "v1", Set.of("a", "extra"), Set.of(), ApprovalStatus.APPROVED).approvalRef());
+        ApprovedModelSpec base = spec("m1", "v1", Set.of("a"), Set.of());
+        assertNotEquals(base.approvalRef(), spec("m2", "v1", Set.of("a"), Set.of()).approvalRef());
+        assertNotEquals(base.approvalRef(), spec("m1", "v2", Set.of("a"), Set.of()).approvalRef());
+        assertNotEquals(base.approvalRef(), spec("m1", "v1", Set.of("a", "extra"), Set.of()).approvalRef());
         // farklı capability de ref'i değiştirir
         ApprovedModelSpec cite = ApprovedModelSpec.of(Capability.CITE, "prov-a", "m1", "v1",
-                Set.of("a"), Set.of(), "endpoint-a", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                Set.of("a"), Set.of(), "endpoint-a", "ip-1", ModelScope.GLOBAL);
         assertNotEquals(base.approvalRef(), cite.approvalRef());
     }
 
@@ -68,7 +65,7 @@ class ApprovedModelSpecTest {
 
     @Test
     void matches_reported_field_wise_exact_only() {
-        ApprovedModelSpec s = spec("gpt", "v1", Set.of("gpt-alias"), Set.of("v1-alias"), ApprovalStatus.APPROVED);
+        ApprovedModelSpec s = spec("gpt", "v1", Set.of("gpt-alias"), Set.of("v1-alias"));
         assertTrue(s.matchesReported("gpt", "v1"), "reported==requested");
         assertTrue(s.matchesReported("gpt-alias", "v1-alias"), "reported alias kümesinde");
         assertFalse(s.matchesReported("other", "v1"), "listelenmeyen id mismatch");
@@ -93,36 +90,36 @@ class ApprovedModelSpecTest {
     void rejects_url_like_and_scheme_values() {
         assertThrows(IllegalArgumentException.class, () -> ApprovedModelSpec.of(
                 Capability.TRANSCRIBE, "prov-a", "m1", "v1", Set.of(), Set.of(),
-                "https://evil.example/stt", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL),
+                "https://evil.example/stt", "ip-1", ModelScope.GLOBAL),
                 "endpointRef '://' reddedilmeli");
         assertThrows(IllegalArgumentException.class, () -> ApprovedModelSpec.of(
                 Capability.TRANSCRIBE, "prov-a", "m1", "v1", Set.of(), Set.of(),
-                "host//path", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL),
+                "host//path", "ip-1", ModelScope.GLOBAL),
                 "endpointRef '//' (URL-benzeri) reddedilmeli");
         assertThrows(IllegalArgumentException.class, () -> ApprovedModelSpec.of(
                 Capability.TRANSCRIBE, "prov-a", "m1://x", "v1", Set.of(), Set.of(),
-                "endpoint-a", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL),
+                "endpoint-a", "ip-1", ModelScope.GLOBAL),
                 "requestedModelId '://' reddedilmeli");
     }
 
     @Test
     void rejects_newline_blank_and_too_long() {
-        assertThrows(IllegalArgumentException.class, () -> spec("m1\nx", "v1", Set.of(), Set.of(), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("m1\nx", "v1", Set.of(), Set.of()),
                 "newline reddedilmeli");
-        assertThrows(IllegalArgumentException.class, () -> spec("  ", "v1", Set.of(), Set.of(), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("  ", "v1", Set.of(), Set.of()),
                 "boş reddedilmeli");
-        assertThrows(IllegalArgumentException.class, () -> spec("a".repeat(129), "v1", Set.of(), Set.of(), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("a".repeat(129), "v1", Set.of(), Set.of()),
                 ">128 reddedilmeli");
         // alias öğesi de aynı kurallarla
-        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of("bad space"), Set.of(), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of("bad space"), Set.of()),
                 "alias boşluk reddedilmeli");
     }
 
     @Test
     void rejects_canonical_value_in_its_own_alias_set() {
-        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of("m1"), Set.of(), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of("m1"), Set.of()),
                 "kanonik id kendi alias kümesinde olamaz");
-        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of(), Set.of("v1"), ApprovalStatus.APPROVED),
+        assertThrows(IllegalArgumentException.class, () -> spec("m1", "v1", Set.of(), Set.of("v1")),
                 "kanonik versiyon kendi alias kümesinde olamaz");
     }
 
@@ -142,7 +139,7 @@ class ApprovedModelSpecTest {
         ModelApprovalRef wrong = new ModelApprovalRef("mapr_" + "0".repeat(64));
         assertThrows(IllegalArgumentException.class, () -> new ApprovedModelSpec(
                 wrong, Capability.TRANSCRIBE, "prov-a", "m1", "v1", Set.of(), Set.of(),
-                "endpoint-a", "ip-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL),
+                "endpoint-a", "ip-1", ModelScope.GLOBAL),
                 "approvalRef içerik-adresli digest'e eşit değilse reddedilmeli");
     }
 }

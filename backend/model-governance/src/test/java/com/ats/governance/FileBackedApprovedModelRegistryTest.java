@@ -11,35 +11,116 @@ import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelScope;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** Dosya/config-destekli registry: geçerli-yük + yükleme-anı fail-closed (yinelenen-ref/alias/değer). */
+/**
+ * Dosya/config-destekli registry: geçerli-yük + yükleme-anı fail-closed (yinelenen-ref/alias/değer) +
+ * gov1-1e-c strict exact-key parser (eski {@code "status"} anahtarı + bilinmeyen alan → RED). Cari status
+ * WORM'dan çözülür (bu test canlı WORM'u {@link GovernanceWormFixture} ile seed'ler).
+ */
 class FileBackedApprovedModelRegistryTest {
 
+    private static final String VALID_RESOURCE = "approved-models-valid.json";
+
+    private static ApprovedModelSpec byCapability(List<ApprovedModelSpec> specs, Capability cap) {
+        return specs.stream().filter(s -> s.capability() == cap).findFirst().orElseThrow();
+    }
+
     @Test
-    void loads_valid_classpath_resource_and_resolves() {
-        var registry = FileBackedApprovedModelRegistry.fromClasspath("approved-models-valid.json");
+    void loads_valid_classpath_resource_and_resolves_worm_status() {
+        // Catalog'u keşifle oku (WORM'suz), sonra iki özneyi WORM'da APPROVED/REVOKED seed'le.
+        List<ApprovedModelSpec> catalog =
+                FileBackedApprovedModelRegistry.fromClasspath(VALID_RESOURCE).approvedSpecs();
+        ApprovedModelSpec whisper = byCapability(catalog, Capability.TRANSCRIBE);
+        ApprovedModelSpec cite = byCapability(catalog, Capability.CITE);
+        GovernanceWormFixture fx = new GovernanceWormFixture()
+                .with(whisper, ApprovalStatus.APPROVED)
+                .with(cite, ApprovalStatus.REVOKED);
+
+        var registry = FileBackedApprovedModelRegistry.fromClasspath(VALID_RESOURCE, fx.ledger());
         // APPROVED transcribe çözülür + türetilen ref content-addressed digest ile eşleşir
         var out = registry.resolveConfigured(Capability.TRANSCRIBE, "faz24-live-stt", "whisper-tr", "v0.1.0");
         assertInstanceOf(Outcome.Ok.class, out);
         ApprovedModelSpec spec = ((Outcome.Ok<ApprovedModelSpec>) out).value();
         assertEquals(spec.approvalRef(), spec.canonicalDigest(), "yüklenen ref içerik-adresli türetilmeli");
         assertTrue(spec.matchesReported("whisper-large-v3-tr", "v0.1.0"), "alias yüklendi");
-        // REVOKED CITE girişi DENY (APPROVED-only)
+        // REVOKED CITE girişi DENY (WORM status-otorite: REVOKED)
         assertEquals(OutcomeCode.DENIED,
                 ((Outcome.Fail<?>) registry.resolveConfigured(Capability.CITE, "faz24-cite", "cite-tr", "v2")).code());
     }
 
+    // ---- gov1-1e-c strict exact-key parser: status anahtarı + bilinmeyen alan RED ----
+
     @Test
-    void load_fails_on_duplicate_ref_with_different_content() {
-        // aynı politika alanları (⇒ aynı içerik-adresli ref) fakat farklı status (farklı içerik) → belirsiz
+    void load_fails_on_forbidden_status_key() {
+        // Eski catalog (status'lü) SESSİZCE yüklenmez → açık status-forbidden RED (fail-closed).
         String json = """
             { "approvedModels": [
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
-                "endpointRef":"e","invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" },
+                "endpointRef":"e","invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("status"), ex.getMessage());
+    }
+
+    @Test
+    void load_fails_on_unknown_extra_key() {
+        String json = """
+            { "approvedModels": [
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
-                "endpointRef":"e","invocationProfileVersion":"ip","status":"REVOKED","scope":"GLOBAL" }
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL","surpriseKey":"x" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("bilinmeyen"), ex.getMessage());
+    }
+
+    @Test
+    void load_fails_on_root_level_status_key() {
+        // Codex 1e-c REVISE: KÖK-seviye 'status' (sahte "global approval" izlenimi) SESSİZCE yok
+        // sayılmaz → açık RED. Entry geçerli olsa bile kök exact-key ihlali catalog'u düşürür.
+        String json = """
+            { "status":"APPROVED",
+              "approvedModels": [
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("kök") && ex.getMessage().contains("status"), ex.getMessage());
+    }
+
+    @Test
+    void load_fails_on_root_level_unknown_key() {
+        // KÖK-seviye herhangi bilinmeyen alan → RED (kök yalnız 'approvedModels').
+        String json = """
+            { "unexpectedTrustFlag":true,
+              "approvedModels": [
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("kök") && ex.getMessage().contains("unexpectedTrustFlag"),
+                ex.getMessage());
+    }
+
+    @Test
+    void load_fails_on_duplicate_ref() {
+        // İKİ ÖZDEŞ politika-içeriği (status yok) ⇒ AYNI içerik-adresli ref → belirsiz (fail-closed).
+        String json = """
+            { "approvedModels": [
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" },
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
             ] }
             """;
         IllegalStateException ex = assertThrows(IllegalStateException.class,
@@ -54,10 +135,10 @@ class FileBackedApprovedModelRegistryTest {
             { "approvedModels": [
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m1","requestedModelVersion":"v",
                 "allowedReportedModelIdAliases":["shared"],
-                "endpointRef":"e","invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" },
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" },
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m2","requestedModelVersion":"v",
                 "allowedReportedModelIdAliases":["shared"],
-                "endpointRef":"e","invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" }
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
             ] }
             """;
         IllegalStateException ex = assertThrows(IllegalStateException.class,
@@ -70,7 +151,7 @@ class FileBackedApprovedModelRegistryTest {
         String json = """
             { "approvedModels": [
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
-                "endpointRef":"https://evil.example/stt","invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" }
+                "endpointRef":"https://evil.example/stt","invocationProfileVersion":"ip","scope":"GLOBAL" }
             ] }
             """;
         assertThrows(IllegalArgumentException.class, () -> FileBackedApprovedModelRegistry.fromJson(json));
@@ -83,7 +164,7 @@ class FileBackedApprovedModelRegistryTest {
                 + "\"capability\":\"TRANSCRIBE\",\"configuredProviderRef\":\"p\","
                 + "\"requestedModelId\":\"m\\nx\",\"requestedModelVersion\":\"v\","
                 + "\"endpointRef\":\"e\",\"invocationProfileVersion\":\"ip\","
-                + "\"status\":\"APPROVED\",\"scope\":\"GLOBAL\" } ] }";
+                + "\"scope\":\"GLOBAL\" } ] }";
         assertThrows(IllegalArgumentException.class, () -> FileBackedApprovedModelRegistry.fromJson(json));
     }
 
@@ -94,23 +175,23 @@ class FileBackedApprovedModelRegistryTest {
                 + "\"capability\":\"TRANSCRIBE\",\"configuredProviderRef\":\"p\","
                 + "\"requestedModelId\":\"" + tooLong + "\",\"requestedModelVersion\":\"v\","
                 + "\"endpointRef\":\"e\",\"invocationProfileVersion\":\"ip\","
-                + "\"status\":\"APPROVED\",\"scope\":\"GLOBAL\" } ] }";
+                + "\"scope\":\"GLOBAL\" } ] }";
         assertThrows(IllegalArgumentException.class, () -> FileBackedApprovedModelRegistry.fromJson(json));
     }
 
     @Test
     void load_fails_on_unknown_enum_and_missing_field() {
-        String badStatus = """
+        String badCapability = """
             { "approvedModels": [
-              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
-                "endpointRef":"e","invocationProfileVersion":"ip","status":"MAYBE","scope":"GLOBAL" }
+              { "capability":"SUMMARIZE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
             ] }
             """;
-        assertThrows(IllegalStateException.class, () -> FileBackedApprovedModelRegistry.fromJson(badStatus));
+        assertThrows(IllegalStateException.class, () -> FileBackedApprovedModelRegistry.fromJson(badCapability));
         String missing = """
             { "approvedModels": [
               { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
-                "invocationProfileVersion":"ip","status":"APPROVED","scope":"GLOBAL" }
+                "invocationProfileVersion":"ip","scope":"GLOBAL" }
             ] }
             """;
         assertThrows(IllegalStateException.class, () -> FileBackedApprovedModelRegistry.fromJson(missing));
@@ -125,9 +206,9 @@ class FileBackedApprovedModelRegistryTest {
     void spec_of_default_empty_aliases_is_deterministic() {
         // strSet null → Set.of(); of(...) null alias → Set.of(); iki yol aynı ref üretmeli
         ApprovedModelSpec a = ApprovedModelSpec.of(Capability.TRANSCRIBE, "p", "m", "v",
-                null, null, "e", "ip", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                null, null, "e", "ip", ModelScope.GLOBAL);
         ApprovedModelSpec b = ApprovedModelSpec.of(Capability.TRANSCRIBE, "p", "m", "v",
-                Set.of(), Set.of(), "e", "ip", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                Set.of(), Set.of(), "e", "ip", ModelScope.GLOBAL);
         assertEquals(a.approvalRef(), b.approvalRef());
     }
 }

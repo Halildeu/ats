@@ -1,13 +1,25 @@
 package com.ats.app;
 
+import com.ats.contracts.governance.ApprovalStatus;
 import com.ats.contracts.governance.ApprovedModelSpec;
 import com.ats.contracts.governance.Capability;
+import com.ats.contracts.governance.GovernanceActorRef;
 import com.ats.contracts.governance.ModelApprovalRef;
+import com.ats.contracts.governance.ModelGovernanceLedger;
+import com.ats.contracts.governance.ModelGovernanceTransition;
+import com.ats.contracts.governance.TransitionId;
+import com.ats.contracts.governance.TransitionReason;
 import com.ats.governance.FileBackedApprovedModelRegistry;
+import com.ats.governance.InMemoryModelGovernanceLedger;
+import com.ats.kernel.Outcome;
+import com.ats.persistence.ModelGovernanceAdminAppender;
+import java.time.Clock;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.sql.DataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 
 /**
@@ -67,6 +79,49 @@ final class AiGovernanceTestSupport {
                     + " " + cap + " onay-ref'i yok (fail-closed drift-guard)");
         }
         return ref;
+    }
+
+    // ---- gov1-1e-c WORM test-seed (TEST-FIXTURE-seed; production-boot-seed DEĞİL) ----
+    // Boot-gate artık WORM-status ister → boş WORM'la full-context boot FAIL olurdu. Bu yardımcılar
+    // SHIPPED catalog kimliklerini (approved-models.json) UNINITIALIZED→APPROVED transition'ıyla seed'ler.
+    // Owner-gated ilk-transition production'da ayrı CLI/workflow'dadır (ADR-0021); bu yalnız test-fixture.
+
+    /** SHIPPED kimliklerin TÜMÜNÜ APPROVED yapan in-memory WORM (lightweight boot-gate testleri). */
+    static InMemoryModelGovernanceLedger shippedApprovedLedger() {
+        InMemoryModelGovernanceLedger ledger = new InMemoryModelGovernanceLedger(Clock.systemUTC());
+        appendShippedApprovals(ledger::append);
+        return ledger;
+    }
+
+    /**
+     * SHIPPED kimlikleri writer-DataSource üzerinden APPROVED seed'ler (full-context @SpringBootTest;
+     * Flyway migrate sonrası boot-gate ÖNCESİ çağrılır — {@code WormGovernanceTestSeed} BeanPostProcessor).
+     * Testcontainers superuser DataSource yazma yetkisine sahiptir; production runtime SELECT-only'dir.
+     */
+    static void seedShippedApprovalsToWorm(DataSource writerDataSource) {
+        ModelGovernanceAdminAppender appender =
+                ModelGovernanceAdminAppender.overPostgres(writerDataSource, Clock.systemUTC());
+        appendShippedApprovals(appender::appendTransition);
+    }
+
+    /** SHIPPED catalog'ın her (approvalRef, capability) öznesi için UNINITIALIZED→APPROVED append eder. */
+    private static void appendShippedApprovals(
+            Function<ModelGovernanceLedger.AppendCommand, Outcome<ModelGovernanceTransition>> appendFn) {
+        GovernanceActorRef actor = new GovernanceActorRef("test.worm-seed");
+        FileBackedApprovedModelRegistry shipped =
+                FileBackedApprovedModelRegistry.fromClasspath(APPROVED_MODELS_RESOURCE);
+        for (ApprovedModelSpec spec : shipped.approvedSpecs()) {
+            ModelGovernanceLedger.AppendCommand cmd = new ModelGovernanceLedger.AppendCommand(
+                    spec.approvalRef(), spec.capability(), ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED,
+                    actor, TransitionReason.INITIAL_APPROVAL, TransitionId.random());
+            Outcome<ModelGovernanceTransition> out = appendFn.apply(cmd);
+            // STALE_EXPECTED_FROM = özne zaten APPROVED (idempotent re-seed) → tolere; başka fail → fixture bozuk.
+            if (out instanceof Outcome.Fail<ModelGovernanceTransition> fail
+                    && !ModelGovernanceLedger.AppendRejection.STALE_EXPECTED_FROM.name().equals(fail.reason())) {
+                throw new IllegalStateException("WORM test-seed başarısız (fail-closed): "
+                        + fail.code() + " " + fail.reason());
+            }
+        }
     }
 
     /** http-json-generic spec'lerinin (TRANSCRIBE+CITE) TEK ortak endpointRef'ini türetir (drift-safe). */

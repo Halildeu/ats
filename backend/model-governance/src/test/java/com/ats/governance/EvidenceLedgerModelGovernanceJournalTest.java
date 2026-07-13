@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.contracts.AIProvider;
 import com.ats.contracts.EvidenceLedger;
-import com.ats.contracts.governance.ApprovalStatus;
 import com.ats.contracts.governance.ApprovedModelSpec;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelGovernanceGate.Decision;
@@ -65,7 +64,7 @@ class EvidenceLedgerModelGovernanceJournalTest {
     private static ApprovedModelSpec spec() {
         return ApprovedModelSpec.of(CAP, "prov-x", "model-x", "v1",
                 Set.of("model-x-alias"), Set.of("v1-alias"), "endpoint-x", "ip-1",
-                ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                ModelScope.GLOBAL);
     }
 
     private static Permit permitFrom(ApprovedModelSpec s) {
