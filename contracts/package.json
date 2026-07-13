@@ -14,6 +14,7 @@
     "./fairness-evidence-v1": "./fairness/fairness-evidence.ts",
     "./citation-backed-coaching-v1": "./coaching/citation-backed-coaching.ts",
     "./versioned-skills-ontology-v1": "./skills/versioned-skills-ontology.ts",
+    "./integrity-provenance-screening-v1": "./integrity/integrity-provenance-screening.ts",
     "./deployment-profile-v1": "./wire/deployment-profile.ts",
     "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
   },
