@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   FORBIDDEN_INTELLIGENCE_FIELDS,
   INTELLIGENCE_EVALUATION_SCHEMA_VERSION,
+  INTELLIGENCE_METRIC_RESULT_LEGACY_DEPRECATION,
+  normalizeAndValidateIntelligenceMetricResultV1,
   parseIntelligenceDigest,
   type IntelligenceCapabilityPolicyV1,
   type IntelligenceCapabilityV1,
+  type IntelligenceMetricResultV1,
   type IntelligenceProposalV1,
 } from "../wire/intelligence-evaluation.js";
 
@@ -86,6 +89,87 @@ describe("P6 Intelligence Evaluation contract", () => {
     expect(capability.policy.fourFifthsIndicatorRole).toBe("SCREENING_ONLY");
     expect(capability.policy.producesDecision).toBe(false);
     expect(capability.humanActionAllowed).toBe(false);
+  });
+
+  it("keeps QOH descriptive while fairness remains a screening indicator", () => {
+    const qoh: IntelligenceMetricResultV1 = {
+      metricResultRef: "metric-result:qoh:v1",
+      confidenceIntervalRef: "confidence:qoh:v1",
+      evidenceRef: "evidence:qoh:v1",
+      resultRole: "DESCRIPTIVE_ASSOCIATION",
+      screeningIndicatorOnly: false,
+      verdict: "NONE",
+    };
+    const fairness: IntelligenceMetricResultV1 = {
+      metricResultRef: "metric-result:fairness:v1",
+      confidenceIntervalRef: "confidence:fairness:v1",
+      evidenceRef: "evidence:fairness:v1",
+      resultRole: "SCREENING_INDICATOR",
+      screeningIndicatorOnly: true,
+      verdict: "NONE",
+    };
+
+    expect(qoh.resultRole).toBe("DESCRIPTIVE_ASSOCIATION");
+    expect(qoh.screeningIndicatorOnly).toBe(false);
+    expect(fairness.resultRole).toBe("SCREENING_INDICATOR");
+    expect(fairness.screeningIndicatorOnly).toBe(true);
+  });
+
+  it("normalizes deprecated v1 results and re-emits the capability-bound role", () => {
+    const legacy: IntelligenceMetricResultV1 = {
+      metricResultRef: "metric-result:qoh:v1",
+      confidenceIntervalRef: "confidence:qoh:v1",
+      evidenceRef: "evidence:qoh:v1",
+      screeningIndicatorOnly: true,
+      verdict: "NONE",
+    };
+
+    const normalized = normalizeAndValidateIntelligenceMetricResultV1("QOH", legacy);
+    expect(normalized).toEqual({
+      result: {
+        metricResultRef: "metric-result:qoh:v1",
+        confidenceIntervalRef: "confidence:qoh:v1",
+        evidenceRef: "evidence:qoh:v1",
+        resultRole: "DESCRIPTIVE_ASSOCIATION",
+        screeningIndicatorOnly: false,
+        verdict: "NONE",
+      },
+      compatibility: "LEGACY_SCREENING_ONLY_V1",
+      deprecation: INTELLIGENCE_METRIC_RESULT_LEGACY_DEPRECATION,
+    });
+  });
+
+  it("enforces capability, result role and screening semantics at the public runtime boundary", () => {
+    const qoh = {
+      metricResultRef: "metric-result:qoh:v1",
+      confidenceIntervalRef: "confidence:qoh:v1",
+      evidenceRef: "evidence:qoh:v1",
+      resultRole: "DESCRIPTIVE_ASSOCIATION",
+      screeningIndicatorOnly: false,
+      verdict: "NONE",
+    };
+    expect(normalizeAndValidateIntelligenceMetricResultV1("QOH", qoh)).toMatchObject({
+      compatibility: "CANONICAL",
+      deprecation: null,
+    });
+    expect(() =>
+      normalizeAndValidateIntelligenceMetricResultV1("FAIRNESS", qoh),
+    ).toThrow("INTELLIGENCE_CAPABILITY_RESULT_ROLE_MISMATCH");
+    expect(() =>
+      normalizeAndValidateIntelligenceMetricResultV1("QOH", {
+        ...qoh,
+        screeningIndicatorOnly: true,
+      }),
+    ).toThrow("INTELLIGENCE_RESULT_ROLE_SCREENING_MISMATCH");
+    expect(() =>
+      normalizeAndValidateIntelligenceMetricResultV1("QOH", {
+        metricResultRef: "metric-result:qoh:v1",
+        confidenceIntervalRef: "confidence:qoh:v1",
+        evidenceRef: "evidence:qoh:v1",
+        screeningIndicatorOnly: false,
+        verdict: "NONE",
+      }),
+    ).toThrow("INTELLIGENCE_LEGACY_RESULT_REQUIRES_SCREENING_TRUE");
   });
 
   it("allows only a closed AI_SUGGESTED synthetic proposal preview", () => {

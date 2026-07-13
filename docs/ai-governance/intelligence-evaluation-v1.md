@@ -9,6 +9,9 @@
 Kanonik artefaktlar:
 
 - TypeScript: `contracts/wire/intelligence-evaluation.ts`
+- P6.0 dedicated sentetik QoH evaluator:
+  `contracts/qoh/quality-of-hire-evidence.ts` ve
+  `docs/ai-governance/quality-of-hire-evidence-v1.md`
 - P6.1 sentetik aggregate evaluator: `contracts/fairness/fairness-evidence.ts`
 - JSON Schema: `contracts/schemas/intelligence-evaluation.schema.json`
 - Tamamen sentetik fixture: `contracts/samples/intelligence-evaluation.sample.json`
@@ -62,7 +65,21 @@ Her kayıt şu alanları taşır:
 - protokol sahibi tarafından tanımlanan minimum sample ve gözlenen aggregate sayı,
 - ground-truth owner ve uncertainty method,
 - sayı/label taşımayan metric-result, confidence-interval ve evidence refs,
-- `screening_indicator_only=true`, `verdict=NONE`.
+- capability-aware result role: QoH `DESCRIPTIVE_ASSOCIATION`, fairness/deepfake
+  `SCREENING_INDICATOR`, diğerleri `EVIDENCE_METRIC`; yalnız gerçek screening
+  indicator sonuçlarında `screening_indicator_only=true`, her durumda
+  `verdict=NONE`.
+
+`intelligence-evaluation/v1` ilk yayınındaki metric result yüzeyi
+`result_role` taşımadan `screening_indicator_only=true` üretiyordu. Mevcut v1
+consumer'larını sessizce kırmamak için JSON Schema bu exact legacy omission'ı
+geçici olarak kabul eder. Public
+`normalizeAndValidateIntelligenceMetricResultV1(capabilityKind, result)` runtime
+sınırı legacy sonucu `LEGACY_SCREENING_ONLY_V1` + açık deprecation ile
+capability-bound canonical role'e dönüştürür. Yeni producer'lar `result_role`
+alanını zorunlu olarak üretmelidir. Role taşıyan canonical sonuçta
+capability↔role↔screening bağı exact doğrulanır; schema'nın legacy toleransı bu
+runtime kontrolünü bypass etmez.
 
 Evrensel "30 örnek yeter" gibi sahte bir eşik yoktur. Minimum sample ölçümden
 önce açıkça tanımlanır; observed sample minimumun altındaysa `MEASURED` state
@@ -116,6 +133,16 @@ fixture ve proposal yüzeyine giremez.
 
 ## 7. Fairness ve deepfake doğru anlamı
 
+P6.0 dedicated QoH evaluator, bu registry’deki `capability:qoh:v1`
+otoritesine exact bağlanır. 90/180 günlük dört outcome boyutunu yalnız
+aggregate, contestable ve betimleyici association olarak işler; statistical
+minimum ile disclosure minimumunu ayırır. Ham employee-performance/person
+verisi, causal claim, tek composite QoH skoru, retrospective ranking/scoring,
+model-training/selection optimization ve employment/performance action kontrat
+seviyesinde kapalıdır. Legal, independent-audit, customer-controller ve owner
+gate’leri `NOT_MET`; real activation ve production false kalır. Ayrıntı:
+`docs/ai-governance/quality-of-hire-evidence-v1.md`.
+
 EEOC four-fifths oranı yalnız bir **screening indicator** başlangıç sinyalidir;
 cohort yeterliliği, confidence/uncertainty, missingness, confounder, bağımsız
 audit ve legal/owner değerlendirmesinin yerine geçmez. Otomatik discrimination
@@ -166,6 +193,8 @@ human audit export ve kapalı gate'lerin aynı receipt zincirinde görünmesidir
 - Draft 2020-12 subset schema validation ve unsupported-keyword fail-close,
 - yedi capability'nin tam/benzersiz registry ve capability-specific policy map'i,
 - metric minimum/cohort/ground-truth/uncertainty/result state invariants,
+- canonical capability/result-role/screening bağı ve kontrollü legacy-v1
+  migration fixture'ı,
 - dört gate ve derived boolean/owner ordering parity,
 - PRE-G0 tüm acceptance/action iddialarının kapalı olması,
 - ref-only/raw-data boundary ve exact SHA-256 proposal digest,
