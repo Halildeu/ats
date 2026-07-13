@@ -10,6 +10,7 @@ import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelApprovalRef;
 import com.ats.contracts.governance.ModelGovernanceGate;
 import com.ats.contracts.governance.ModelGovernanceJournal;
+import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
 import com.ats.dsr.RetentionScanner;
@@ -37,6 +38,7 @@ import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
 import com.ats.persistence.PostgresExportArtifactStore;
+import com.ats.persistence.PostgresModelGovernanceLedger;
 import com.ats.persistence.PostgresRetentionScanner;
 import com.ats.persistence.PostgresReviewCaseStore;
 import com.ats.persistence.PostgresTranscriptStore;
@@ -307,6 +309,18 @@ class WiringConfig {
     @Bean
     ModelGovernanceJournal modelGovernanceJournal(EvidenceLedger ledger, AuthorizedModelBindings bindings) {
         return new EvidenceLedgerModelGovernanceJournal(ledger, bindings.bindings(), Clock.systemUTC());
+    }
+
+    /**
+     * gov1-1e-b GLOBAL model-governance WORM'unun READ tarafı (yalnız {@link ModelGovernanceLedger.Reader}).
+     * Composition BUNU görür — WRITE cephesi ({@code Appender}) BİLİNÇLE wire EDİLMEZ (least-privilege;
+     * yazım {@code ModelGovernanceAdminAppender} + owner-gated writer-rol ile ayrı CLI/workflow'da). Bu slice
+     * yalnız Reader-wiring; {@code ApprovedModelRegistry}/{@code resolve} status-source cutover'ı 1e-c.
+     * Flyway'e bağımlı (V4 şema hazır olmadan bean yok); okuma lazy (readAll çağrısında).
+     */
+    @Bean
+    ModelGovernanceLedger.Reader modelGovernanceLedgerReader(DataSource ds, Flyway flyway) {
+        return new PostgresModelGovernanceLedger(ds, Clock.systemUTC());
     }
 
     // --- review / export / DSR ---
