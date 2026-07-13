@@ -8,8 +8,6 @@ import com.ats.contracts.governance.ApprovedModelRegistry;
 import com.ats.contracts.governance.ApprovedModelSpec;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelScope;
-import com.ats.governance.InMemoryApprovedModelRegistry;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,16 +62,21 @@ class ModelGovernanceCompositionTest {
 
     private static ApprovedModelSpec httpTranscribe() {
         return ApprovedModelSpec.of(Capability.TRANSCRIBE, "http-json-generic", "http-json-stt", "v1",
-                Set.of(), Set.of(), HTTP_EP, "ip-http-json-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                Set.of(), Set.of(), HTTP_EP, "ip-http-json-1", ModelScope.GLOBAL);
     }
 
     private static ApprovedModelSpec httpCite() {
         return ApprovedModelSpec.of(Capability.CITE, "http-json-generic", "http-json-cite", "v1",
-                Set.of(), Set.of(), HTTP_EP, "ip-http-json-1", ApprovalStatus.APPROVED, ModelScope.GLOBAL);
+                Set.of(), Set.of(), HTTP_EP, "ip-http-json-1", ModelScope.GLOBAL);
     }
 
+    /** gov1-1e-c: WORM-backed registry (verilen spec'ler APPROVED; status catalog'da değil WORM'dan). */
     private static ApprovedModelRegistry registryOf(ApprovedModelSpec... specs) {
-        return InMemoryApprovedModelRegistry.of(List.of(specs));
+        GovernanceWormTestFixture fx = new GovernanceWormTestFixture();
+        for (ApprovedModelSpec s : specs) {
+            fx.with(s, ApprovalStatus.APPROVED);
+        }
+        return fx.registry();
     }
 
     @Test

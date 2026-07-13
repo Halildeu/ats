@@ -17,10 +17,18 @@ import java.util.regex.Pattern;
 /**
  * P3-gov0 onaylı-model politika kaydı (değişmez, doğrulanmış). Bir yeteneğin
  * (capability) hangi sağlayıcı-referansı + model-id + versiyonla çalışmasının
- * ONAYLANDIĞINI ve sağlayıcının RAPORLADIĞI hangi model-id/versiyon değerlerinin
- * kabul edileceğini (alias'lar) tanımlar. {@link #approvalRef} İÇERİK-ADRESLİdir:
- * politika alanlarının (status HARİÇ) kanonik SHA-256'sıdır — durum değişse (APPROVED→
- * REVOKED) ref DEĞİŞMEZ, ama herhangi bir politika alanı değişirse ref değişir.
+ * ONAYLANMASININ ADAYI olduğunu ve sağlayıcının RAPORLADIĞI hangi model-id/versiyon
+ * değerlerinin kabul edileceğini (alias'lar) tanımlar. {@link #approvalRef} İÇERİK-ADRESLİdir:
+ * politika alanlarının kanonik SHA-256'sıdır — herhangi bir politika alanı değişirse ref değişir.
+ *
+ * <p><b>gov1-1e-c authority cutover:</b> bu kayıt artık YALNIZ DEĞİŞMEZ POLİTİKA-İÇERİĞİdir
+ * (immutable policy-content) — onay-DURUMU (APPROVED/REVOKED/DRAFT/UNINITIALIZED) BURADA YOKTUR.
+ * Cari durum TEK OTORİTE olan GLOBAL model-governance WORM'undan ({@link ModelGovernanceLedger}
+ * + {@code ModelGovernanceStatusProjection} adapter'ı) çözülür; catalog yalnız "bu ref hangi politikayı
+ * tanımlar" sorusunu yanıtlar, "bu ref ŞU AN onaylı mı" sorusunu DEĞİL. {@code ApprovalStatus}
+ * enum'u yalnız WORM-transition-state vokabüleridir (bu kayda ait bir alan değil). Böylece aynı
+ * politika-içeriği (aynı ref) zaman içinde WORM'da APPROVED→REVOKED→APPROVED gezebilir; catalog
+ * kümülatif/append-only kalır (revoke edilen politika-içeriği silinmez).
  *
  * <p>Tüm string alanlar fail-closed doğrulanır: boş-değil, ≤128, izin-listesi
  * {@code [A-Za-z0-9._:@/-]} (kontrol/boşluk/URL/secret sızıntısı YOK), {@code ://}
@@ -42,7 +50,6 @@ public record ApprovedModelSpec(
         Set<String> allowedReportedModelVersionAliases,
         String endpointRef,
         String invocationProfileVersion,
-        ApprovalStatus status,
         ModelScope scope) {
 
     private static final int MAX_LEN = 128;
@@ -51,9 +58,6 @@ public record ApprovedModelSpec(
     public ApprovedModelSpec {
         if (capability == null) {
             throw new IllegalArgumentException("capability zorunlu (fail-closed)");
-        }
-        if (status == null) {
-            throw new IllegalArgumentException("status zorunlu (fail-closed)");
         }
         if (scope == null) {
             throw new IllegalArgumentException("scope zorunlu (fail-closed)");
@@ -89,7 +93,8 @@ public record ApprovedModelSpec(
 
     /**
      * Politika alanlarından {@link ModelApprovalRef}'i TÜRETİR ve kaydı kurar —
-     * çağıran yanlış/eşleşmeyen ref veremez. Alias kümeleri null → boş.
+     * çağıran yanlış/eşleşmeyen ref veremez. Alias kümeleri null → boş. Onay-durumu
+     * bu kaydın parçası DEĞİLDİR (WORM tek otorite; 1e-c cutover).
      */
     public static ApprovedModelSpec of(
             Capability capability,
@@ -100,14 +105,13 @@ public record ApprovedModelSpec(
             Set<String> allowedReportedModelVersionAliases,
             String endpointRef,
             String invocationProfileVersion,
-            ApprovalStatus status,
             ModelScope scope) {
         Set<String> idAliases = allowedReportedModelIdAliases == null ? Set.of() : allowedReportedModelIdAliases;
         Set<String> versionAliases = allowedReportedModelVersionAliases == null ? Set.of() : allowedReportedModelVersionAliases;
         ModelApprovalRef ref = computeApprovalRef(capability, configuredProviderRef, requestedModelId,
                 requestedModelVersion, idAliases, versionAliases, endpointRef, invocationProfileVersion, scope);
         return new ApprovedModelSpec(ref, capability, configuredProviderRef, requestedModelId,
-                requestedModelVersion, idAliases, versionAliases, endpointRef, invocationProfileVersion, status, scope);
+                requestedModelVersion, idAliases, versionAliases, endpointRef, invocationProfileVersion, scope);
     }
 
     /** Bu kaydın içerik-adresli digest'i (== {@link #approvalRef}; determinist yeniden-hesap). */
@@ -138,7 +142,8 @@ public record ApprovedModelSpec(
     /**
      * İçerik-adresli digest hesabı: politika alanlarının KANONİK serileştirmesi
      * (sabit alan kümesi — kernel {@link JsonCodec} anahtarları sıralar; alias dizileri
-     * leksikografik sıralı; boşluk-varyansı yok) → SHA-256 → {@code mapr_<hex>}. status DAHİL DEĞİL.
+     * leksikografik sıralı; boşluk-varyansı yok) → SHA-256 → {@code mapr_<hex>}. Onay-durumu
+     * girdi DEĞİLDİR (zaten kayıtta yok; 1e-c cutover) — ref yalnız politika-içeriğinin kimliğidir.
      */
     public static ModelApprovalRef computeApprovalRef(
             Capability capability,

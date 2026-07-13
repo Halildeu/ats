@@ -9,7 +9,6 @@
       "allowedReportedModelVersionAliases": [],
       "endpointRef": "denetim-stt-internal",
       "invocationProfileVersion": "ip-1",
-      "status": "APPROVED",
       "scope": "GLOBAL"
     },
     {
@@ -19,7 +18,6 @@
       "requestedModelVersion": "v2",
       "endpointRef": "denetim-cite-internal",
       "invocationProfileVersion": "ip-1",
-      "status": "REVOKED",
       "scope": "GLOBAL"
     }
   ]

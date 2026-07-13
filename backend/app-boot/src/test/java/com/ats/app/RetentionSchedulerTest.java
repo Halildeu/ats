@@ -28,6 +28,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
         "ats.retention.days=30",
         "ats.retention.tenants=sched-tenant",
 })
+@org.springframework.context.annotation.Import(WormGovernanceTestSeed.class)
 class RetentionSchedulerTest {
 
     @Container

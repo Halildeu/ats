@@ -1,10 +1,10 @@
 package com.ats.governance;
 
-import com.ats.contracts.governance.ApprovalStatus;
 import com.ats.contracts.governance.ApprovedModelRegistry;
 import com.ats.contracts.governance.ApprovedModelSpec;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.ModelApprovalRef;
+import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.contracts.governance.ModelScope;
 import com.ats.kernel.JsonCodec;
 import com.ats.kernel.JsonValue;
@@ -26,8 +26,19 @@ import java.util.Set;
  * Herhangi bir ihlal kurulumu düşürür ({@link IllegalStateException}) — bozuk politika sessizce
  * yüklenmez.
  *
- * <p>Kaynak şeması: kök object, {@code "approvedModels"} dizisi; her öğe politika alanları +
- * {@code status}/{@code scope} (approvalRef VERİLMEZ — içerik-adresli, türetilir):
+ * <p><b>gov1-1e-c authority cutover:</b> kaynak yalnız DEĞİŞMEZ POLİTİKA-İÇERİĞİDİR — onay-DURUMU
+ * ({@code status}) taşımaz. Strict exact-key parser eski {@code "status"} anahtarını (ve her bilinmeyen
+ * anahtarı) AÇIKÇA REDDEDER (sessiz-ignore YOK; eski/kurcalanmış catalog fail-closed düşer). Cari durum
+ * TEK OTORİTE olan GLOBAL WORM'dan çözülür ({@link ModelGovernanceLedger.Reader} +
+ * {@link ModelGovernanceStatusProjection}).
+ *
+ * <p>İki kuruluş yolu: {@link #fromClasspath(String, ModelGovernanceLedger.Reader)} / {@link
+ * #fromJson(String, ModelGovernanceLedger.Reader)} TAM registry'dir (resolve WORM-status çözer);
+ * WORM'suz {@link #fromClasspath(String)} / {@link #fromJson(String)} YALNIZ-KEŞİFtir (approvedSpecs/
+ * approvalRefsFor çalışır; resolve fail-closed {@code NOT_CONFIGURED}).
+ *
+ * <p>Kaynak şeması: kök object, {@code "approvedModels"} dizisi; her öğe politika alanları
+ * (approvalRef VERİLMEZ — içerik-adresli, türetilir; {@code status} VERİLMEZ — WORM otorite):
  * <pre>
  * { "approvedModels": [ {
  *     "capability": "TRANSCRIBE",
@@ -38,11 +49,16 @@ import java.util.Set;
  *     "allowedReportedModelVersionAliases": [],
  *     "endpointRef": "denetim-stt-internal",
  *     "invocationProfileVersion": "ip-1",
- *     "status": "APPROVED",
  *     "scope": "GLOBAL" } ] }
  * </pre>
  */
 public final class FileBackedApprovedModelRegistry implements ApprovedModelRegistry {
+
+    /** Strict exact-key şema (1e-c): yalnız bu politika alanları izinli; {@code status}/bilinmeyen → RED. */
+    private static final Set<String> ALLOWED_KEYS = Set.of(
+            "capability", "configuredProviderRef", "requestedModelId", "requestedModelVersion",
+            "allowedReportedModelIdAliases", "allowedReportedModelVersionAliases",
+            "endpointRef", "invocationProfileVersion", "scope");
 
     private final InMemoryApprovedModelRegistry delegate;
 
@@ -50,18 +66,37 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
         this.delegate = delegate;
     }
 
-    public static FileBackedApprovedModelRegistry fromJson(String json) {
-        return new FileBackedApprovedModelRegistry(InMemoryApprovedModelRegistry.of(parse(json)));
+    // --- TAM registry (catalog + WORM status-otorite): resolve WORM'dan cari durumu çözer ---
+
+    public static FileBackedApprovedModelRegistry fromJson(String json, ModelGovernanceLedger.Reader worm) {
+        return new FileBackedApprovedModelRegistry(InMemoryApprovedModelRegistry.of(parse(json), worm));
     }
 
+    public static FileBackedApprovedModelRegistry fromClasspath(
+            String resourcePath, ModelGovernanceLedger.Reader worm) {
+        return new FileBackedApprovedModelRegistry(InMemoryApprovedModelRegistry.of(load(resourcePath), worm));
+    }
+
+    // --- YALNIZ-KEŞİF (WORM bağlanmamış): approvedSpecs/approvalRefsFor çalışır; resolve NOT_CONFIGURED ---
+
+    /** Yalnız-keşif (drift-safety/operatör ref-keşfi): catalog yüklü, WORM yok → resolve fail-closed. */
+    public static FileBackedApprovedModelRegistry fromJson(String json) {
+        return new FileBackedApprovedModelRegistry(InMemoryApprovedModelRegistry.ofCatalogOnly(parse(json)));
+    }
+
+    /** Yalnız-keşif (drift-safety/operatör ref-keşfi): catalog yüklü, WORM yok → resolve fail-closed. */
     public static FileBackedApprovedModelRegistry fromClasspath(String resourcePath) {
+        return new FileBackedApprovedModelRegistry(InMemoryApprovedModelRegistry.ofCatalogOnly(load(resourcePath)));
+    }
+
+    private static List<ApprovedModelSpec> load(String resourcePath) {
         ClassLoader cl = FileBackedApprovedModelRegistry.class.getClassLoader();
         try (InputStream in = cl.getResourceAsStream(resourcePath)) {
             if (in == null) {
                 throw new IllegalStateException(
                         "onaylı-model kaynağı classpath'te yok (fail-closed): " + resourcePath);
             }
-            return fromJson(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            return parse(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new IllegalStateException("onaylı-model kaynağı okunamadı: " + resourcePath, e);
         }
@@ -86,6 +121,18 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
     }
 
     private static ApprovedModelSpec toSpec(JsonValue.JsonObject e) {
+        // Strict exact-key schema (gov1-1e-c): 'status' KALDIRILDI (WORM tek status-otorite) → açık RED;
+        // her bilinmeyen anahtar da RED (eski/kurcalanmış catalog sessizce yüklenmesin — fail-closed).
+        if (e.values().containsKey("status")) {
+            throw new IllegalStateException("onaylı-model kaynağı: 'status' alanı KALDIRILDI (gov1-1e-c: WORM "
+                    + "tek status-otorite; catalog yalnız değişmez politika-içeriği). Eski catalog RED (fail-closed).");
+        }
+        for (String key : e.values().keySet()) {
+            if (!ALLOWED_KEYS.contains(key)) {
+                throw new IllegalStateException(
+                        "onaylı-model kaynağı: bilinmeyen/izinsiz alan '" + key + "' (exact-key şema; fail-closed)");
+            }
+        }
         return ApprovedModelSpec.of(
                 enumValue(Capability.class, reqStr(e, "capability")),
                 reqStr(e, "configuredProviderRef"),
@@ -95,7 +142,6 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
                 strSet(e, "allowedReportedModelVersionAliases"),
                 reqStr(e, "endpointRef"),
                 reqStr(e, "invocationProfileVersion"),
-                enumValue(ApprovalStatus.class, reqStr(e, "status")),
                 enumValue(ModelScope.class, reqStr(e, "scope")));
     }
 
@@ -147,7 +193,7 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
         return delegate.resolveConfigured(capability, configuredProviderRef, requestedModelId, requestedModelVersion);
     }
 
-    /** READ-ONLY discovery (PORT DIŞI): yüklü spec'lerin değişmez kopyası — delegate'e devreder. */
+    /** READ-ONLY discovery (PORT DIŞI): yüklü catalog spec'lerinin değişmez kopyası — delegate'e devreder. */
     public List<ApprovedModelSpec> approvedSpecs() {
         return delegate.approvedSpecs();
     }

@@ -26,9 +26,13 @@ class GovernanceDefaultsFailClosedTest {
     private static final String RESOURCE = "model-governance/approved-models.json";
     private static final String BASE_URL = "http://127.0.0.1:9";
 
+    // gov1-1e-c: registry WORM-backed. SHIPPED kimlikler in-memory WORM'da APPROVED seed'lenir
+    // (test-fixture-seed); "beyan yoksa boot yok" fail'leri resolve'dan ÖNCE (endpoint/ref eksikliği)
+    // olduğundan bu seed pozitif-boot yolunu WORM-status'le tutarlı kılar.
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(GateConfig.class)
-            .withBean(ApprovedModelRegistry.class, () -> FileBackedApprovedModelRegistry.fromClasspath(RESOURCE));
+            .withBean(ApprovedModelRegistry.class, () ->
+                    FileBackedApprovedModelRegistry.fromClasspath(RESOURCE, AiGovernanceTestSupport.shippedApprovedLedger()));
 
     /** WiringConfig.authorizedModelBindings kenarının minimal sadık kopyası (aynı üretim fonksiyonu). */
     @Configuration

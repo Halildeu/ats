@@ -251,19 +251,26 @@ class WiringConfig {
     // --- model governance (P3-gov0): onaylı-model registry + fail-closed boot-doğrulama ---
 
     /**
-     * Onaylı-model registry: konfig'te kaynak verilmişse dosya-destekli (yükleme-anı
-     * fail-closed), yoksa boş in-memory. Adapter model-governance modülünde; port
-     * contracts-java'da (ArchUnit boundary).
+     * Onaylı-model registry (gov1-1e-c authority cutover): konfig'te kaynak verilmişse dosya-destekli
+     * (yükleme-anı fail-closed politika-içeriği), yoksa boş in-memory. Adapter model-governance modülünde;
+     * port contracts-java'da (ArchUnit boundary).
+     *
+     * <p><b>1e-c:</b> registry artık İKİ KAYNAĞI birleştirir — catalog (resource, değişmez politika-içeriği)
+     * + WORM ({@link ModelGovernanceLedger.Reader} bean, TEK status-otorite). {@code resolve} her çağrıda
+     * WORM'dan CARI durumu TAZE okur (cache YOK; revoke anında görünür). Reader Flyway'e bağlı olduğundan
+     * (şema hazır olmadan Reader bean'i yok) bu registry de dolaylı Flyway'e bağlıdır → boot-gate WORM
+     * migrate edildikten sonra resolve eder. Normal boot WORM'a YAZMAZ (boot-seed YASAK); WORM'da APPROVED
+     * transition yoksa boot-gate fail-closed düşer (owner-gated ilk transition ayrı CLI/workflow — ADR-0021).
      */
     @Bean
-    ApprovedModelRegistry approvedModelRegistry(ModelGovernanceProperties gov) {
+    ApprovedModelRegistry approvedModelRegistry(ModelGovernanceProperties gov, ModelGovernanceLedger.Reader worm) {
         String resource = gov.approvedModelsResource();
         if (resource == null) {
             LOG.warn("model-governance: onaylı-model kaynağı verilmedi — BOŞ registry "
                     + "(wire'lanmış capability doğrulanamaz; wiring varsa boot fail-closed düşer).");
             return InMemoryApprovedModelRegistry.empty();
         }
-        return FileBackedApprovedModelRegistry.fromClasspath(resource);
+        return FileBackedApprovedModelRegistry.fromClasspath(resource, worm);
     }
 
     /**
