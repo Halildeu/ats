@@ -15,5 +15,5 @@
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "wire", "stubs", "test", "tools", "skills", "integrity"]
+  "include": ["src", "wire", "stubs", "test", "tools", "skills", "integrity", "agentic"]
 }
