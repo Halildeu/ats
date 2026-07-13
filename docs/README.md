@@ -30,6 +30,7 @@
   - P5.2 `contracts/release/offline-bundle-verifier.ts` — sentetik bundle byte-integrity, exact inventory, subject/SBOM/provenance/signature coverage ve offline trust receipt verifier; production/deploy-ready kanıtı değildir.
   - P6.1 `contracts/fairness/fairness-evidence.ts` — opaque-ref sentetik aggregate cohort sayıları üzerinde minimum örneklem, missingness, sabit four-fifths screening oranı ve Wilson %95 belirsizlik hesaplayıcısı; hukuki/fairness hükmü veya bireysel karar üretmez.
   - P6.2 `contracts/coaching/citation-backed-coaching.ts` — öneri-başına rubric criterion + `SUPPORTED` entailment citation bağlayan sentetik/ref-only coaching proposal ve correction-review kontratı; serbest AI metni, scoring/ranking veya action üretmez.
+  - P6.3 `contracts/skills/versioned-skills-ontology.ts` — immutable release lineage, ref-only locale label, exact proposal/evidence/citation/concept/release bağları, terminal tombstone ve sırasız proposal-only talent rediscovery kontratı; gerçek subject, ranking/action veya full-ATS aktivasyonu üretmez.
 - [security/control-map.md](./security/control-map.md) — ISO 27001:2022/SOC 2 TSC/OWASP kontrol alanları → threat-register ID cross-doc eşlemesi (drift-guard `control-map-guard`; sertifika beyanı DEĞİL).
 - [security/threat-register.md](./security/threat-register.md) — STRIDE + LINDDUN → kontrol → test matrisi (ATS-0007 register'ı; bugün enforced guard'lar + gate-locked kontroller).
 
