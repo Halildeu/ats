@@ -81,6 +81,38 @@ class FileBackedApprovedModelRegistryTest {
     }
 
     @Test
+    void load_fails_on_root_level_status_key() {
+        // Codex 1e-c REVISE: KÖK-seviye 'status' (sahte "global approval" izlenimi) SESSİZCE yok
+        // sayılmaz → açık RED. Entry geçerli olsa bile kök exact-key ihlali catalog'u düşürür.
+        String json = """
+            { "status":"APPROVED",
+              "approvedModels": [
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("kök") && ex.getMessage().contains("status"), ex.getMessage());
+    }
+
+    @Test
+    void load_fails_on_root_level_unknown_key() {
+        // KÖK-seviye herhangi bilinmeyen alan → RED (kök yalnız 'approvedModels').
+        String json = """
+            { "unexpectedTrustFlag":true,
+              "approvedModels": [
+              { "capability":"TRANSCRIBE","configuredProviderRef":"p","requestedModelId":"m","requestedModelVersion":"v",
+                "endpointRef":"e","invocationProfileVersion":"ip","scope":"GLOBAL" }
+            ] }
+            """;
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FileBackedApprovedModelRegistry.fromJson(json));
+        assertTrue(ex.getMessage().contains("kök") && ex.getMessage().contains("unexpectedTrustFlag"),
+                ex.getMessage());
+    }
+
+    @Test
     void load_fails_on_duplicate_ref() {
         // İKİ ÖZDEŞ politika-içeriği (status yok) ⇒ AYNI içerik-adresli ref → belirsiz (fail-closed).
         String json = """

@@ -110,6 +110,15 @@ public final class FileBackedApprovedModelRegistry implements ApprovedModelRegis
         if (!(obj.values().get("approvedModels") instanceof JsonValue.JsonArray list)) {
             throw new IllegalStateException("onaylı-model kaynağı: 'approvedModels' dizisi zorunlu (fail-closed)");
         }
+        // KÖK exact-key şema (gov1-1e-c, Codex REVISE): kökte YALNIZ 'approvedModels' izinli. Root-level
+        // 'status' (sahte "global approval" izlenimi) veya herhangi bilinmeyen alan sessizce yok sayılmaz →
+        // açık RED (governance-artifact bütünlüğü; ADR ATS-0021 "her bilinmeyen alan RED" ile tutarlı).
+        for (String key : obj.values().keySet()) {
+            if (!"approvedModels".equals(key)) {
+                throw new IllegalStateException("onaylı-model kaynağı: kökte bilinmeyen/izinsiz alan '" + key
+                        + "' (kök yalnız 'approvedModels'; root-level 'status' dahil RED; exact-key şema; fail-closed).");
+            }
+        }
         List<ApprovedModelSpec> specs = new ArrayList<>();
         for (JsonValue item : list.items()) {
             if (!(item instanceof JsonValue.JsonObject entry)) {
