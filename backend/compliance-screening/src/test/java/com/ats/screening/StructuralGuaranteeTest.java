@@ -43,7 +43,9 @@ class StructuralGuaranteeTest {
     }
 
     @Test
-    void protected_category_is_the_closed_kvkk_axis_set() {
+    void protected_category_is_the_closed_composite_compliance_taxonomy() {
+        // BİLEŞİK korumalı/işe-alım-uyum taksonomisi (KVKK m.6 + geniş işe-alım-ayrımcılık ekseni) —
+        // TAMAMEN KVKK m.6 kümesi DEĞİL; kapalı 13-üye.
         assertEquals(13, ProtectedCategory.values().length);
         assertEquals(Set.of(
                 "AGE", "RELIGION_BELIEF", "ETHNICITY_RACE", "TRADE_UNION", "HEALTH_DISABILITY",
@@ -51,6 +53,15 @@ class StructuralGuaranteeTest {
                 "PHILOSOPHICAL_BELIEF", "CRIMINAL_RECORD", "NATIVE_LANGUAGE_ACCENT",
                 "ASSOCIATION_MEMBERSHIP", "PREGNANCY_MATERNITY"),
                 names(ProtectedCategory.values()));
+    }
+
+    @Test
+    void screening_source_kind_is_the_closed_lineage_set() {
+        // KAPALI köken-kümesi (156-b kapalı-küme dondurmadan önce PIN'lenir). CITATION_CLAIM 156-c
+        // üreticisinin kanonik atıf-iddiası kökenidir; FREE_TEXT'e karışmaz (lineage bütünlüğü).
+        assertEquals(Set.of(
+                "TRANSCRIPT_SEGMENT", "INTERVIEW_NOTE", "RUBRIC_TEXT", "CITATION_CLAIM", "FREE_TEXT"),
+                names(ScreeningSourceKind.values()));
     }
 
     @Test

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,6 +36,12 @@ public final class ScreeningPolicy {
 
     /** Normalize-token dilbilgisi: yalnız ASCII harf/rakam (normalizer çıktısıyla uyumlu). */
     private static final Pattern TOKEN = Pattern.compile("[a-z0-9]+");
+
+    /**
+     * BCP-47 benzeri dil-tag biçimi: küçük-harf primary subtag ({@code [a-z]{2,3}}) + isteğe bağlı
+     * alt-tag'ler. Yalnız parse edilmez, FORMAT-doğrulanır (bozuk değer yüklemeyi düşürür).
+     */
+    private static final Pattern LANG_TAG = Pattern.compile("[a-z]{2,3}(-[A-Za-z0-9]{1,8})*");
 
     public enum Kind { WORD, PHRASE, STEM }
 
@@ -124,6 +131,11 @@ public final class ScreeningPolicy {
 
         Set<String> langs = new LinkedHashSet<>();
         for (String lang : reqStrArray(obj, "supportedLanguages")) {
+            if (!LANG_TAG.matcher(lang).matches()) {
+                throw new IllegalStateException(
+                        "tarama-policy: supportedLanguages biçimi geçersiz (BCP-47 base(-alt-tag)*; fail-closed): "
+                                + lang);
+            }
             if (!langs.add(lang)) {
                 throw new IllegalStateException("tarama-policy: supportedLanguages yinelenen: " + lang);
             }
@@ -163,8 +175,13 @@ public final class ScreeningPolicy {
             }
             out.add(new Category(code, terms));
         }
-        if (out.isEmpty()) {
-            throw new IllegalStateException("tarama-policy: categories boş olamaz (fail-closed)");
+        // 13-kategori TAM zorunlu: eksik/fazla/unknown → load-time RED (unknown zaten enumValue'da,
+        // yinelenen seen.add'de düşer; burada eksik-kategori kapatılır — tek-AGE gibi kısmi policy YASAK).
+        if (!seen.equals(EnumSet.allOf(ProtectedCategory.class))) {
+            EnumSet<ProtectedCategory> missing = EnumSet.allOf(ProtectedCategory.class);
+            missing.removeAll(seen);
+            throw new IllegalStateException(
+                    "tarama-policy: korumalı-kategori kümesi TAM olmalı (13/13; fail-closed); eksik: " + missing);
         }
         return out;
     }

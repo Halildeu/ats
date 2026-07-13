@@ -11,6 +11,12 @@ public enum ScreeningSourceKind {
     INTERVIEW_NOTE,
     /** Rubric/kriter metni (job-related değerlendirme ölçütü). */
     RUBRIC_TEXT,
+    /**
+     * Kanonik ATIF-İDDİASI (citation-claim): 156-c üreticisi bir transkript-segmentini bir
+     * kanonik atıf-iddiasına bağlar. Bu köken kendi başına bir lineage-türüdür — iddiayı
+     * {@code FREE_TEXT} saymak soyağacını zayıflatır ve 156-b kapalı-kümesini yanlış dondurur.
+     */
+    CITATION_CLAIM,
     /** Kaynağı belirtilmemiş serbest metin. */
     FREE_TEXT
 }

@@ -1,8 +1,10 @@
 package com.ats.screening;
 
 /**
- * KAPALI korumalı-özellik kategorileri (KVKK m.6 özel-nitelikli veri + işe-alım ayrımcılık
- * ekseni). Bu enum bilinçli olarak KAPALIDIR: yeni bir kategori yalnız kanonik-policy sürüm
+ * KAPALI korumalı-özellik kategorileri — BİLEŞİK (composite) bir korumalı/işe-alım-uyum
+ * taksonomisidir. Bu küme TAMAMEN KVKK m.6 özel-nitelikli-veri kümesi DEĞİLDİR: KVKK m.6 ekseni
+ * ile daha geniş işe-alım-ayrımcılık ekseninin (ör. medeni/ebeveyn durumu, ana-dil/aksan, hamilelik)
+ * bileşimidir. Enum bilinçli olarak KAPALIDIR: yeni bir kategori yalnız kanonik-policy sürüm
  * yükseltmesiyle (ve bu enum + parity-test güncellemesiyle) eklenebilir — serbest genişleme YOK.
  *
  * <p>Kategori = yalnız "hangi korumalı eksen" bilgisidir; aday hakkında bir HÜKÜM değildir

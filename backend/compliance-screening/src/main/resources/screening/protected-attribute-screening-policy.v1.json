@@ -127,6 +127,7 @@
         { "text": "divorced", "kind": "WORD" },
         { "text": "cocugunuz", "kind": "WORD" },
         { "text": "ebeveyn", "kind": "WORD" },
+        { "text": "parental", "kind": "WORD" },
         { "text": "medeni hal", "kind": "PHRASE" },
         { "text": "medeni durumunuz", "kind": "PHRASE" },
         { "text": "cocuk sahibi", "kind": "PHRASE" },
@@ -191,7 +192,8 @@
         { "text": "ana dil", "kind": "PHRASE" },
         { "text": "native language", "kind": "PHRASE" },
         { "text": "mother tongue", "kind": "PHRASE" },
-        { "text": "native speaker", "kind": "PHRASE" }
+        { "text": "native speaker", "kind": "PHRASE" },
+        { "text": "native english", "kind": "PHRASE" }
       ]
     },
     {

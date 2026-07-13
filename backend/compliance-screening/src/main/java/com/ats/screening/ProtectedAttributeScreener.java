@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 
@@ -18,7 +19,8 @@ import java.util.Set;
  * ofsete çevrilir → aynı-kategori içerilen-span'ler ayıklanır → deterministik sıralama.
  *
  * <p>Kapsam (fail-closed): {@code POLICY_UNAVAILABLE} (policy yok) / {@code MALFORMED_INPUT}
- * (null/eşsiz-surrogate/kontrol-karakteri/aşırı-uzun) / {@code UNSUPPORTED_LANGUAGE} (baskın-yazım
+ * (null/eşsiz-surrogate/kontrol-karakteri/aşırı-uzun) / {@code UNSUPPORTED_LANGUAGE} (BEYAN edilen
+ * dil base-tag'i desteklenmez — null/blank/diğer; VEYA base-tag tr/en olsa bile metnin BASKIN yazımı
  * Latin değil) / {@code SUPPORTED}. SUPPORTED dışında bulgu-boş olsa da sonuç TEMİZ değildir.
  *
  * <p><b>fuzzy/edit-distance/ML YOK</b> (kontrollü stem/prefix hariç genel-stemming YOK).
@@ -32,9 +34,23 @@ public final class ProtectedAttributeScreener {
     private static final int MAX_INPUT_CHARS = 200_000;
 
     private final ScreeningPolicy policy; // null => POLICY_UNAVAILABLE
+    /** Desteklenen dil BASE-tag'leri (policy.supportedLanguages'ten türetilir); policy yoksa boş. */
+    private final Set<String> supportedBaseTags;
 
     private ProtectedAttributeScreener(ScreeningPolicy policy) {
         this.policy = policy;
+        this.supportedBaseTags = policy == null ? Set.of() : deriveBaseTags(policy.supportedLanguages());
+    }
+
+    private static Set<String> deriveBaseTags(Set<String> supportedLanguages) {
+        Set<String> bases = new LinkedHashSet<>();
+        for (String lang : supportedLanguages) {
+            String base = baseTag(lang);
+            if (base != null) {
+                bases.add(base);
+            }
+        }
+        return Set.copyOf(bases);
     }
 
     /** Yüklü policy ile tarayıcı. */
@@ -52,13 +68,18 @@ public final class ProtectedAttributeScreener {
         return new ProtectedAttributeScreener(null);
     }
 
-    /** Segment bağlamı olmayan tek-string taraması. */
-    public ScreeningResult screen(String text, ScreeningSourceKind sourceKind) {
-        return screenSegment(text, sourceKind, null);
+    /**
+     * Segment bağlamı olmayan tek-string taraması. {@code languageTag} çağıranın BEYAN ettiği dil
+     * (BCP-47; örn. {@code tr}, {@code tr-TR}, {@code en-US}); base-tag policy'nin desteklediği
+     * diller kümesinde değilse {@code UNSUPPORTED_LANGUAGE}.
+     */
+    public ScreeningResult screen(String text, ScreeningSourceKind sourceKind, String languageTag) {
+        return screenSegment(text, sourceKind, languageTag, null);
     }
 
     /** Segment bağlamlı tarama ({@code segmentIndex} span'lere taşınır). */
-    public ScreeningResult screenSegment(String text, ScreeningSourceKind sourceKind, Integer segmentIndex) {
+    public ScreeningResult screenSegment(String text, ScreeningSourceKind sourceKind, String languageTag,
+            Integer segmentIndex) {
         Objects.requireNonNull(sourceKind, "sourceKind");
         if (segmentIndex != null && segmentIndex < 0) {
             throw new IllegalArgumentException("segmentIndex < 0: " + segmentIndex);
@@ -72,8 +93,13 @@ public final class ProtectedAttributeScreener {
         if (isMalformed(text)) {
             return build(runId, ref, Coverage.MALFORMED_INPUT, List.of());
         }
+        // (1) BEYAN edilen dil ekseni: base-tag policy'nin desteklediği dillerde mi (null/blank/diğer → RED).
+        if (!isSupportedBaseTag(languageTag)) {
+            return build(runId, ref, Coverage.UNSUPPORTED_LANGUAGE, List.of());
+        }
         TextNormalizer.Normalized norm = TextNormalizer.normalize(text);
-        if (isUnsupportedScript(norm.text())) {
+        // (2) BASKIN-YAZIM ekseni: base-tag tr/en olsa BİLE metnin baskın yazımı Latin değilse → RED.
+        if (isDominantScriptNonLatin(norm.text())) {
             return build(runId, ref, Coverage.UNSUPPORTED_LANGUAGE, List.of());
         }
         List<ScreeningFinding> findings = scan(norm, sourceKind, segmentIndex);
@@ -245,8 +271,35 @@ public final class ProtectedAttributeScreener {
         return false;
     }
 
-    /** Baskın-yazım Latin dışı mı: hiç Latin (a-z, normalize sonrası) harf yok ama başka harf var. */
-    private static boolean isUnsupportedScript(String norm) {
+    /** Beyan edilen dil base-tag'i policy'nin desteklediği dillerde mi (null/blank/diğer → false). */
+    private boolean isSupportedBaseTag(String languageTag) {
+        String base = baseTag(languageTag);
+        return base != null && supportedBaseTags.contains(base);
+    }
+
+    /**
+     * BCP-47 base (primary) subtag'i küçük-harf döndürür: ilk {@code '-'} öncesi (yoksa tümü),
+     * trim + {@link Locale#ROOT} küçük-harf. null/blank/boş-base → null (fail-closed).
+     */
+    private static String baseTag(String languageTag) {
+        if (languageTag == null) {
+            return null;
+        }
+        String t = languageTag.trim();
+        if (t.isEmpty()) {
+            return null;
+        }
+        int dash = t.indexOf('-');
+        String base = (dash >= 0 ? t.substring(0, dash) : t).toLowerCase(Locale.ROOT);
+        return base.isEmpty() ? null : base;
+    }
+
+    /**
+     * BASKIN-yazım Latin dışı mı: normalize-metindeki NON-Latin harf sayısı Latin (a-z) harf
+     * sayısından KESİN olarak fazlaysa true (gerçek baskınlık ölçümü; "hiç-Latin-yok" değil — tek
+     * bir Latin karakter Arapça/Kiril baskın bir metni desteklenir yapmaz). Harf yoksa false.
+     */
+    private static boolean isDominantScriptNonLatin(String norm) {
         int latin = 0;
         int other = 0;
         int i = 0;
@@ -260,7 +313,7 @@ public final class ProtectedAttributeScreener {
                 other++;
             }
         }
-        return latin == 0 && other > 0;
+        return other > latin;
     }
 
     // ---- token yardımcıları ----
@@ -379,20 +432,9 @@ public final class ProtectedAttributeScreener {
 
     private static ScreeningResult build(ScreeningRunId runId, ScreeningPolicyRef ref, Coverage coverage,
             List<ScreeningFinding> findings) {
-        return new ScreeningResult(runId, ref, coverage, findings, FindingSetRef.ofCanonical(canonical(findings)));
-    }
-
-    /** Deterministik bulgu-serileştirmesi (içerik-adresli FindingSetRef girdisi). */
-    private static String canonical(List<ScreeningFinding> findings) {
-        StringBuilder sb = new StringBuilder();
-        for (ScreeningFinding f : findings) {
-            sb.append(f.category()).append('|')
-                    .append(f.signal()).append('|')
-                    .append(f.sourceKind()).append('|')
-                    .append(f.span().startInclusive()).append('|')
-                    .append(f.span().endExclusive()).append('|')
-                    .append(f.span().segmentIndex()).append(';');
-        }
-        return sb.toString();
+        // FindingSetRef KRİPTOGRAFİK-RASTGELE opaktır (içerik-adresli DEĞİL): her tarama YENİ ref
+        // (çapraz-aday linkability + boş-sonuç çakışması + WORM'a hassas-hash engeli). Bulgu-içerik
+        // özeti gerekiyorsa 156-b restricted-store'un konusudur; Result/WORM işaretçisi taşımaz.
+        return new ScreeningResult(runId, ref, coverage, findings, FindingSetRef.random());
     }
 }

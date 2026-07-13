@@ -1,93 +1,83 @@
 #!/usr/bin/env node
 /**
- * Rubric standard drift guard (ATS-0005 · Codex 019f17a2 REVISE absorb).
+ * Rubric standard drift guard (ATS-0005 · Codex 019f17a2 + 019f57cb REVISE absorb).
  *
  *  1. Minimal JSON-Schema validator (no-dep, $ref/$defs/pattern/maxLength/maxItems; unsupported-kw FAIL).
- *  2. PROTECTED-ATTRIBUTE registry (TR-normalize + SAFE-PHRASE-STRIP): korumalı-özellik (yaş/din/etnik/
- *     sendika/sağlık-durumu/cinsiyet/cinsel-yönelim/medeni-hal/ebeveyn/siyasi/felsefi/sabıka/ana-dil-aksan/
- *     dernek-vakıf/hamilelik) key+value+schema-key'de reddedilir; iş-ilişkili çakışma phrase'leri (race-condition/
- *     health-domain/medical-domain) metinden ÇIKARILIR (early-return değil) → kalan protected token yine yakalanır.
- *  3. SCORING/AFFECT yasağı (key+value): score/weight/rank/rating/affect.
+ *  2. PROTECTED-ATTRIBUTE taraması TEK KANONİK registry'den TÜREVLİDİR (term-düzeyi single-source):
+ *     `scripts/lib/protected-screening-policy.mjs` kanonik `protected-attribute-screening-policy.v1.json`'dan
+ *     protected-term + safe-phrase üretir; bu script İKİNCİ bir regex/term registry'si TUTMAZ. Böylece
+ *     policy'ye eklenen/çıkarılan bir TERİM (yalnız kategori-ADI değil) otomatik yansır — Java kernel +
+ *     Node-corpus + bu guard aynı fiziksel terim kümesini tüketir (iki-bağımsız-vokabüler drift'i imkânsız).
+ *  3. SCORING/AFFECT yasağı (key+value): score/weight/rank/rating/affect — bu, korumalı-özellik
+ *     policy'sinin KONUSU DEĞİLDİR; rubric-özel AYRI kural olarak burada tutulur (protected-policy'ye karışmaz).
  *  4. criterion_id tekil; her criterion job_relatedness_rationale_ref.
  *  5. Schema KEY drift taraması ($defs+properties adları) — opsiyonel forbidden alan engeli.
- *  6. GÖMÜLÜ outcome-aware self-test (negatif fail + ALLOW pozitif pass; durable regression).
+ *  6. GÖMÜLÜ self-test (negatif fail + ALLOW pozitif pass) + term-single-source drift kanıtı (durable regression).
  *
- * NOT (No Fake Work): regex yalnız AÇIK/okunabilir token'ları yakalar; opak ref'in semantik içeriği
- * (c-x1 ile encode) regex'le garanti EDİLEMEZ → semantik review ref-registry + human/legal onay P1/gate-locked.
+ * NOT (No Fake Work): leksik motor yalnız AÇIK/okunabilir token'ları yakalar; opak ref'in semantik içeriği
+ * (c-x1 ile encode) garanti EDİLEMEZ → semantik review ref-registry + human/legal onay P1/gate-locked.
+ *
+ * NOT (taksonomi): korumalı-kategori kümesi TAMAMEN KVKK m.6 değildir — m.6 ile geniş işe-alım-ayrımcılık
+ * ekseninin BİLEŞİK (composite) taksonomisidir.
  *
  * Bağımsız (npm dep YOK), CI job `rubric-guard`.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPolicy, scanProtectedCategories } from "./lib/protected-screening-policy.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = JSON.parse(readFileSync(join(REPO, "contracts/schemas/rubric.schema.json"), "utf8"));
 const SAMPLE = JSON.parse(readFileSync(join(REPO, "contracts/samples/rubric.sample.json"), "utf8"));
 
-// TR fold + diacritic strip + hyphen/underscore→space (token-context)
+// TR fold + diacritic strip + hyphen/underscore→space (token-context) — YALNIZ scoring/affect için;
+// protected-özellik taraması artık kanonik motordan (scanProtectedCategories) gelir.
 const norm = (s) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[-_]+/g, " ");
 
-const PROTECTED = [
-  { re: /hamile|gebe|pregnan|maternity|dogum izin/, label: "hamilelik" },
-  { re: /\byas\b|\bage\b|dogum tarih|birth date|\bdob\b|age range|30plus|yas arali/, label: "yaş" },
-  { re: /\bdin\b|\bdini\b|inanc|mezhep|religio/, label: "din/inanç" },
-  { re: /etnik|ethnic|\birk\b|\brace\b|koken|milliyet|nationalit|ancestry/, label: "etnik/ırk" },
-  { re: /sendika|trade union|union member/, label: "sendika" },
-  { re: /\bhealth\b|saglik|hastalik|engelli|disab|health status|medical condition|sick leave|chronic/, label: "sağlık/engellilik" },
-  { re: /cinsel|cinsiyet|gender|\bsex\b|lgbt|\btrans\b|nonbinary|sexual orient|gender ident|gender expression/, label: "cinsiyet/yönelim" },
-  { re: /medeni hal|marital|\bevli\b|\bbekar\b|\bmarried\b|parental|caregiver|family status|ebeveyn|cocuk sahibi/, label: "medeni/ebeveyn" },
-  { re: /siyasi|politik|political|\bparti\b/, label: "siyasi" },
-  { re: /felsefi|philosophical|world view|ideoloj/, label: "felsefi inanç" },
-  { re: /criminal|sabika|adli sicil|conviction/, label: "sabıka kaydı" },
-  { re: /native language|mother tongue|ana dil|native speaker|native english|\baccent\b|aksan|\bsive\b/, label: "ana-dil/aksan" },
-  { re: /dernek|vakif|association member|foundation member/, label: "dernek/vakıf üyeliği" },
-];
-// iş-ilişkili çakışma NÖTRLEME (safe-phrase strip — global early-return DEĞİL): yalnız bu phrase'ler
-// metinden ÇIKARILIR; kalan metin yine protected/scoring taranır (karışık string bypass engeli).
-const ALLOW_STRIP = /race condition|data race|health domain|medical domain|health tech|healthcare domain/g;
+// SCORING/affect regex'leri protected-policy'nin konusu DEĞİL → rubric-özel ayrı kural (single-source
+// dışında bilinçli tutulur; assist-not-conduct sınırı).
 const SCORING = [/score|skor|puan/, /weight|agirlik/, /\brank|ranking|siralama/, /rating/, /affect|sentiment|emotion|duygu/];
 
-// ATS 156-a — korumalı-özellik KATEGORİ ekseni TEK kanonik registry'den beslenir
-// (backend/compliance-screening/.../protected-attribute-screening-policy.v1.json). Bu drift-guard,
-// rubric-artifact tarayıcısı (bu script) ile transkript kernel'inin (Java ProtectedAttributeScreener)
-// AYNI kategori kümesini paylaşmasını makine-zorlar: kategori eklenir/çıkarılırsa iki taraf da
-// hizalanmadıkça kırmızı (iki-bağımsız-vokabüler drift'i engeli — tek-kaynak otorite).
+// Korumalı-özellik taraması: TEK kanonik policy'den türevli (ikinci registry YOK).
 const CANONICAL_POLICY = join(REPO, "backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v1.json");
-const LABEL_TO_CODE = {
-  "hamilelik": "PREGNANCY_MATERNITY",
-  "yaş": "AGE",
-  "din/inanç": "RELIGION_BELIEF",
-  "etnik/ırk": "ETHNICITY_RACE",
-  "sendika": "TRADE_UNION",
-  "sağlık/engellilik": "HEALTH_DISABILITY",
-  "cinsiyet/yönelim": "SEX_GENDER_ORIENTATION",
-  "medeni/ebeveyn": "MARITAL_PARENTAL_STATUS",
-  "siyasi": "POLITICAL_OPINION",
-  "felsefi inanç": "PHILOSOPHICAL_BELIEF",
-  "sabıka kaydı": "CRIMINAL_RECORD",
-  "ana-dil/aksan": "NATIVE_LANGUAGE_ACCENT",
-  "dernek/vakıf üyeliği": "ASSOCIATION_MEMBERSHIP",
+const POLICY = loadPolicy(CANONICAL_POLICY);
+
+// Kategori kodu → okunur TR etiketi (YALNIZ mesaj/gösterim; eşleşme mantığı %100 policy'den gelir,
+// bu harita eşleşmeye KATILMAZ — o yüzden "ikinci registry" değildir). Bilinmeyen kod → kodun kendisi.
+const CODE_TO_LABEL = {
+  AGE: "yaş",
+  RELIGION_BELIEF: "din/inanç",
+  ETHNICITY_RACE: "etnik/ırk",
+  TRADE_UNION: "sendika",
+  HEALTH_DISABILITY: "sağlık/engellilik",
+  SEX_GENDER_ORIENTATION: "cinsiyet/yönelim",
+  MARITAL_PARENTAL_STATUS: "medeni/ebeveyn",
+  POLITICAL_OPINION: "siyasi",
+  PHILOSOPHICAL_BELIEF: "felsefi inanç",
+  CRIMINAL_RECORD: "sabıka kaydı",
+  NATIVE_LANGUAGE_ACCENT: "ana-dil/aksan",
+  ASSOCIATION_MEMBERSHIP: "dernek/vakıf üyeliği",
+  PREGNANCY_MATERNITY: "hamilelik",
 };
-function canonicalRegistryBinding() {
-  const errs = [];
-  let registryCodes;
-  try {
-    const reg = JSON.parse(readFileSync(CANONICAL_POLICY, "utf8"));
-    registryCodes = new Set(reg.categories.map((c) => c.code));
-  } catch (e) {
-    return [`kanonik registry okunamadı (${CANONICAL_POLICY}): ${e.message}`];
+
+/**
+ * TERM-SINGLE-SOURCE drift kanıtı: protected tarama kanonik policy'den beslendiği için, policy'deki
+ * HER kategori, o kategorinin İLK terimiyle yeniden-üretilen bir örnek metinde yakalanmalı. Bir
+ * kategori/terim policy'den düşer (veya ikinci bir registry'ye kaçırılırsa) burası kırmızı olur.
+ */
+function protectedSingleSourceSelfTest() {
+  const failed = [];
+  for (const cat of POLICY.categories) {
+    const term = cat.terms[0];
+    const stemPad = term.kind === "STEM" ? "a".repeat(Math.max(0, term.minLen - term.tokens[0].length)) : "";
+    const probe = "c " + term.tokens.join(" ") + stemPad;
+    if (!scanProtectedCategories(POLICY, probe).includes(cat.code)) {
+      failed.push(`kategori ${cat.code} policy-türevli örnekte yakalanmadı (term-single-source kopması): "${probe}"`);
+    }
+    if (!(cat.code in CODE_TO_LABEL)) failed.push(`etiket haritası kanonik kategoriyi kapsamıyor: ${cat.code}`);
   }
-  for (const p of PROTECTED) {
-    const code = LABEL_TO_CODE[p.label];
-    if (!code) errs.push(`PROTECTED etiketi kanonik koda map edilmemiş: "${p.label}"`);
-    else if (!registryCodes.has(code)) errs.push(`kanonik registry kategoriyi tanımıyor: ${code} (etiket "${p.label}")`);
-  }
-  const mapped = new Set(Object.values(LABEL_TO_CODE));
-  for (const code of registryCodes) {
-    if (!mapped.has(code)) errs.push(`kanonik kategori ${code} rubric drift-guard'ında karşılanmıyor (single-source drift)`);
-  }
-  return errs;
+  return failed;
 }
 
 const KNOWN_KW = new Set(["$schema", "$id", "$defs", "$ref", "title", "description", "type", "const", "enum", "required", "properties", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern"]);
@@ -129,8 +119,12 @@ function runChecks(schema, sample) {
   validate(sample, schema, "$");
 
   const flag = (str, where) => {
-    const nt = norm(str).replace(ALLOW_STRIP, " "); // iş-ilişkili phrase'i çıkar, KALANI tara
-    for (const p of PROTECTED) if (p.re.test(nt)) errors.push(`KORUMALI-ÖZELLIK (${p.label}) "${str}" (${where}; ayrımcılık/KVKK m.6)`);
+    // Korumalı-özellik: kanonik motor (safe-phrase neutralize DAHİL) → eşleşen kategori kodları.
+    for (const code of scanProtectedCategories(POLICY, str)) {
+      errors.push(`KORUMALI-ÖZELLIK (${CODE_TO_LABEL[code] ?? code}) "${str}" (${where}; ayrımcılık/işe-alım-uyumu, KVKK m.6 + geniş işe-alım ekseni)`);
+    }
+    // Scoring/affect: protected-policy'nin konusu değil → rubric-özel ayrı kural (norm üstünde).
+    const nt = norm(str);
     for (const re of SCORING) if (re.test(nt)) errors.push(`YASAK scoring/affect "${str}" (${where}; assist-not-conduct)`);
   };
   const scanSample = (obj) => {
@@ -205,11 +199,11 @@ function selfTest() {
 
 const errors = runChecks(SCHEMA, SAMPLE);
 for (const n of selfTest()) errors.push(`SELF-TEST: ${n}`);
-for (const e of canonicalRegistryBinding()) errors.push(`CANONICAL-REGISTRY: ${e}`);
+for (const e of protectedSingleSourceSelfTest()) errors.push(`SINGLE-SOURCE: ${e}`);
 
 if (errors.length > 0) {
   console.error("rubric drift guard FAILED:");
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`rubric OK — job-related criteria; protected-attribute (TR-normalize + safe-phrase-strip) + scoring/affect key+value+schema-key reddi; criterion tekil; self-test 31 neg + 3 allow doğrulandı; korumalı-özellik kategori ekseni TEK kanonik registry (compliance-screening) ile bağlı (13/13 single-source).`);
+console.log(`rubric OK — job-related criteria; protected-attribute (kanonik policy'den TÜREVLİ, term-single-source) + scoring/affect (rubric-özel ayrı kural) key+value+schema-key reddi; criterion tekil; self-test 30 neg + 3 allow doğrulandı; korumalı-özellik ${POLICY.categories.length}/13 kategori TEK kanonik registry'nin TERİMLERİYLE bağlı (ikinci regex-registry YOK).`);

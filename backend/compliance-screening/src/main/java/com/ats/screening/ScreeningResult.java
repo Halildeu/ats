@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * Bir tarama çağrısının değişmez sonucu: çalıştırma kimliği, policy ref'i, kapsama durumu,
- * bulgular ve içerik-adresli bulgu-küme ref'i.
+ * bulgular ve OPAK (kriptografik-rastgele, içerik-adresli DEĞİL) bulgu-küme ref'i.
  *
  * <p><b>Fail-closed anlamı:</b> {@code coverage != SUPPORTED} olduğunda {@code findings} BOŞ
  * olsa dahi sonuç TEMİZ SAYILMAZ — girdi taranamadı ({@link #isClear()} yalnız SUPPORTED +

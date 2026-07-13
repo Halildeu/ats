@@ -33,13 +33,13 @@ class ScreeningValueObjectsTest {
     }
 
     @Test
-    void findingSetRef_is_content_addressed_and_deterministic() {
-        FindingSetRef a = FindingSetRef.ofCanonical("AGE|PROTECTED_ATTRIBUTE_MENTION|FREE_TEXT|0|3|null;");
-        FindingSetRef a2 = FindingSetRef.ofCanonical("AGE|PROTECTED_ATTRIBUTE_MENTION|FREE_TEXT|0|3|null;");
-        FindingSetRef b = FindingSetRef.ofCanonical("");
-        assertEquals(a, a2); // aynı içerik → aynı ref
+    void findingSetRef_is_cryptographically_random_opaque() {
+        FindingSetRef a = FindingSetRef.random();
+        FindingSetRef b = FindingSetRef.random();
+        // İçerik-adresli DEĞİL: her üretim FARKLI (kriptografik-rastgele opak; çakışma olasılığı 2^-256).
         assertNotEquals(a, b);
         assertTrue(a.value().matches("fsr_[0-9a-f]{64}"));
+        assertTrue(b.value().matches("fsr_[0-9a-f]{64}"));
         assertThrows(IllegalArgumentException.class, () -> new FindingSetRef("fsr_short"));
     }
 

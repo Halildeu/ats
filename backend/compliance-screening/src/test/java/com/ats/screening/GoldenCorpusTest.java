@@ -53,7 +53,7 @@ class GoldenCorpusTest {
             ProtectedAttributeScreener screener =
                     "unavailable".equals(string(c, "screener")) ? unavailable : loaded;
 
-            ScreeningResult r = screener.screen(string(c, "text"), sourceKind);
+            ScreeningResult r = screener.screen(string(c, "text"), sourceKind, string(c, "language"));
 
             assertEquals(Coverage.valueOf(string(c, "expectedCoverage")), r.coverage(),
                     () -> "coverage [" + id + "]");
