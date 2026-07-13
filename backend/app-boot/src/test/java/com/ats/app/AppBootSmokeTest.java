@@ -36,8 +36,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Boot-smoke: composition GERÇEK PG16 üstünde ayağa kalkar — Flyway V1..V3
- * migrate olur, /healthz gerçek DB ping'iyle 200 döner, tüm servis bean'leri
+ * Boot-smoke: composition GERÇEK PG16 üstünde ayağa kalkar — Flyway V1..V4
+ * migrate olur (V4 = gov1-1e-b model_governance_ledger), /healthz gerçek DB ping'iyle
+ * 200 döner, tüm servis bean'leri
  * kurulur, consent-gate deny-by-default PG üstünde canlıdır.
  *
  * İDDİA SINIRI: bu test "deployable composition çalışıyor" kanıtıdır; AI ucu
