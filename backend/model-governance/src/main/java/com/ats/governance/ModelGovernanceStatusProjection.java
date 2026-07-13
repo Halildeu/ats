@@ -7,7 +7,7 @@ import com.ats.contracts.governance.ModelGovernanceTransition;
 import com.ats.contracts.governance.ModelGovernanceTransitionHashChain;
 import com.ats.contracts.governance.ModelGovernanceTransitions;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -134,6 +134,17 @@ public final class ModelGovernanceStatusProjection {
             }
             return chainIntact && !taintedSubjects.contains(new Subject(ref, capability));
         }
+
+        /**
+         * Öznenin durumu OTORİTER-ONAYLI mı: {@link #isAuthoritative} DOĞRU VE {@link #currentStatusOf} ==
+         * {@link ApprovalStatus#APPROVED}. 1e-c registry tek-kontrol tüketiminin fail-closed yüzeyi —
+         * tainted-ama-APPROVED ya da authoritative-ama-REVOKED asla {@code true} dönmez. null argüman →
+         * false (isAuthoritative fail-closed'ından türer).
+         */
+        public boolean isAuthoritativelyApproved(ModelApprovalRef ref, Capability capability) {
+            return isAuthoritative(ref, capability)
+                    && currentStatusOf(ref, capability) == ApprovalStatus.APPROVED;
+        }
     }
 
     /**
@@ -145,7 +156,7 @@ public final class ModelGovernanceStatusProjection {
         List<IntegrityIssue> issues = new ArrayList<>();
         Map<Subject, ApprovalStatus> currentStatus = new LinkedHashMap<>();
         Set<Subject> tainted = new LinkedHashSet<>();
-        Set<String> seenTransitionIds = new HashSet<>();
+        Map<String, Subject> transitionIdOwner = new HashMap<>();
         Map<ModelApprovalRef, Capability> refCapability = new LinkedHashMap<>();
         boolean chainIntact = true;
         String expectedPreviousHash = ModelGovernanceTransitionHashChain.GENESIS_PREVIOUS_HASH;
@@ -178,9 +189,13 @@ public final class ModelGovernanceStatusProjection {
             // Zincir SAKLANAN entryHash ile devam eder (sonraki CHAIN_LINK gerçek-önceki-hash'e referans versin).
             expectedPreviousHash = t.entryHash();
 
-            // 4. transitionId GLOBAL tekilliği.
-            if (!seenTransitionIds.add(id)) {
+            // 4. transitionId GLOBAL tekilliği → duplicate HER İKİ özneyi taint eder (Codex 1e-a REVISE):
+            // global-tekil id iki özneyi de belirsizleştirir; yalnız MEVCUT satırı taint etmek ilk özneyi
+            // YANLIŞLIKLA authoritative APPROVED bırakırdı. chainIntact bozulmaz (özne-seviyesi kusur modeli).
+            Subject firstOwner = transitionIdOwner.putIfAbsent(id, subject);
+            if (firstOwner != null) {
                 issues.add(new IntegrityIssue(i, IntegrityIssue.Kind.DUPLICATE_TRANSITION_ID, id));
+                tainted.add(firstOwner);
                 tainted.add(subject);
             }
 

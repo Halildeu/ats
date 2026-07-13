@@ -24,8 +24,17 @@ public interface ModelGovernanceLedger {
 
     /** READ otoritesi: WORM'u okur (app-boot boot-snapshot + projeksiyon girdisi). Yazamaz. */
     interface Reader {
-        /** WORM'un TÜM transition'ları, GLOBAL sequence sırasında (değişmez görünüm; projeksiyon girdisi). */
-        List<ModelGovernanceTransition> readAll();
+        /**
+         * WORM'un TÜM transition'ları, GLOBAL sequence sırasında (değişmez görünüm; projeksiyon girdisi).
+         *
+         * <p><b>Fail-closed okuma (Codex 1e-a REVISE):</b> dönüş {@link Outcome}-sarmalı — çünkü "WORM okundu
+         * ve GERÇEKTEN boş" (legit {@link ApprovalStatus#UNINITIALIZED}) ile "WORM/DB OKUNAMADI" ayırt
+         * edilebilmeli. {@code Ok(list)} = otoriter okuma (liste boş olabilir → legit UNINITIALIZED);
+         * {@code Fail(code, reason)} = okuma erişilemez (1e-b PG down / unchecked-exception yerine) → tüketici
+         * projeksiyon YAPMAZ, fail-closed davranır ({@code NOT_CONFIGURED}; APPROVED asla türetilmez). Adapter
+         * {@code null} ya da {@code Ok(null)} DÖNMEZ (fail-closed non-null liste).
+         */
+        Outcome<List<ModelGovernanceTransition>> readAll();
     }
 
     /** WRITE otoritesi: yeni transition ekler (admin CLI/writer). Fail-closed CAS + idempotent-replay. */

@@ -185,6 +185,31 @@ class ModelGovernanceStatusProjectionTest {
     }
 
     @Test
+    void duplicate_transition_id_across_two_subjects_taints_both() {
+        Chain c = new Chain()
+                .add(id(1), REF_A, Capability.TRANSCRIBE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)
+                // aynı id(1) FARKLI özne (REF_B/CITE) → DUPLICATE_TRANSITION_ID; HER İKİ özne tainted
+                .add(id(1), REF_B, Capability.CITE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)
+                // ilgisiz 3. özne (farklı id) → authoritative kalır
+                .add(id(2), REF_C, Capability.TRANSCRIBE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL);
+
+        ProjectionOutcome out = ModelGovernanceStatusProjection.project(c.rows);
+
+        assertEquals(1, out.issues().size());
+        assertTrue(hasIssue(out, IntegrityIssue.Kind.DUPLICATE_TRANSITION_ID, 1));
+        assertTrue(out.chainIntact(), "duplicate özne-seviyesi kusur; hash-zinciri sağlam");
+        // duplicate'in HER İKİ tarafı authoritative DEĞİL — ilk özne YANLIŞLIKLA APPROVED bırakılmaz
+        assertFalse(out.isAuthoritative(REF_A, Capability.TRANSCRIBE), "ilk özne (id sahibi) de tainted");
+        assertFalse(out.isAuthoritative(REF_B, Capability.CITE), "ikinci özne de tainted");
+        // ilgisiz 3. özne authoritative kalır
+        assertTrue(out.isAuthoritative(REF_C, Capability.TRANSCRIBE));
+        assertEquals(ApprovalStatus.APPROVED, out.currentStatusOf(REF_C, Capability.TRANSCRIBE));
+    }
+
+    @Test
     void ref_capability_inconsistency_taints_both_subjects() {
         ModelGovernanceTransition t0 = make(id(1), REF_A, Capability.TRANSCRIBE,
                 ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL, GEN, 0);
@@ -229,5 +254,44 @@ class ModelGovernanceStatusProjectionTest {
         assertTrue(hasIssue(out, IntegrityIssue.Kind.ILLEGAL_TRANSITION, 1));
         assertTrue(out.chainIntact());
         assertFalse(out.isAuthoritative(REF_A, Capability.TRANSCRIBE));
+    }
+
+    /* ---- isAuthoritativelyApproved (1e-c tek-kontrol tüketim yüzeyi) ---- */
+
+    @Test
+    void is_authoritatively_approved_gates_on_authoritative_and_approved() {
+        // (1) authoritative + APPROVED → true
+        Chain approved = new Chain()
+                .add(id(1), REF_A, Capability.TRANSCRIBE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL);
+        ProjectionOutcome a = ModelGovernanceStatusProjection.project(approved.rows);
+        assertTrue(a.isAuthoritative(REF_A, Capability.TRANSCRIBE));
+        assertTrue(a.isAuthoritativelyApproved(REF_A, Capability.TRANSCRIBE));
+
+        // (2) authoritative + REVOKED → false (durum APPROVED değil)
+        Chain revoked = new Chain()
+                .add(id(1), REF_A, Capability.TRANSCRIBE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)
+                .add(id(2), REF_A, Capability.TRANSCRIBE,
+                        ApprovalStatus.APPROVED, ApprovalStatus.REVOKED, TransitionReason.REVOKED_BY_OWNER);
+        ProjectionOutcome r = ModelGovernanceStatusProjection.project(revoked.rows);
+        assertTrue(r.isAuthoritative(REF_A, Capability.TRANSCRIBE), "temiz zincir → authoritative");
+        assertEquals(ApprovalStatus.REVOKED, r.currentStatusOf(REF_A, Capability.TRANSCRIBE));
+        assertFalse(r.isAuthoritativelyApproved(REF_A, Capability.TRANSCRIBE), "authoritative ama REVOKED");
+
+        // (3) tainted + APPROVED → false (duplicate id → her iki özne tainted; durum APPROVED ama otoriter değil)
+        Chain tainted = new Chain()
+                .add(id(1), REF_A, Capability.TRANSCRIBE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)
+                .add(id(1), REF_B, Capability.CITE,
+                        ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL);
+        ProjectionOutcome t = ModelGovernanceStatusProjection.project(tainted.rows);
+        assertEquals(ApprovalStatus.APPROVED, t.currentStatusOf(REF_A, Capability.TRANSCRIBE));
+        assertFalse(t.isAuthoritative(REF_A, Capability.TRANSCRIBE));
+        assertFalse(t.isAuthoritativelyApproved(REF_A, Capability.TRANSCRIBE), "tainted ama APPROVED");
+
+        // null argüman → false (fail-closed; isAuthoritative'ten türer)
+        assertFalse(a.isAuthoritativelyApproved(null, Capability.TRANSCRIBE));
+        assertFalse(a.isAuthoritativelyApproved(REF_A, null));
     }
 }

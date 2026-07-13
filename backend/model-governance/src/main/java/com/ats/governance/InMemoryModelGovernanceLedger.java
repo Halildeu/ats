@@ -55,8 +55,10 @@ public final class InMemoryModelGovernanceLedger
     }
 
     @Override
-    public List<ModelGovernanceTransition> readAll() {
-        return List.copyOf(log);
+    public Outcome<List<ModelGovernanceTransition>> readAll() {
+        // Ok(immutable-copy): in-memory okuma her zaman erişilebilir; boş log → Ok(emptyList) (legit
+        // UNINITIALIZED, "okunamadı" DEĞİL). Fail yolu 1e-b PG down senaryosunda anlam kazanır.
+        return Outcome.ok(List.copyOf(log));
     }
 
     @Override

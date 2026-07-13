@@ -1,6 +1,7 @@
 package com.ats.governance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -10,6 +11,7 @@ import com.ats.contracts.governance.ApprovalStatus;
 import com.ats.contracts.governance.Capability;
 import com.ats.contracts.governance.GovernanceActorRef;
 import com.ats.contracts.governance.ModelApprovalRef;
+import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.contracts.governance.ModelGovernanceLedger.AppendCommand;
 import com.ats.contracts.governance.ModelGovernanceLedger.AppendRejection;
 import com.ats.contracts.governance.ModelGovernanceTransition;
@@ -57,6 +59,12 @@ class InMemoryModelGovernanceLedgerTest {
         return (Outcome.Fail<ModelGovernanceTransition>) o;
     }
 
+    /** readAll() Outcome-sarmalını açar: Ok bekler (in-memory okuma her zaman erişilebilir). */
+    private static List<ModelGovernanceTransition> okList(Outcome<List<ModelGovernanceTransition>> o) {
+        assertInstanceOf(Outcome.Ok.class, o);
+        return ((Outcome.Ok<List<ModelGovernanceTransition>>) o).value();
+    }
+
     @Test
     void full_lifecycle_chain_and_projection_is_clean() {
         InMemoryModelGovernanceLedger ledger = new InMemoryModelGovernanceLedger(CLOCK);
@@ -83,7 +91,7 @@ class InMemoryModelGovernanceLedgerTest {
         // occurredAt injected Clock'tan
         assertEquals("2026-07-13T10:00:00Z", t0.occurredAt());
 
-        List<ModelGovernanceTransition> all = ledger.readAll();
+        List<ModelGovernanceTransition> all = okList(ledger.readAll());
         assertEquals(3, all.size());
 
         // adapter-yazımı → projeksiyon TEMİZ (WRITE-hash == READ-recompute; single-source kanıtı)
@@ -95,6 +103,29 @@ class InMemoryModelGovernanceLedgerTest {
     }
 
     @Test
+    void unavailable_reader_fail_is_distinguishable_from_legit_empty_worm() {
+        // Legit boş WORM: hiç append yok → Ok(emptyList) → projeksiyon UNINITIALIZED + authoritative
+        // ("okundu ve gerçekten boş"). Fail ile KARIŞMAZ.
+        InMemoryModelGovernanceLedger empty = new InMemoryModelGovernanceLedger(CLOCK);
+        List<ModelGovernanceTransition> legitRows = okList(empty.readAll());
+        assertTrue(legitRows.isEmpty(), "hiç append yok → gerçekten boş liste");
+        ProjectionOutcome projected = ModelGovernanceStatusProjection.project(legitRows);
+        assertEquals(ApprovalStatus.UNINITIALIZED, projected.currentStatusOf(REF, CAP));
+        assertTrue(projected.isAuthoritative(REF, CAP), "legit boş WORM → UNINITIALIZED authoritative");
+
+        // Erişilemez okuma (1e-b PG down / unchecked yerine): Reader Fail döner → tüketici projeksiyon
+        // YAPMAZ, fail-closed davranır (NOT_CONFIGURED). Ok(emptyList) ile ASLA karışmaz.
+        ModelGovernanceLedger.Reader unavailable =
+                () -> Outcome.fail(OutcomeCode.NOT_CONFIGURED, "WORM_UNAVAILABLE");
+        Outcome<List<ModelGovernanceTransition>> down = unavailable.readAll();
+        assertInstanceOf(Outcome.Fail.class, down);
+        Outcome.Fail<List<ModelGovernanceTransition>> f =
+                (Outcome.Fail<List<ModelGovernanceTransition>>) down;
+        assertEquals(OutcomeCode.NOT_CONFIGURED, f.code(), "okuma erişilemez → NOT_CONFIGURED (boş-liste DEĞİL)");
+        assertFalse(down.isOk(), "Fail → tüketici APPROVED türetemez (fail-closed)");
+    }
+
+    @Test
     void stale_expected_from_is_conflict() {
         InMemoryModelGovernanceLedger ledger = new InMemoryModelGovernanceLedger(CLOCK);
         ok(ledger.append(cmd(id(1), ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)));
@@ -103,7 +134,7 @@ class InMemoryModelGovernanceLedgerTest {
                 cmd(id(2), ApprovalStatus.UNINITIALIZED, ApprovalStatus.APPROVED, TransitionReason.INITIAL_APPROVAL)));
         assertEquals(AppendRejection.STALE_EXPECTED_FROM.name(), f.reason());
         assertEquals(OutcomeCode.INVALID, f.code());
-        assertEquals(1, ledger.readAll().size(), "red → yazım YOK");
+        assertEquals(1, okList(ledger.readAll()).size(), "red → yazım YOK");
     }
 
     @Test
@@ -114,7 +145,7 @@ class InMemoryModelGovernanceLedgerTest {
         // aynı transitionId + byte-özdeş içerik → idempotent-OK, MEVCUT satır döner
         ModelGovernanceTransition replay = ok(ledger.append(c));
         assertSame(first, replay, "replay mevcut satırı döner (çift yazım YOK)");
-        assertEquals(1, ledger.readAll().size());
+        assertEquals(1, okList(ledger.readAll()).size());
     }
 
     @Test
@@ -126,7 +157,7 @@ class InMemoryModelGovernanceLedgerTest {
                 cmd(id(1), ApprovalStatus.UNINITIALIZED, ApprovalStatus.DRAFT, TransitionReason.DRAFTED)));
         assertEquals(AppendRejection.TRANSITION_ID_CONFLICT.name(), f.reason());
         assertEquals(OutcomeCode.INVALID, f.code());
-        assertEquals(1, ledger.readAll().size());
+        assertEquals(1, okList(ledger.readAll()).size());
     }
 
     @Test
@@ -137,7 +168,7 @@ class InMemoryModelGovernanceLedgerTest {
                 cmd(id(1), ApprovalStatus.UNINITIALIZED, ApprovalStatus.REVOKED, TransitionReason.REVOKED_BY_OWNER)));
         assertEquals(AppendRejection.ILLEGAL_TRANSITION.name(), f.reason());
         assertEquals(OutcomeCode.INVALID, f.code());
-        assertTrue(ledger.readAll().isEmpty(), "red → yazım YOK");
+        assertTrue(okList(ledger.readAll()).isEmpty(), "red → yazım YOK");
     }
 
     @Test
