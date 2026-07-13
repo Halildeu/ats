@@ -12,6 +12,7 @@
     "./adapter-sandbox-v1": "./adapters/adapter-sandbox.ts",
     "./offline-bundle-v1": "./release/offline-bundle-verifier.ts",
     "./fairness-evidence-v1": "./fairness/fairness-evidence.ts",
+    "./citation-backed-coaching-v1": "./coaching/citation-backed-coaching.ts",
     "./deployment-profile-v1": "./wire/deployment-profile.ts",
     "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
   },
