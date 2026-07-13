@@ -39,12 +39,15 @@ sonucu iddia etmez.
 | `SKILLS_ONTOLOGY` | `PROPOSAL_ONLY` | provenance-backed proposal | skill suggestion; ranking/promotion yok |
 | `DEEPFAKE_PROVENANCE` | `EVIDENCE_REQUIRED` | screening indicator | risk sinyali tek başına red nedeni değil |
 | `INTERNAL_MOBILITY` | `BLOCKED` | provenance-backed proposal | full ATS/consent/owner gate olmadan yok |
-| `AGENTIC_PROPOSAL` | `DISALLOWED` | no output | ileride yalnız proposal ceiling; action asla otonom değil |
+| `AGENTIC_PROPOSAL` | `DISALLOWED` | no umbrella output | ayrı PRE-G0 registry yalnız sentetik proposal; execution authority yok |
 
-G0 sonrası evidence dashboard capability'leri `GOVERNED_ACTIVE`, öneri
-capability'leri `PROPOSAL_ONLY` olabilir. `AGENTIC_PROPOSAL` açılabilse bile
-yalnız `AI_SUGGESTED` proposal üretir; `human_action_allowed` kalıcı olarak
-false kalır.
+P6.5 reference registry, üst capability/umbrella output'u açmadan PRE-G0
+sentetik proposal ve insan review akışını ayrı
+`governed-agentic-proposal/v1` sözleşmesinde sınırlar. Mevcut evaluation
+fixture'ı `AGENTIC_PROPOSAL=DISALLOWED` kalır; bu registry production/action
+gate'lerini açmaz: `human_action_allowed` kalıcı olarak false, execution
+authority `NONE` ve legal/owner gate'leri `NOT_MET` kalır. Ayrıntı:
+`docs/ai-governance/governed-agentic-proposals-v1.md`.
 
 ## 3. Capability-başına metric protocol
 

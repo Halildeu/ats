@@ -16,7 +16,8 @@
     "./versioned-skills-ontology-v1": "./skills/versioned-skills-ontology.ts",
     "./integrity-provenance-screening-v1": "./integrity/integrity-provenance-screening.ts",
     "./deployment-profile-v1": "./wire/deployment-profile.ts",
-    "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts"
+    "./intelligence-evaluation-v1": "./wire/intelligence-evaluation.ts",
+    "./governed-agentic-proposals-v1": "./agentic/governed-agentic-proposals.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
