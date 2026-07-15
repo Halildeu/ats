@@ -135,7 +135,25 @@ public interface ErasureExecutionStore {
         }
 
         public int deletedContentCount() {
-            return steps.stream().mapToInt(s -> s.effect().deletedContentCount()).sum();
+            // OBJECT_DELETE bu source slice'ta yalnız "issued" kanıtıdır. Eski/aday bir
+            // execution satırı yanlışlıkla deleted_content_count=1 taşısa bile kalıcı veya
+            // crypto-erasure gibi yeniden raporlanmaz; G0 adapter kararı gelene kadar ayrı tutulur.
+            return steps.stream()
+                    .filter(s -> s.type() != StepType.OBJECT_DELETE)
+                    .mapToInt(s -> s.effect().deletedContentCount())
+                    .sum();
+        }
+
+        /**
+         * Başarıyla çağrılıp durable saga'da COMPLETED olmuş object-delete adımı sayısıdır.
+         * Kalıcı/crypto-erasure kanıtı DEĞİLDİR; G0 object-store slice'ı gelene kadar
+         * deletedContentCount'tan bilinçli olarak ayrıdır.
+         */
+        public int objectDeleteIssuedCount() {
+            return (int) steps.stream()
+                    .filter(s -> s.type() == StepType.OBJECT_DELETE)
+                    .filter(s -> s.state() == StepState.COMPLETED)
+                    .count();
         }
 
         public boolean caseTransitioned() {

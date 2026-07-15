@@ -202,6 +202,7 @@ export default function App() {
             {t("dsar.receiptSummary", {
               tombstones: erasedReceipt.tombstoneCount,
               deleted: erasedReceipt.deletedContentCount,
+              issued: erasedReceipt.objectDeleteIssuedCount,
             })}
           </Text>
           {erasedReceipt.caseTransitioned && (

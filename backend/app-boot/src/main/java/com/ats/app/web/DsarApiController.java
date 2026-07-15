@@ -92,6 +92,7 @@ class DsarApiController {
                 "dsarKey", r.dsarKey(),
                 "tombstoneCount", r.tombstoneCount(),
                 "deletedContentCount", r.deletedContentCount(),
+                "objectDeleteIssuedCount", r.objectDeleteIssuedCount(),
                 "caseTransitioned", r.caseTransitioned()));
     }
 

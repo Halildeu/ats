@@ -51,6 +51,10 @@ ats:
     approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
+  object-store:
+    # ATS-0008 D-D / ATS-0018: gerçek MinIO/S3 seçimi G0 owner-gated. Sessiz in-memory
+    # production wiring YOK; mevcut source slice yalnız açık dev/test opt-in'ini kabul eder.
+    mode: ${ATS_OBJECT_STORE_MODE:}
   retention:
     enabled: ${ATS_RETENTION_ENABLED:false}
     cron: ${ATS_RETENTION_CRON:}

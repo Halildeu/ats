@@ -41,6 +41,13 @@ class AppPropertiesTest {
     }
 
     @Test
+    void object_store_requires_explicit_dev_opt_in_until_g0_decision() {
+        assertThrows(IllegalStateException.class, () -> new AppProperties.ObjectStore(null));
+        assertThrows(IllegalStateException.class, () -> new AppProperties.ObjectStore("s3"));
+        assertEquals("in-memory-dev", new AppProperties.ObjectStore("in-memory-dev").mode());
+    }
+
+    @Test
     void blank_bearer_normalizes_to_null_and_timeout_defaults() {
         AppProperties.Ai ai = new AppProperties.Ai(null, "http://ai.local", "  ", null, null, null, null, "  ", null);
         assertNull(ai.bearer());

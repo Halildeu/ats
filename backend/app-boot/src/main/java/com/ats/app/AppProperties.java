@@ -10,7 +10,39 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * parola log'a/hataya yazılmaz.
  */
 @ConfigurationProperties(prefix = "ats")
-public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+public record AppProperties(
+        Db db,
+        Ai ai,
+        Security security,
+        Ingest ingest,
+        Retention retention,
+        ObjectStore objectStore) {
+
+    public AppProperties {
+        if (objectStore == null) {
+            throw new IllegalStateException(
+                    "eksik zorunlu konfig: ats.object-store.mode (env ATS_OBJECT_STORE_MODE)"
+                    + " — fail-closed: G0 object-store kararı yokken yalnız açık in-memory-dev"
+                    + " beyanı kabul edilir");
+        }
+    }
+
+    /**
+     * ATS-0008 D-D / ATS-0018 sınırı: gerçek object-store seçimi G0 owner gate'indedir.
+     * Bu dilim vendor/topoloji seçmez; yalnız geçici adapter'ın sessiz production wiring'ini
+     * engelleyen açık dev/test opt-in'ini kabul eder.
+     */
+    public record ObjectStore(String mode) {
+        public ObjectStore {
+            require(mode, "ats.object-store.mode (env ATS_OBJECT_STORE_MODE)");
+            if (!mode.equals("in-memory-dev")) {
+                throw new IllegalStateException(
+                        "ats.object-store.mode kapalı küme: in-memory-dev; verilen: " + mode
+                        + " — kalıcı adapter MinIO/S3, topology, region/egress ve erasure"
+                        + " semantiği G0 Owner/Product + Legal/DPO + InfoSec kararı gerektirir");
+            }
+        }
+    }
 
     /**
      * Retention-purge zamanlayıcısı — DEFAULT KAPALI (ATS-0018: zamanlayıcı-tetikleyici

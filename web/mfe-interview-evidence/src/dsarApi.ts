@@ -10,7 +10,10 @@ import type { ApiError } from "./api";
 export type ErasureReceipt = {
   dsarKey: string;
   tombstoneCount: number;
+  /** Ana veri düzlemlerinde doğrulanmış silme etkisi; object-store çağrısı dahil değildir. */
   deletedContentCount: number;
+  /** Object-store delete çağrısı işlendi; kalıcı/crypto-erasure kanıtı değildir. */
+  objectDeleteIssuedCount: number;
   caseTransitioned: boolean;
 };
 

@@ -59,8 +59,9 @@ class RetentionScheduler {
                 Outcome<PurgeReceipt> out = dsrService.purgeExpired(
                         new TenantId(tenant), SYSTEM_ACTOR, scanner, cutoffIso);
                 if (out instanceof Outcome.Ok<PurgeReceipt> ok) {
-                    LOG.info("retention-purge tenant={} interviews={} deleted={}",
-                            tenant, ok.value().interviewCount(), ok.value().deletedContentCount());
+                    LOG.info("retention-purge tenant={} interviews={} deleted={} object_delete_issued={}",
+                            tenant, ok.value().interviewCount(), ok.value().deletedContentCount(),
+                            ok.value().objectDeleteIssuedCount());
                 } else if (out instanceof Outcome.Fail<PurgeReceipt> fail) {
                     // yutulmaz; tenant-izole — diğerleri devam eder, idempotent retry sonraki koşuda
                     LOG.error("retention-purge FAIL tenant={} code={} reason={}",

@@ -67,7 +67,8 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
     const onErased = renderPanel();
     await intake();
     fetchMock.mockResolvedValueOnce(jsonResponse(200, {
-      dsarKey: "iv-1/dsar-x", tombstoneCount: 0, deletedContentCount: 1, caseTransitioned: false,
+      dsarKey: "iv-1/dsar-x", tombstoneCount: 0, deletedContentCount: 1,
+      objectDeleteIssuedCount: 1, caseTransitioned: false,
     }));
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // 1. tık: onay modu
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // 2. tık: yürüt
@@ -78,5 +79,6 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
     expect(body).toEqual({ dsarKey: "iv-1/dsar-x" });
     expect(Object.keys(body)).toEqual(["dsarKey"]); // caller scope/target kesinlikle yok
     expect(onErased.mock.calls[0][0].deletedContentCount).toBe(1);
+    expect(onErased.mock.calls[0][0].objectDeleteIssuedCount).toBe(1);
   });
 });

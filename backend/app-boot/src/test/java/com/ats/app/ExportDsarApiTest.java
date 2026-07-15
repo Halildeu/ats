@@ -301,6 +301,8 @@ class ExportDsarApiTest {
         assertEquals("no-store", er.getHeaders().getCacheControl());
         assertTrue(JSON_READER.readTree(er.getBody()).path("tombstoneCount").asInt() >= 1,
                 "server-authoritative WORM hedefleri tombstone olmalı; body: " + er.getBody());
+        assertTrue(JSON_READER.readTree(er.getBody()).has("objectDeleteIssuedCount"),
+                "object-store çağrısı kalıcı silme sayısından ayrı, dürüst receipt alanı olmalı");
         assertTrue(er.getBody().contains("\"caseTransitioned\":false"),
                 "terminal EXPORTED state değişmez (dürüst receipt); body: " + er.getBody());
 

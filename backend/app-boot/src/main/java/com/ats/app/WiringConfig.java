@@ -74,8 +74,8 @@ import org.springframework.context.annotation.Configuration;
  * yalnız com.ats.persistence.. + bu paket).
  *
  * Dürüst sınırlar (bu dilim):
- *  - ObjectStore = in-memory (raw-media object-store D-D G0-ertelenmiş; PG'ye
- *    yalnız opak key gider) → startup'ta WARN.
+ *  - ObjectStore = yalnız açık in-memory-dev opt-in'iyle geçici adapter
+ *    (raw-media object-store D-D G0-ertelenmiş; PG'ye yalnız opak key gider).
  *  - Flyway migrate bu process'in DSN'iyle koşar (dev/test kolaylığı);
  *    migration-role ≠ app-role AYRIMI deploy-wiring işidir (ADR-0018).
  *  - AIProvider ucu konfig-zorunlu; canlılığı boot'ta İDDİA EDİLMEZ
@@ -196,9 +196,15 @@ class WiringConfig {
     }
 
     @Bean
-    ObjectStorePort objectStorePort() {
-        LOG.warn("ObjectStore = IN-MEMORY (kalıcı DEĞİL): raw-media object-store D-D "
-                + "G0-ertelenmiş; process restart'ında ham medya kaybolur. PG'de yalnız opak key durur.");
+    ObjectStorePort objectStorePort(AppProperties props) {
+        if (!"in-memory-dev".equals(props.objectStore().mode())) {
+            // AppProperties kapalı kümesi ilk savunmadır; wiring'de de sessiz fallback yoktur.
+            throw new IllegalStateException(
+                    "ObjectStore wiring reddedildi: yalnız açık in-memory-dev opt-in'i destekleniyor");
+        }
+        LOG.warn("ObjectStore = IN-MEMORY-DEV (kalıcı DEĞİL, açık opt-in): raw-media "
+                + "object-store D-D G0-ertelenmiş; process restart'ında ham medya kaybolur. "
+                + "PG'de yalnız opak key durur; production-ready/crypto-erasure kanıtı değildir.");
         return new InMemoryObjectStore();
     }
 

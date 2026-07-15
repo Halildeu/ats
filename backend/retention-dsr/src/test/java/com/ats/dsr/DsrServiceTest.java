@@ -129,7 +129,9 @@ class DsrServiceTest {
                 TENANT, OPERATOR, INTERVIEW, dsarKey).asOptional().orElseThrow();
 
         assertEquals(3, first.tombstoneCount(), "2 WORM + 1 screening tombstone");
-        assertEquals(5, first.deletedContentCount(), "object + screening + 3 content row");
+        assertEquals(4, first.deletedContentCount(), "screening + 3 durable content row");
+        assertEquals(1, first.objectDeleteIssuedCount(),
+                "object delete issued; kalıcı/crypto-erasure iddiası değil");
         assertTrue(first.caseTransitioned());
         assertFalse(objectStore.contains(TENANT, objectKey));
         assertFalse(transcriptStore.find(TENANT, INTERVIEW, transcriptKey).isOk());
@@ -187,6 +189,7 @@ class DsrServiceTest {
                 TENANT, OPERATOR, INTERVIEW, dsarKey).asOptional().orElseThrow();
         assertEquals(0, receipt.tombstoneCount());
         assertEquals(0, receipt.deletedContentCount());
+        assertEquals(0, receipt.objectDeleteIssuedCount());
         assertFalse(receipt.caseTransitioned());
         assertEquals(DsarRequest.State.FULFILLED,
                 dsarStore.find(TENANT, INTERVIEW, dsarKey).asOptional().orElseThrow().state());
@@ -203,13 +206,15 @@ class DsrServiceTest {
                 TENANT, new ActorId("retention-worker"), scanner,
                 "2026-07-02T12:00:00Z").asOptional().orElseThrow();
         assertEquals(1, first.interviewCount());
-        assertEquals(5, first.deletedContentCount());
+        assertEquals(4, first.deletedContentCount());
+        assertEquals(1, first.objectDeleteIssuedCount());
 
         DsrService.PurgeReceipt replay = service.purgeExpired(
                 TENANT, new ActorId("different-scheduler"), scanner,
                 "2026-07-02T12:00:00Z").asOptional().orElseThrow();
         assertEquals(0, replay.interviewCount());
         assertEquals(0, replay.deletedContentCount());
+        assertEquals(0, replay.objectDeleteIssuedCount());
     }
 
     @Test
@@ -243,6 +248,8 @@ class DsrServiceTest {
                 "önceki worker'ın destructive side-effect'i commit olmuş varsayılır");
         ok(executionStore.completeStep(
                 TENANT, INTERVIEW, executionKey, "crashed-worker", 0,
+                // Eski/aday receipt davranışı: object delete yanlışlıkla content=1 yazmış olsa
+                // bile yeni projection bunu durable silme diye saymamalı.
                 new ErasureExecutionStore.StepEffect(0, 1, false),
                 now.plusSeconds(1), now.plusSeconds(30)));
         ok(executionStore.release(
@@ -265,8 +272,10 @@ class DsrServiceTest {
                 "2026-07-02T12:00:00Z").asOptional().orElseThrow();
         assertEquals(1, scans[0]);
         assertEquals(1, receipt.interviewCount());
-        assertEquals(5, receipt.deletedContentCount(),
-                "önceden commit edilmiş step dahil mantıksal execution bir kez sayılır");
+        assertEquals(4, receipt.deletedContentCount(),
+                "yalnız durable content etkileri mantıksal execution'da bir kez sayılır");
+        assertEquals(1, receipt.objectDeleteIssuedCount(),
+                "önceden commit edilmiş object-delete issued adımı ayrı raporlanır");
         assertEquals(ErasureExecutionStore.ExecutionState.FULFILLED,
                 ok(executionStore.find(TENANT, INTERVIEW, executionKey)).state());
     }

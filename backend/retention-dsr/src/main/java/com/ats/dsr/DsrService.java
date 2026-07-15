@@ -65,9 +65,14 @@ public final class DsrService {
     private static final Duration WORKER_LEASE = Duration.ofSeconds(30);
 
     public record ErasureReceipt(
-            String dsarKey, int tombstoneCount, int deletedContentCount, boolean caseTransitioned) {}
+            String dsarKey,
+            int tombstoneCount,
+            int deletedContentCount,
+            int objectDeleteIssuedCount,
+            boolean caseTransitioned) {}
 
-    public record PurgeReceipt(int interviewCount, int deletedContentCount) {}
+    public record PurgeReceipt(
+            int interviewCount, int deletedContentCount, int objectDeleteIssuedCount) {}
 
     private record RunReceipt(Execution execution, boolean newlyFulfilled) {}
 
@@ -196,7 +201,8 @@ public final class DsrService {
                     Map.of("actor_ref", receipt.actorRef()));
         }
         return Outcome.ok(new ErasureReceipt(dsarKey, receipt.tombstoneCount(),
-                receipt.deletedContentCount(), receipt.caseTransitioned()));
+                receipt.deletedContentCount(), receipt.objectDeleteIssuedCount(),
+                receipt.caseTransitioned()));
     }
 
     /**
@@ -213,6 +219,7 @@ public final class DsrService {
         }
 
         int deleted = 0;
+        int objectDeletesIssued = 0;
         Set<String> newlyCompleted = new HashSet<>();
         Outcome<List<Execution>> running = executionStore.listRunning(
                 tenantId, ExecutionKind.RETENTION_EXPIRED);
@@ -228,6 +235,7 @@ public final class DsrService {
             if (resumedOk.value().newlyFulfilled()
                     && newlyCompleted.add(execution.executionKey())) {
                 deleted += resumedOk.value().execution().deletedContentCount();
+                objectDeletesIssued += resumedOk.value().execution().objectDeleteIssuedCount();
                 emitRetention(resumedOk.value().execution());
             }
         }
@@ -277,10 +285,12 @@ public final class DsrService {
             if (runOk.value().newlyFulfilled()
                     && newlyCompleted.add(execution.executionKey())) {
                 deleted += runOk.value().execution().deletedContentCount();
+                objectDeletesIssued += runOk.value().execution().objectDeleteIssuedCount();
                 emitRetention(runOk.value().execution());
             }
         }
-        return Outcome.ok(new PurgeReceipt(newlyCompleted.size(), deleted));
+        return Outcome.ok(new PurgeReceipt(
+                newlyCompleted.size(), deleted, objectDeletesIssued));
     }
 
     private Outcome<RunReceipt> runExecution(
@@ -375,7 +385,8 @@ public final class DsrService {
                 }
                 yield Outcome.ok(new StepEffect(1, 0, false));
             }
-            case OBJECT_DELETE -> deleted(objectStore.delete(tenant, step.targetRef()), "object-store");
+            case OBJECT_DELETE -> objectDeleteIssued(
+                    objectStore.delete(tenant, step.targetRef()));
             case SCREENING_PURGE -> {
                 FindingSetRef ref;
                 try {
@@ -433,6 +444,20 @@ public final class DsrService {
             return Outcome.fail(fail.code(), plane + " delete başarısız (saga RUNNING kaldı)");
         }
         return Outcome.ok(new StepEffect(0, 1, false));
+    }
+
+    /**
+     * Mevcut object-store adapter'ı yalnız in-memory-dev'tir. Başarılı çağrı saga'da
+     * "delete issued" olarak tamamlanır; kalıcı/crypto-erasure kanıtı olmadığı için
+     * deletedContentCount artırılmaz. G0 adapter/erasure kararı gelmeden bu sınır genişletilmez.
+     */
+    private static Outcome<StepEffect> objectDeleteIssued(Outcome<Void> outcome) {
+        if (!outcome.isOk()) {
+            Outcome.Fail<Void> fail = (Outcome.Fail<Void>) outcome;
+            return Outcome.fail(fail.code(),
+                    "object-store delete başarısız (saga RUNNING kaldı)");
+        }
+        return Outcome.ok(StepEffect.none());
     }
 
     private static List<PlannedStep> dsrPlan(ErasureScope scope) {
