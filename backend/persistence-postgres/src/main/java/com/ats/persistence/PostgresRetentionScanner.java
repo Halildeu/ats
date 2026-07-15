@@ -45,6 +45,12 @@ public final class PostgresRetentionScanner implements RetentionScanner {
         try (Connection c = ds.getConnection()) {
             collect(c, tenantId, cutoff, "SELECT interview_id, transcript_key FROM transcript"
                     + " WHERE tenant_id = ? AND created_at < ?", byInterview, Kind.TRANSCRIPT);
+            collect(c, tenantId, cutoff,
+                    "SELECT interview_id, payload->>'object_key' FROM worm_ledger"
+                            + " WHERE tenant_id = ? AND created_at < ?"
+                            + " AND event_type = 'recording.ingested'"
+                            + " AND jsonb_exists(payload, 'object_key')",
+                    byInterview, Kind.OBJECT);
             collect(c, tenantId, cutoff, "SELECT interview_id, citation_key FROM citation"
                     + " WHERE tenant_id = ? AND created_at < ?", byInterview, Kind.CITATION);
             collect(c, tenantId, cutoff, "SELECT interview_id, artifact_key FROM export_artifact"
@@ -59,16 +65,17 @@ public final class PostgresRetentionScanner implements RetentionScanner {
         List<ExpiredContent> out = new ArrayList<>();
         for (Map.Entry<String, Expired> entry : byInterview.entrySet()) {
             Expired x = entry.getValue();
-            out.add(new ExpiredContent(new InterviewId(entry.getKey()),
+            out.add(new ExpiredContent(new InterviewId(entry.getKey()), x.objects,
                     x.transcripts, x.citations, x.artifacts, x.screeningFindingSetRefs));
         }
         return Outcome.ok(List.copyOf(out));
     }
 
-    private enum Kind { TRANSCRIPT, CITATION, ARTIFACT, SCREENING }
+    private enum Kind { OBJECT, TRANSCRIPT, CITATION, ARTIFACT, SCREENING }
 
     private static final class Expired {
         final List<String> transcripts = new ArrayList<>();
+        final List<String> objects = new ArrayList<>();
         final List<String> citations = new ArrayList<>();
         final List<String> artifacts = new ArrayList<>();
         final List<String> screeningFindingSetRefs = new ArrayList<>();
@@ -84,6 +91,7 @@ public final class PostgresRetentionScanner implements RetentionScanner {
                     Expired x = byInterview.computeIfAbsent(rs.getString(1), k -> new Expired());
                     String key = rs.getString(2);
                     switch (kind) {
+                        case OBJECT -> x.objects.add(key);
                         case TRANSCRIPT -> x.transcripts.add(key);
                         case CITATION -> x.citations.add(key);
                         case ARTIFACT -> x.artifacts.add(key);

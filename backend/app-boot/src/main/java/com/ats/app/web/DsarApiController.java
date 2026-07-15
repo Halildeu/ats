@@ -2,11 +2,13 @@ package com.ats.app.web;
 
 import com.ats.dsr.DsrService;
 import com.ats.dsr.DsrService.ErasureReceipt;
-import com.ats.dsr.ErasureScope;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Outcome;
-import com.ats.screening.FindingSetRef;
-import java.util.List;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * F10 DSAR/erasure API — DsrService fail-closed çekirdeği aynen: TOMBSTONE-ÖNCE
  * sıra (WORM silinmez; tombstone yazılamazsa content silinmez), content-plane
  * silme idempotent, terminal vaka state'i korunur ama content silinir (dürüst
- * receipt). subjectRef OPAK; scope anahtarları '/' içerir → gövdede.
+ * receipt). subjectRef OPAK; silme scope'u caller'dan alınmaz, server truth'undan çözülür.
  * Erasure YIKICI ve geri-alınamaz content işlemidir — ayrı yetki sınıfı (ats.erasure.execute; intake=ats.dsar.write);
  * çağıran aktör WORM tombstone + privacy event'lerinde kayıtlıdır.
  */
@@ -37,6 +39,10 @@ class DsarApiController {
 
     record DsarBody(String subjectRef, String reasonCode) {}
 
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ErasureBody(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey) {}
+
     @PostMapping("/api/v1/interviews/{interviewId}/dsar")
     ResponseEntity<?> receiveDsar(Authentication auth,
             @PathVariable("interviewId") String interviewId, @RequestBody DsarBody body) {
@@ -46,67 +52,58 @@ class DsarApiController {
         Outcome<String> out = dsrService.receiveDsar(tenantAccess.tenant(auth),
                 new InterviewId(interviewId), body.subjectRef(), body.reasonCode());
         if (out instanceof Outcome.Fail<String> fail) {
-            return OutcomeHttp.fail(fail);
+            ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
+            return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
         }
-        return ResponseEntity.status(HttpStatus.CREATED)
+        return noStore(ResponseEntity.status(HttpStatus.CREATED))
                 .body(Map.of("dsarKey", ((Outcome.Ok<String>) out).value()));
     }
 
-    record ScopeDto(List<String> transcriptKeys, List<String> citationKeys,
-            List<String> exportArtifactKeys, List<String> reviewCaseKeys,
-            List<String> screeningFindingSetRefs,
-            List<String> tombstoneTargetEvidenceIds) {}
-
-    record ErasureBody(String dsarKey, ScopeDto scope) {}
-
     @PostMapping("/api/v1/interviews/{interviewId}/dsar/erasure")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(schema = @Schema(implementation = ErasureBody.class)))
     ResponseEntity<?> executeErasure(Authentication auth,
-            @PathVariable("interviewId") String interviewId, @RequestBody ErasureBody body) {
-        if (body == null || body.dsarKey() == null || body.dsarKey().isBlank() || body.scope() == null) {
-            return badRequest("dsarKey + scope zorunlu");
-        }
-        ScopeDto s = body.scope();
-        // fail-closed doğrulama (Codex #66 blocker-2): null eleman NPE→500 yerine 400
-        if (hasNullElement(s.transcriptKeys()) || hasNullElement(s.citationKeys())
-                || hasNullElement(s.exportArtifactKeys()) || hasNullElement(s.reviewCaseKeys())
-                || hasNullElement(s.screeningFindingSetRefs())
-                || hasNullElement(s.tombstoneTargetEvidenceIds())) {
-            return badRequest("scope listelerinde null eleman olamaz (fail-closed)");
-        }
-        for (String ref : orEmpty(s.screeningFindingSetRefs())) {
+            @PathVariable("interviewId") String interviewId,
+            @RequestBody(required = false) String rawBody) {
+        JsonNode body = null;
+        if (rawBody != null && !rawBody.isBlank()) {
             try {
-                new FindingSetRef(ref);
-            } catch (IllegalArgumentException ex) {
-                return badRequest("screeningFindingSetRefs yalnız fsr_<64 lowercase hex> kabul eder");
+                body = ERASURE_BODY_READER.readTree(rawBody);
+            } catch (com.fasterxml.jackson.core.JacksonException exception) {
+                return badRequest("gövde geçerli ve duplicate-key içermeyen JSON olmalı");
             }
         }
-        ErasureScope scope = new ErasureScope(
-                orEmpty(s.transcriptKeys()), orEmpty(s.citationKeys()),
-                orEmpty(s.exportArtifactKeys()), orEmpty(s.reviewCaseKeys()),
-                orEmpty(s.screeningFindingSetRefs()),
-                orEmpty(s.tombstoneTargetEvidenceIds()));
+        // Strict envelope: caller-authored scope/extra alan sessizce ignore edilmez.
+        if (body == null || !body.isObject() || body.size() != 1
+                || !body.has("dsarKey") || !body.get("dsarKey").isTextual()
+                || body.get("dsarKey").textValue().isBlank()) {
+            return badRequest("yalnız non-empty dsarKey alanı kabul edilir; scope server-authoritative");
+        }
+        String dsarKey = body.get("dsarKey").textValue();
         Outcome<ErasureReceipt> out = dsrService.executeErasure(tenantAccess.tenant(auth),
-                tenantAccess.actor(auth), new InterviewId(interviewId), body.dsarKey(), scope);
+                tenantAccess.actor(auth), new InterviewId(interviewId), dsarKey);
         if (out instanceof Outcome.Fail<ErasureReceipt> fail) {
-            return OutcomeHttp.fail(fail);
+            ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
+            return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
         }
         ErasureReceipt r = ((Outcome.Ok<ErasureReceipt>) out).value();
-        return ResponseEntity.ok(Map.of(
+        return noStore(ResponseEntity.ok()).body(Map.of(
                 "dsarKey", r.dsarKey(),
                 "tombstoneCount", r.tombstoneCount(),
                 "deletedContentCount", r.deletedContentCount(),
                 "caseTransitioned", r.caseTransitioned()));
     }
 
-    private static List<String> orEmpty(List<String> v) {
-        return v == null ? List.of() : v;
-    }
-
-    private static boolean hasNullElement(List<String> list) {
-        return list != null && list.stream().anyMatch(java.util.Objects::isNull);
-    }
-
     private static ResponseEntity<Map<String, String>> badRequest(String reason) {
-        return ResponseEntity.badRequest().body(Map.of("error", "INVALID", "reason", reason));
+        return noStore(ResponseEntity.badRequest())
+                .body(Map.of("error", "INVALID", "reason", reason));
     }
+
+    private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
+        return builder.header("Cache-Control", "no-store").header("Pragma", "no-cache");
+    }
+
+    private static final ObjectMapper ERASURE_BODY_READER = new ObjectMapper()
+            .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 }

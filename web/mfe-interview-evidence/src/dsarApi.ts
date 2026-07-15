@@ -1,20 +1,11 @@
 /**
  * F10 DSAR/erasure istemcisi — DsrService invariant'ları backend'de fail-closed;
- * UI yalnız taşır: subjectRef OPAK referanstır (PII değil), erasure YIKICI ve
- * geri alınamaz content işlemidir (WORM silinmez; bu UI hedefli tombstone
- * evidence-id'si GÖNDERMEZ — silme privacy-event'leriyle kayıtlanır; tombstone
- * dahil tam-kapsam DSAR operasyonel süreçtedir), scope anahtarları '/'
- * içerdiğinden gövdede taşınır (path-segment değil).
+ * UI yalnız DSAR kimliğini taşır: subjectRef OPAK referanstır (PII değil),
+ * erasure YIKICI ve geri alınamaz content işlemidir. Silme hedeflerini tarayıcı
+ * üretmez; backend server truth'undan çözer, WORM'u silmez ve kaynak kanıtları
+ * append-only tombstone ile bağlar.
  */
 import type { ApiError } from "./api";
-
-export type ErasureScope = {
-  transcriptKeys: string[];
-  citationKeys: string[];
-  exportArtifactKeys: string[];
-  reviewCaseKeys: string[];
-  tombstoneTargetEvidenceIds: string[];
-};
 
 export type ErasureReceipt = {
   dsarKey: string;
@@ -60,14 +51,14 @@ export async function executeErasure(
   token: string,
   interviewId: string,
   dsarKey: string,
-  scope: ErasureScope,
 ): Promise<ErasureReceipt> {
   const resp = await fetch(
     `/api/v1/interviews/${encodeURIComponent(interviewId)}/dsar/erasure`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ dsarKey, scope }),
+      // Strict server-authoritative envelope: caller scope/target göndermez.
+      body: JSON.stringify({ dsarKey }),
     },
   );
   if (!resp.ok) {

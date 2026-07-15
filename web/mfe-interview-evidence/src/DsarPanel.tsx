@@ -6,7 +6,6 @@ import { t } from "./i18n";
 type Props = {
   token: string;
   interviewId: string;
-  transcriptKey: string;
   onErased: (receipt: ErasureReceipt) => void;
 };
 
@@ -15,13 +14,12 @@ type Props = {
  * İki adım: (1) DSAR intake (subjectRef OPAK — UI PII girilmemesini açıkça
  * söyler; kimlik eşlemesi backend/operasyon tarafındadır), (2) erasure —
  * YIKICI ve geri alınamaz olduğundan İKİ-ADIMLI onay (ilk tık uyarıyı açar,
- * ikinci tık yürütür). Bu ekranın silme kapsamı DÜRÜSTÇE dar: yalnız
- * görüntülenen transkript içeriği; hedefli WORM tombstone ÜRETMEZ
- * (tombstoneTargetEvidenceIds boş) — WORM silinmez, silme privacy-event'leriyle
- * kayıtlanır; tombstone dahil tam-kapsam DSAR operasyonel süreçtedir. Receipt
- * gösterimi App'te (silme sonrası içerik yüzeyi — bu panel dahil — kaldırıldığından).
+ * ikinci tık yürütür). Ekran silme hedefi/scope üretmez; server ilgili mülakatın
+ * object, screening, transcript, citation, export, açık review ve WORM hedeflerini
+ * kendi truth'undan çözer. Receipt gösterimi App'te (silme sonrası içerik yüzeyi —
+ * bu panel dahil — kaldırıldığından).
  */
-export function DsarPanel({ token, interviewId, transcriptKey, onErased }: Props) {
+export function DsarPanel({ token, interviewId, onErased }: Props) {
   const [subjectRef, setSubjectRef] = useState("");
   const [reasonCode, setReasonCode] = useState("");
   const [dsarKey, setDsarKey] = useState<string | null>(null);
@@ -95,7 +93,7 @@ export function DsarPanel({ token, interviewId, transcriptKey, onErased }: Props
           </div>
 
           <Text as="p" size="sm" variant="secondary" data-testid="dsar-scope-note">
-            {t("dsar.scopeNote", { key: transcriptKey })}
+            {t("dsar.scopeNote")}
           </Text>
           {confirming && (
             <Text as="p" variant="warning" role="alert" data-testid="dsar-erase-warning">
@@ -111,13 +109,7 @@ export function DsarPanel({ token, interviewId, transcriptKey, onErased }: Props
                 return;
               }
               void run(async () => {
-                const r = await executeErasure(token, interviewId, dsarKey, {
-                  transcriptKeys: [transcriptKey],
-                  citationKeys: [],
-                  exportArtifactKeys: [],
-                  reviewCaseKeys: [],
-                  tombstoneTargetEvidenceIds: [],
-                });
+                const r = await executeErasure(token, interviewId, dsarKey);
                 setConfirming(false);
                 onErased(r);
               });

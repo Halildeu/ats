@@ -14,6 +14,8 @@ import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
+import com.ats.dsr.ErasureExecutionStore;
+import com.ats.dsr.ErasureScopeResolver;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.ExportArtifactStore;
 import com.ats.export.ExportService;
@@ -37,6 +39,8 @@ import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
+import com.ats.persistence.PostgresErasureExecutionStore;
+import com.ats.persistence.PostgresErasureScopeResolver;
 import com.ats.persistence.PostgresEvidenceLedger;
 import com.ats.persistence.PostgresExportArtifactStore;
 import com.ats.persistence.PostgresModelGovernanceLedger;
@@ -144,6 +148,16 @@ class WiringConfig {
     @Bean
     DsarStore dsarStore(DataSource ds, Flyway flyway) {
         return new PostgresDsarStore(ds);
+    }
+
+    @Bean
+    ErasureScopeResolver erasureScopeResolver(DataSource ds, Flyway flyway) {
+        return new PostgresErasureScopeResolver(ds);
+    }
+
+    @Bean
+    ErasureExecutionStore erasureExecutionStore(DataSource ds, Flyway flyway) {
+        return new PostgresErasureExecutionStore(ds);
     }
 
     @Bean
@@ -379,12 +393,15 @@ class WiringConfig {
     }
 
     @Bean
-    DsrService dsrService(DsarStore dsarStore, TranscriptStore transcriptStore,
+    DsrService dsrService(DsarStore dsarStore, ErasureScopeResolver scopeResolver,
+            ErasureExecutionStore executionStore, ObjectStorePort objectStore,
+            TranscriptStore transcriptStore,
             CitationStore citationStore, ExportArtifactStore artifactStore,
             ReviewCaseStore reviewStore, HumanReviewService humanReview,
             ScreeningEvidenceStore screeningStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
-        return new DsrService(dsarStore, transcriptStore, citationStore, artifactStore,
+        return new DsrService(dsarStore, scopeResolver, executionStore, objectStore,
+                transcriptStore, citationStore, artifactStore,
                 reviewStore, humanReview, screeningStore, ledger, sink, Clock.systemUTC());
     }
 }

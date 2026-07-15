@@ -55,7 +55,7 @@ describe("a11y smoke (axe-core; color-contrast hariç — jsdom sınırı)", () 
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ dsarKey: "iv-1/dsar-1" }),
         { status: 201, headers: { "Content-Type": "application/json" } }));
     const { container } = render(
-        <DsarPanel token="t" interviewId="iv-1" transcriptKey="iv-1/tr-1" onErased={() => {}} />);
+        <DsarPanel token="t" interviewId="iv-1" onErased={() => {}} />);
     fireEvent.change(screen.getByTestId("dsar-subject-input"), { target: { value: "subj-1" } });
     fireEvent.change(screen.getByTestId("dsar-reason-input"), { target: { value: "kvkk-madde-7" } });
     fireEvent.click(screen.getByTestId("dsar-receive-button"));

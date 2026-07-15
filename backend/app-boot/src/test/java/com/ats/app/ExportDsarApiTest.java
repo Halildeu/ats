@@ -291,17 +291,16 @@ class ExportDsarApiTest {
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
                 "{\"subjectRef\":\"s-1\",\"reasonCode\":\"kvkk_talep\"}");
         assertEquals(201, dsar.getStatusCode().value(), "body: " + dsar.getBody());
+        assertEquals("no-store", dsar.getHeaders().getCacheControl());
+        assertEquals("no-cache", dsar.getHeaders().getFirst("Pragma"));
         String dsarKey = field(dsar.getBody(), "dsarKey");
 
-        String erasureBody = "{\"dsarKey\":\"" + dsarKey + "\",\"scope\":{"
-                + "\"transcriptKeys\":[\"" + tKey + "\"],"
-                + "\"citationKeys\":[\"" + citationKey + "\"],"
-                + "\"exportArtifactKeys\":[\"" + artifactKey + "\"],"
-                + "\"reviewCaseKeys\":[\"" + caseKey + "\"],"
-                + "\"tombstoneTargetEvidenceIds\":[\"" + citationEvidenceId + "\"]}}";
+        String erasureBody = "{\"dsarKey\":\"" + dsarKey + "\"}";
         ResponseEntity<String> er = post(tok, "/api/v1/interviews/" + iv + "/dsar/erasure", erasureBody);
         assertEquals(200, er.getStatusCode().value(), "body: " + er.getBody());
-        assertTrue(er.getBody().contains("\"tombstoneCount\":1"), "body: " + er.getBody());
+        assertEquals("no-store", er.getHeaders().getCacheControl());
+        assertTrue(JSON_READER.readTree(er.getBody()).path("tombstoneCount").asInt() >= 1,
+                "server-authoritative WORM hedefleri tombstone olmalı; body: " + er.getBody());
         assertTrue(er.getBody().contains("\"caseTransitioned\":false"),
                 "terminal EXPORTED state değişmez (dürüst receipt); body: " + er.getBody());
 
@@ -358,7 +357,7 @@ class ExportDsarApiTest {
     }
 
     @Test
-    void null_elements_in_lists_are_400_not_500() {
+    void caller_authored_erasure_scope_is_400_and_has_no_side_effect() {
         String tok = token(ALL, "reviewer-1");
         int wormBefore = wormTotal(TENANT);
         // export: criteria[null] + consentRefs[null] + citationCriterion null-value
@@ -371,7 +370,7 @@ class ExportDsarApiTest {
         ResponseEntity<String> e3 = post(tok, "/api/v1/interviews/iv-n/export",
                 "{\"caseKey\":\"k\",\"citationKeys\":[\"c\"],\"context\":{\"citationCriterion\":{\"c\":null}}}");
         assertEquals(400, e3.getStatusCode().value(), "body: " + e3.getBody());
-        // erasure: scope listelerinde null
+        // erasure: caller-authored scope bütünüyle yasak; alan içeriği parse edilmez
         ResponseEntity<String> e4 = post(tok, "/api/v1/interviews/iv-n/dsar/erasure",
                 "{\"dsarKey\":\"iv-n/dsar-x\",\"scope\":{\"transcriptKeys\":[null]}}");
         assertEquals(400, e4.getStatusCode().value(), "body: " + e4.getBody());
@@ -380,16 +379,31 @@ class ExportDsarApiTest {
     }
 
     @Test
-    void erasure_with_empty_scope_is_400_and_unknown_dsar_404() {
+    void erasure_extra_scope_is_400_and_unknown_dsar_is_404() {
         String tok = token(ALL, "reviewer-1");
         assertEquals(400, post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
                 "{\"dsarKey\":\"iv-e/dsar-x\",\"scope\":{}}").getStatusCode().value());
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/iv-e/dsar",
                 "{\"subjectRef\":\"s-1\",\"reasonCode\":\"r\"}");
         assertEquals(201, dsar.getStatusCode().value());
-        assertEquals(404, post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
-                "{\"dsarKey\":\"iv-e/dsar-YOK\",\"scope\":{\"transcriptKeys\":[\"iv-e/tr-x\"]}}")
-                .getStatusCode().value());
+        ResponseEntity<String> missing = post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
+                "{\"dsarKey\":\"iv-e/dsar-YOK\"}");
+        assertEquals(404, missing.getStatusCode().value());
+        assertEquals("no-store", missing.getHeaders().getCacheControl());
+        assertEquals("no-cache", missing.getHeaders().getFirst("Pragma"));
+
+        ResponseEntity<String> empty = post(tok, "/api/v1/interviews/iv-e/dsar/erasure", "");
+        assertEquals(400, empty.getStatusCode().value());
+        assertEquals("no-store", empty.getHeaders().getCacheControl());
+
+        ResponseEntity<String> malformed = post(
+                tok, "/api/v1/interviews/iv-e/dsar/erasure", "{");
+        assertEquals(400, malformed.getStatusCode().value());
+        assertEquals("no-store", malformed.getHeaders().getCacheControl());
+        ResponseEntity<String> duplicate = post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
+                "{\"dsarKey\":\"iv-e/dsar-x\",\"dsarKey\":\"iv-e/dsar-y\"}");
+        assertEquals(400, duplicate.getStatusCode().value());
+        assertEquals("no-store", duplicate.getHeaders().getCacheControl());
     }
 
     private int wormTotal(String tenant) {

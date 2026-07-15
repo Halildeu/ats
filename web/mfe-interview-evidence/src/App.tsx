@@ -223,9 +223,9 @@ export default function App() {
           <DsarPanel
             token={token}
             interviewId={loaded.interviewId}
-            transcriptKey={loaded.transcriptKey}
             onErased={(receipt) => {
-              // dürüst state: içerik silindi — segment/inceleme yüzeyi kaldırılır
+              // Dürüst state: server-authoritative mülakat içeriği silindi;
+              // segment/inceleme yüzeyi artık stale veri göstermemeli.
               setTranscript(null);
               setLoaded(null);
               setErasedReceipt(receipt);
