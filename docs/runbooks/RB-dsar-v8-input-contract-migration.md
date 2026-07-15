@@ -18,7 +18,8 @@ transaction'ını durdurur; uygulama yarım-çalışır durumda açılmaz.
 - Source guard, PR/push CI'da exact base commit'e karşı bu değişikliği tespit edip job'ı reddeder.
   Ancak repository branch protection ve CODEOWNERS review zorunluluğu owner tarafından etkinleştirilene
   kadar doğrudan `main` push'unu önceden engellediği iddia edilmez; başarısız post-push alarmı
-  geçmişi otomatik geri almaz. Bu repository-governance kapısı ayrı owner kararıdır.
+  geçmişi otomatik geri almaz. Bu repository-governance kapısı ayrı owner kararıdır ve
+  [ATS #173](https://github.com/Halildeu/ats/issues/173) altında izlenir.
 - Düzeltme production ise migration-owner + DPO/owner onayı ve şifreli backup zorunludur.
 
 ## 1. PII-safe preflight

@@ -8,6 +8,9 @@
 /backend/persistence-postgres/src/main/resources/db/migration/ @Halildeu
 /backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputPolicy.java @Halildeu
 /backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputContractGenerated.java @Halildeu
+/backend/retention-dsr/src/main/java/com/ats/dsr/DsarRequest.java @Halildeu
+/backend/retention-dsr/src/main/java/com/ats/dsr/DsrService.java @Halildeu
+/backend/app-boot/src/main/java/com/ats/app/web/DsarApiController.java @Halildeu
 /backend/retention-dsr/src/test/java/com/ats/dsr/DsarInputPolicyTest.java @Halildeu
 /backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresStoresTest.java @Halildeu
 /web/mfe-interview-evidence/src/dsarApi.ts @Halildeu
