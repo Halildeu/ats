@@ -137,6 +137,13 @@ class OpenApiDriftTest {
                 .path("requestBody").path("content").path("application/json").path("schema");
         org.junit.jupiter.api.Assertions.assertEquals("object", requestSchema.path("type").asText());
         org.junit.jupiter.api.Assertions.assertEquals(2, requestSchema.path("oneOf").size());
+        com.fasterxml.jackson.databind.JsonNode responses = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/screenings").path("post")
+                .path("responses");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                responses.path("200").path("headers").has("X-ATS-Replay"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                responses.path("201").path("headers").has("X-ATS-Replay"));
 
         com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
         for (String name : java.util.List.of(
