@@ -101,8 +101,8 @@ class PostgresRetentionTest {
         ScreeningResult oldScreening = screeningResult(501);
         RequestBinding oldBinding = new RequestBinding(
                 requestKey(501), ScreeningSourceKind.TRANSCRIPT_SEGMENT, oldTr, 0);
-        screenings.saveIdempotent(
-                screeningCommand(OLD_IV, oldScreening), oldBinding).asOptional().orElseThrow();
+        requireOk(screenings.saveIdempotent(
+                screeningCommand(OLD_IV, oldScreening), oldBinding));
         backdate("transcript", "transcript_key", oldTr);
         backdate("citation", "citation_key", oldCit);
         backdate("export_artifact", "artifact_key", oldArt);
@@ -113,8 +113,8 @@ class PostgresRetentionTest {
         ScreeningResult freshScreening = screeningResult(502);
         RequestBinding freshBinding = new RequestBinding(
                 requestKey(502), ScreeningSourceKind.TRANSCRIPT_SEGMENT, freshTr, 0);
-        screenings.saveIdempotent(
-                screeningCommand(NEW_IV, freshScreening), freshBinding).asOptional().orElseThrow();
+        requireOk(screenings.saveIdempotent(
+                screeningCommand(NEW_IV, freshScreening), freshBinding));
         // cross-tenant eski içerik — T1 purge'u dokunmamalı
         String otherTenantTr = transcripts.put(new Transcript(T2, OLD_IV, "i-old/rec-" + "c".repeat(64), "tr",
                 List.of(new Transcript.Segment(0, "S1", 0, 900, "baska tenant")))).asOptional().orElseThrow();
@@ -187,9 +187,9 @@ class PostgresRetentionTest {
         RequestBinding binding = new RequestBinding(
                 requestKey(503), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
                 "i-screening-dsar/tr-source-503", 0);
-        screenings.saveIdempotent(new SaveCommand(
+        requireOk(screenings.saveIdempotent(new SaveCommand(
                 tenant, dpo, interview, result, ScreeningSourceKind.TRANSCRIPT_SEGMENT,
-                "2026-07-15T08:00:00Z"), binding).asOptional().orElseThrow();
+                "2026-07-15T08:00:00Z"), binding));
 
         InMemoryDsarStore dsars = new InMemoryDsarStore();
         InMemoryEventSink sink = new InMemoryEventSink();
@@ -239,5 +239,13 @@ class PostgresRetentionTest {
 
     private static String requestKey(int seed) {
         return "scrq_00000000-0000-4000-8000-" + String.format("%012x", seed);
+    }
+
+    private static <T> T requireOk(Outcome<T> outcome) {
+        if (outcome instanceof Outcome.Ok<T> ok) {
+            return ok.value();
+        }
+        Outcome.Fail<T> fail = (Outcome.Fail<T>) outcome;
+        throw new AssertionError("Outcome başarısız: " + fail.code() + " / " + fail.reason());
     }
 }

@@ -182,8 +182,7 @@ class PostgresScreeningEvidenceStoreTest {
                 requestKey(40), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
                 "interview-shared/tr-canonical-40", 3);
 
-        IdempotentSaveResult first = store.saveIdempotent(firstCommand, binding)
-                .asOptional().orElseThrow();
+        IdempotentSaveResult first = requireOk(store.saveIdempotent(firstCommand, binding));
         assertFalse(first.replayed());
 
         // Replay komutunun random run/ref'i farklı olsa dahi request sentinel original fact'i döndürür.
@@ -195,8 +194,7 @@ class PostgresScreeningEvidenceStoreTest {
         SaveCommand retryCommand = command(
                 tenant, result(41, Coverage.SUPPORTED, List.of(laterFinding)),
                 ScreeningSourceKind.TRANSCRIPT_SEGMENT);
-        IdempotentSaveResult replay = store.saveIdempotent(retryCommand, binding)
-                .asOptional().orElseThrow();
+        IdempotentSaveResult replay = requireOk(store.saveIdempotent(retryCommand, binding));
         assertTrue(replay.replayed());
         assertEquals(first.receipt(), replay.receipt());
         assertEquals(List.of(finding), replay.evidence().findings());
@@ -243,10 +241,10 @@ class PostgresScreeningEvidenceStoreTest {
                             ScreeningSignal.QUESTION_LIKE_PROTECTED_MENTION,
                             ScreeningSourceKind.TRANSCRIPT_SEGMENT,
                             new TextSpan(0, 4, 0));
-                    return store.saveIdempotent(
+                    return requireOk(store.saveIdempotent(
                             command(tenant, result(seed, Coverage.SUPPORTED, List.of(finding)),
                                     ScreeningSourceKind.TRANSCRIPT_SEGMENT),
-                            binding).asOptional().orElseThrow();
+                            binding));
                 }));
             }
             ready.await();
@@ -294,8 +292,7 @@ class PostgresScreeningEvidenceStoreTest {
         RequestBinding binding = new RequestBinding(
                 requestKey(42), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
                 "interview-shared/tr-canonical-42", 0);
-        IdempotentSaveResult saved = store.saveIdempotent(command, binding)
-                .asOptional().orElseThrow();
+        IdempotentSaveResult saved = requireOk(store.saveIdempotent(command, binding));
         assertEquals(ScreeningEvidenceStore.PurgeTargetState.ACTIVE,
                 store.inspectPurgeTarget(tenant, command.interviewId(),
                         saved.receipt().findingSetRef()).asOptional().orElseThrow());
@@ -588,6 +585,14 @@ class PostgresScreeningEvidenceStoreTest {
 
     private static TenantId tenant() {
         return new TenantId("screening-test-" + (++seq));
+    }
+
+    private static <T> T requireOk(Outcome<T> outcome) {
+        if (outcome instanceof Outcome.Ok<T> ok) {
+            return ok.value();
+        }
+        Outcome.Fail<T> fail = (Outcome.Fail<T>) outcome;
+        throw new AssertionError("Outcome başarısız: " + fail.code() + " / " + fail.reason());
     }
 
     private static int count(String table, TenantId tenant) throws SQLException {
