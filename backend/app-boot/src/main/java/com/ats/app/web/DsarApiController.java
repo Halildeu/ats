@@ -54,17 +54,25 @@ class DsarApiController {
     @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ErasureReceiptResponse(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int tombstoneCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int deletedContentCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int objectDeleteIssuedCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             boolean caseTransitioned) {}
 
     @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ErasureExecutionResponse(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int tombstoneCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int deletedContentCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int objectDeleteIssuedCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             boolean caseTransitioned,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             boolean replayed) {}
@@ -74,8 +82,11 @@ class DsarApiController {
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"RUNNING"}) String state,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int completedStepCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int totalStepCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int retryAfterSeconds) {}
 
     @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -83,8 +94,11 @@ class DsarApiController {
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"FULFILLED"}) String state,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int completedStepCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int totalStepCount,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             int retryAfterSeconds,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             ErasureReceiptResponse receipt) {}
@@ -193,6 +207,7 @@ class DsarApiController {
                     headers = @Header(name = "Retry-After",
                             description = "RUNNING canlı lease için saniye; terminalde yok"),
                     content = @Content(schema = @Schema(
+                            type = "object",
                             oneOf = {RunningErasureStatusResponse.class,
                                     FulfilledErasureStatusResponse.class}))),
             @ApiResponse(responseCode = "404", description = "Execution henüz yok",

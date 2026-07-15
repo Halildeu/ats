@@ -191,9 +191,11 @@ class OpenApiDriftTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 recovery.path("responses").path("200").path("headers").has("Retry-After"));
         org.junit.jupiter.api.Assertions.assertTrue(recovery.path("responses").has("409"));
+        com.fasterxml.jackson.databind.JsonNode statusSchema = recovery.path("responses")
+                .path("200").path("content").path("*/*").path("schema");
+        org.junit.jupiter.api.Assertions.assertEquals("object", statusSchema.path("type").asText());
         java.util.Set<String> statusRefs = java.util.stream.StreamSupport.stream(
-                        recovery.path("responses").path("200").path("content")
-                                .path("*/*").path("schema").path("oneOf").spliterator(), false)
+                        statusSchema.path("oneOf").spliterator(), false)
                 .map(node -> node.path("$ref").asText())
                 .collect(java.util.stream.Collectors.toSet());
         org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of(
@@ -210,9 +212,12 @@ class OpenApiDriftTest {
             org.junit.jupiter.api.Assertions.assertFalse(
                     schema.path("additionalProperties").asBoolean(true), name);
         }
-        org.junit.jupiter.api.Assertions.assertTrue(
-                schemas.path("ErasureExecutionResponse").path("required").toString()
-                        .contains("replayed"));
+        assertRequiredExactly(schemas.path("ErasureReceiptResponse"),
+                "dsarKey", "tombstoneCount", "deletedContentCount",
+                "objectDeleteIssuedCount", "caseTransitioned");
+        assertRequiredExactly(schemas.path("ErasureExecutionResponse"),
+                "dsarKey", "tombstoneCount", "deletedContentCount",
+                "objectDeleteIssuedCount", "caseTransitioned", "replayed");
         com.fasterxml.jackson.databind.JsonNode running = schemas.path("RunningErasureStatusResponse");
         com.fasterxml.jackson.databind.JsonNode fulfilled = schemas.path("FulfilledErasureStatusResponse");
         org.junit.jupiter.api.Assertions.assertEquals(
@@ -220,6 +225,8 @@ class OpenApiDriftTest {
                                 running.path("properties").path("state").path("enum").spliterator(), false)
                         .map(com.fasterxml.jackson.databind.JsonNode::asText).toList());
         org.junit.jupiter.api.Assertions.assertFalse(running.path("properties").has("receipt"));
+        assertRequiredExactly(running, "dsarKey", "state", "completedStepCount",
+                "totalStepCount", "retryAfterSeconds");
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("FULFILLED"), java.util.stream.StreamSupport.stream(
                                 fulfilled.path("properties").path("state").path("enum").spliterator(), false)
@@ -227,7 +234,16 @@ class OpenApiDriftTest {
         org.junit.jupiter.api.Assertions.assertEquals(
                 "#/components/schemas/ErasureReceiptResponse",
                 fulfilled.path("properties").path("receipt").path("$ref").asText());
-        org.junit.jupiter.api.Assertions.assertTrue(
-                fulfilled.path("required").toString().contains("receipt"));
+        assertRequiredExactly(fulfilled, "dsarKey", "state", "completedStepCount",
+                "totalStepCount", "retryAfterSeconds", "receipt");
+    }
+
+    private static void assertRequiredExactly(
+            com.fasterxml.jackson.databind.JsonNode schema, String... expected) {
+        java.util.Set<String> actual = java.util.stream.StreamSupport.stream(
+                        schema.path("required").spliterator(), false)
+                .map(com.fasterxml.jackson.databind.JsonNode::asText)
+                .collect(java.util.stream.Collectors.toSet());
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of(expected), actual);
     }
 }
