@@ -180,7 +180,7 @@ class PostgresScreeningEvidenceStoreTest {
                 ScreeningSourceKind.TRANSCRIPT_SEGMENT);
         RequestBinding binding = new RequestBinding(
                 requestKey(40), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
-                "interview-shared/tr-canonical-40", 3);
+                "a".repeat(256), 3);
 
         IdempotentSaveResult first = requireOk(store.saveIdempotent(firstCommand, binding));
         assertFalse(first.replayed());

@@ -89,6 +89,9 @@ class ScreeningEvidenceContractTest {
         assertEquals(ScreeningSourceKind.CITATION_CLAIM,
                 new ScreeningEvidenceStore.RequestBinding(
                         key, ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", null).sourceKind());
+        assertEquals(256, new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.CITATION_CLAIM, "a".repeat(256), null)
+                .canonicalSourceRef().length());
 
         assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
                 "candidate@example.com", ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", null));
@@ -101,6 +104,8 @@ class ScreeningEvidenceContractTest {
                 key, ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", 0));
         assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
                 key, ScreeningSourceKind.FREE_TEXT, "iv/free", null));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.CITATION_CLAIM, "a".repeat(257), null));
     }
 
     @Test

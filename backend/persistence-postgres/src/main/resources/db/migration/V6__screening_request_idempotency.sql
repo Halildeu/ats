@@ -51,7 +51,10 @@ CREATE TABLE protected_screening_source_binding (
     CONSTRAINT protected_screening_binding_same_ref_ck
         CHECK (finding_set_ref ~ '^fsr_[0-9a-f]{64}$'),
     CONSTRAINT protected_screening_binding_source_ref_ck
-        CHECK (canonical_source_ref ~ '^[A-Za-z0-9._:/-]{1,256}$'),
+        -- PostgreSQL POSIX regex tekrar üst sınırı 255'tir; {1,256} SQLSTATE
+        -- 2201B üretir. Karakter allowlist'i ve gerçek 256 sınırını ayrı doğrula.
+        CHECK (canonical_source_ref ~ '^[A-Za-z0-9._:/-]+$'
+            AND char_length(canonical_source_ref) BETWEEN 1 AND 256),
     CONSTRAINT protected_screening_binding_source_kind_ck
         CHECK (source_kind IN ('TRANSCRIPT_SEGMENT', 'CITATION_CLAIM')),
     CONSTRAINT protected_screening_binding_segment_ck CHECK (
