@@ -17,8 +17,12 @@ import com.ats.screening.FindingSetRef;
 import com.ats.screening.ProtectedAttributeScreener;
 import com.ats.screening.ProtectedCategory;
 import com.ats.screening.ScreeningDisposition;
+import com.ats.screening.ScreeningEvidenceStore;
 import com.ats.screening.ScreeningEvidenceStore.PurgeCommand;
 import com.ats.screening.ScreeningEvidenceStore.PurgeReason;
+import com.ats.screening.ScreeningEvidenceStore.IdempotentSaveResult;
+import com.ats.screening.ScreeningEvidenceStore.RequestBinding;
+import com.ats.screening.ScreeningEvidenceStore.RequestReplay;
 import com.ats.screening.ScreeningEvidenceStore.SaveCommand;
 import com.ats.screening.ScreeningEvidenceStore.SaveReceipt;
 import com.ats.screening.ScreeningEvidenceStore.StoredEvidence;
@@ -37,6 +41,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -162,6 +168,212 @@ class PostgresScreeningEvidenceStoreTest {
     }
 
     @Test
+    void runtime_idempotency_replays_original_and_conflicts_on_different_canonical_source() {
+        TenantId tenant = tenant();
+        ScreeningFinding finding = new ScreeningFinding(
+                ProtectedCategory.AGE,
+                ScreeningSignal.QUESTION_LIKE_PROTECTED_MENTION,
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                new TextSpan(1, 5, 3));
+        SaveCommand firstCommand = command(
+                tenant, result(40, Coverage.SUPPORTED, List.of(finding)),
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT);
+        RequestBinding binding = new RequestBinding(
+                requestKey(40), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                "interview-shared/tr-canonical-40", 3);
+
+        IdempotentSaveResult first = store.saveIdempotent(firstCommand, binding)
+                .asOptional().orElseThrow();
+        assertFalse(first.replayed());
+
+        // Replay komutunun random run/ref'i farklı olsa dahi request sentinel original fact'i döndürür.
+        ScreeningFinding laterFinding = new ScreeningFinding(
+                ProtectedCategory.RELIGION_BELIEF,
+                ScreeningSignal.PROTECTED_ATTRIBUTE_MENTION,
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                new TextSpan(2, 8, 3));
+        SaveCommand retryCommand = command(
+                tenant, result(41, Coverage.SUPPORTED, List.of(laterFinding)),
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT);
+        IdempotentSaveResult replay = store.saveIdempotent(retryCommand, binding)
+                .asOptional().orElseThrow();
+        assertTrue(replay.replayed());
+        assertEquals(first.receipt(), replay.receipt());
+        assertEquals(List.of(finding), replay.evidence().findings());
+
+        RequestReplay lookedUp = store.findRequest(
+                tenant, firstCommand.interviewId(), binding).asOptional().orElseThrow();
+        assertEquals(first.receipt().findingSetRef(), lookedUp.evidence().findingSetRef());
+        assertEquals(binding, lookedUp.binding());
+        RequestReplay bound = store.getBoundEvidence(
+                tenant, firstCommand.interviewId(), first.receipt().findingSetRef())
+                .asOptional().orElseThrow();
+        assertEquals(binding, bound.binding());
+
+        Outcome<IdempotentSaveResult> conflict = store.saveIdempotent(
+                retryCommand, new RequestBinding(
+                        requestKey(40), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                        "interview-shared/tr-other", 3));
+        assertFalse(conflict.isOk());
+        assertEquals(OutcomeCode.CONFLICT,
+                ((Outcome.Fail<IdempotentSaveResult>) conflict).code());
+        assertEquals(1, countUnchecked("worm_ledger", tenant));
+        assertEquals(1, countUnchecked("protected_screening_evidence", tenant));
+    }
+
+    @Test
+    void concurrent_runtime_first_writer_produces_exactly_one_worm_fact_and_one_aggregate()
+            throws Exception {
+        TenantId tenant = tenant();
+        RequestBinding binding = new RequestBinding(
+                requestKey(60), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                "interview-shared/tr-concurrent-60", 0);
+        int callers = 8;
+        CountDownLatch ready = new CountDownLatch(callers);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<IdempotentSaveResult>> futures = new ArrayList<>();
+        try (var pool = Executors.newFixedThreadPool(callers)) {
+            for (int i = 0; i < callers; i++) {
+                final int seed = 60 + i;
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    ScreeningFinding finding = new ScreeningFinding(
+                            ProtectedCategory.AGE,
+                            ScreeningSignal.QUESTION_LIKE_PROTECTED_MENTION,
+                            ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                            new TextSpan(0, 4, 0));
+                    return store.saveIdempotent(
+                            command(tenant, result(seed, Coverage.SUPPORTED, List.of(finding)),
+                                    ScreeningSourceKind.TRANSCRIPT_SEGMENT),
+                            binding).asOptional().orElseThrow();
+                }));
+            }
+            ready.await();
+            start.countDown();
+
+            int fresh = 0;
+            Set<FindingSetRef> refs = new HashSet<>();
+            Set<String> evidenceIds = new HashSet<>();
+            for (Future<IdempotentSaveResult> future : futures) {
+                IdempotentSaveResult value = future.get();
+                if (!value.replayed()) {
+                    fresh++;
+                }
+                refs.add(value.receipt().findingSetRef());
+                evidenceIds.add(value.receipt().evidenceId().value());
+            }
+            assertEquals(1, fresh, "yalnız request advisory-lock ilk yazarı fresh olabilir");
+            assertEquals(1, refs.size());
+            assertEquals(1, evidenceIds.size());
+        }
+        assertEquals(1, count("worm_ledger", tenant));
+        assertEquals(1, count("protected_screening_evidence", tenant));
+        assertEquals(1, count("protected_screening_request", tenant));
+        assertEquals(1, count("protected_screening_source_binding", tenant));
+    }
+
+    @Test
+    void purge_removes_source_binding_but_keeps_terminal_request_sentinel_no_resurrection()
+            throws SQLException {
+        TenantId tenant = tenant();
+        Outcome<ScreeningEvidenceStore.PurgeTargetState> neverExisted = store.inspectPurgeTarget(
+                tenant, new InterviewId("interview-shared"), ref(999));
+        assertFalse(neverExisted.isOk());
+        assertEquals(OutcomeCode.NOT_FOUND,
+                ((Outcome.Fail<ScreeningEvidenceStore.PurgeTargetState>) neverExisted).code());
+
+        ScreeningFinding finding = new ScreeningFinding(
+                ProtectedCategory.HEALTH_DISABILITY,
+                ScreeningSignal.PROTECTED_ATTRIBUTE_MENTION,
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                new TextSpan(0, 7, 0));
+        SaveCommand command = command(
+                tenant, result(42, Coverage.SUPPORTED, List.of(finding)),
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT);
+        RequestBinding binding = new RequestBinding(
+                requestKey(42), ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                "interview-shared/tr-canonical-42", 0);
+        IdempotentSaveResult saved = store.saveIdempotent(command, binding)
+                .asOptional().orElseThrow();
+        assertEquals(ScreeningEvidenceStore.PurgeTargetState.ACTIVE,
+                store.inspectPurgeTarget(tenant, command.interviewId(),
+                        saved.receipt().findingSetRef()).asOptional().orElseThrow());
+
+        store.purge(purgeCommand(
+                tenant, saved.receipt().findingSetRef(), PurgeReason.DATA_SUBJECT_ERASURE))
+                .asOptional().orElseThrow();
+        assertEquals(1, count("protected_screening_request", tenant));
+        assertEquals(0, count("protected_screening_source_binding", tenant));
+        assertEquals(1, count("protected_screening_request_purge", tenant));
+        assertEquals(ScreeningEvidenceStore.PurgeTargetState.PURGED,
+                store.inspectPurgeTarget(tenant, command.interviewId(),
+                        saved.receipt().findingSetRef()).asOptional().orElseThrow());
+        assertFalse(store.getBoundEvidence(
+                tenant, command.interviewId(), saved.receipt().findingSetRef()).isOk());
+
+        Outcome<RequestReplay> lookup = store.findRequest(tenant, command.interviewId(), binding);
+        assertFalse(lookup.isOk());
+        assertEquals(OutcomeCode.CONFLICT, ((Outcome.Fail<RequestReplay>) lookup).code());
+
+        SaveCommand retry = command(
+                tenant, result(43, Coverage.SUPPORTED, List.of(finding)),
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT);
+        Outcome<IdempotentSaveResult> resurrect = store.saveIdempotent(retry, binding);
+        assertFalse(resurrect.isOk());
+        assertEquals(OutcomeCode.CONFLICT,
+                ((Outcome.Fail<IdempotentSaveResult>) resurrect).code());
+        assertEquals(0, count("protected_screening_evidence", tenant));
+    }
+
+    @Test
+    void composite_fk_rejects_cross_interview_source_binding() throws SQLException {
+        TenantId tenant = tenant();
+        ScreeningFinding finding = new ScreeningFinding(
+                ProtectedCategory.AGE,
+                ScreeningSignal.PROTECTED_ATTRIBUTE_MENTION,
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                new TextSpan(0, 2, 0));
+        SaveCommand command = command(
+                tenant, result(44, Coverage.SUPPORTED, List.of(finding)),
+                ScreeningSourceKind.TRANSCRIPT_SEGMENT);
+        SaveReceipt saved = store.save(command).asOptional().orElseThrow();
+
+        try (Connection c = dataSource.getConnection()) {
+            try (PreparedStatement sentinel = c.prepareStatement(
+                    "INSERT INTO protected_screening_request"
+                            + " (tenant_id, interview_id, idempotency_key, finding_set_ref)"
+                            + " VALUES (?,?,?,?)")) {
+                sentinel.setString(1, tenant.value());
+                sentinel.setString(2, "interview-other");
+                sentinel.setString(3, requestKey(44));
+                sentinel.setString(4, saved.findingSetRef().value());
+                sentinel.executeUpdate();
+            }
+            try (PreparedStatement binding = c.prepareStatement(
+                    "INSERT INTO protected_screening_source_binding"
+                            + " (tenant_id, interview_id, idempotency_key, finding_set_ref,"
+                            + " source_kind, canonical_source_ref, segment_index)"
+                            + " VALUES (?,?,?,?,?,?,?)")) {
+                binding.setString(1, tenant.value());
+                binding.setString(2, "interview-other");
+                binding.setString(3, requestKey(44));
+                binding.setString(4, saved.findingSetRef().value());
+                binding.setString(5, "TRANSCRIPT_SEGMENT");
+                binding.setString(6, "interview-other/tr-cross");
+                binding.setInt(7, 0);
+                boolean rejected = false;
+                try {
+                    binding.executeUpdate();
+                } catch (SQLException expected) {
+                    rejected = true;
+                }
+                assertTrue(rejected, "composite FK cross-interview evidence bağını reddetmeli");
+            }
+        }
+    }
+
+    @Test
     void same_run_with_different_policy_or_finding_ref_is_conflict_and_rolls_back() throws SQLException {
         TenantId tenant = tenant();
         ScreeningResult original = result(3, Coverage.SUPPORTED, List.of());
@@ -245,7 +457,10 @@ class PostgresScreeningEvidenceStoreTest {
         PurgeCommand purge = purgeCommand(tenant, result.findingSetRef(), PurgeReason.DATA_SUBJECT_ERASURE);
         var first = store.purge(purge).asOptional().orElseThrow();
         var replay = store.purge(purge).asOptional().orElseThrow();
-        assertEquals(first, replay);
+        assertFalse(first.replayed());
+        assertTrue(replay.replayed());
+        assertEquals(first.findingSetRef(), replay.findingSetRef());
+        assertEquals(first.tombstoneEvidenceId(), replay.tombstoneEvidenceId());
         assertFalse(store.get(tenant, result.findingSetRef()).isOk());
         assertTrue(ledger.getById(tenant, saved.evidenceId()).isOk(), "orijinal WORM receipt değişmez");
         assertTrue(ledger.findTombstoneForEvidence(tenant, saved.evidenceId()).isOk());
@@ -302,6 +517,11 @@ class PostgresScreeningEvidenceStoreTest {
             assertTrue(hasTablePrivilege(st, "protected_screening_evidence", "DELETE"));
             assertFalse(hasTablePrivilege(st, "protected_screening_finding", "DELETE"));
             assertFalse(hasTablePrivilege(st, "worm_ledger", "DELETE"));
+            assertFalse(hasTablePrivilege(st, "protected_screening_request", "UPDATE"));
+            assertFalse(hasTablePrivilege(st, "protected_screening_request", "DELETE"));
+            assertFalse(hasTablePrivilege(st, "protected_screening_source_binding", "DELETE"));
+            assertFalse(hasTablePrivilege(st, "protected_screening_request_purge", "UPDATE"));
+            assertFalse(hasTablePrivilege(st, "protected_screening_request_purge", "DELETE"));
             st.execute("RESET ROLE");
         }
     }
@@ -356,6 +576,10 @@ class PostgresScreeningEvidenceStoreTest {
         return new FindingSetRef("fsr_" + String.format("%064x", seed));
     }
 
+    private static String requestKey(int seed) {
+        return "scrq_00000000-0000-4000-8000-" + String.format("%012x", seed);
+    }
+
     private static ScreeningFinding finding(ProtectedCategory category, int start, int end) {
         return new ScreeningFinding(
                 category, ScreeningSignal.PROTECTED_ATTRIBUTE_MENTION,
@@ -374,6 +598,14 @@ class PostgresScreeningEvidenceStoreTest {
                 rs.next();
                 return rs.getInt(1);
             }
+        }
+    }
+
+    private static int countUnchecked(String table, TenantId tenant) {
+        try {
+            return count(table, tenant);
+        } catch (SQLException ex) {
+            throw new IllegalStateException(ex);
         }
     }
 

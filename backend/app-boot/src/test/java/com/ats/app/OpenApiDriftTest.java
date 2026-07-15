@@ -77,6 +77,12 @@ class OpenApiDriftTest {
 
         if (!pinnedCanonical.equals(liveCanonical)) {
             writeLive(liveCanonical);
+            // CI ortamında target artefaktına doğrudan erişilemeyebilir. Yalnız API
+            // metadatası olan canonical OpenAPI'yi belirgin sınırlar arasında logla;
+            // böylece bilinçli sözleşme değişikliği fail çıktısından incelenip pinlenebilir.
+            System.err.println("OPENAPI_LIVE_CANONICAL_BEGIN");
+            System.err.println(liveCanonical);
+            System.err.println("OPENAPI_LIVE_CANONICAL_END");
         }
         assertEquals(pinnedCanonical, liveCanonical,
                 "API sözleşmesi pinlenen snapshot'tan SAPTI. Bilinçsiz değişiklikse geri alın;"

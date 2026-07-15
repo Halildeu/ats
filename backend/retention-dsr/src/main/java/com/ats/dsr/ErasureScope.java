@@ -11,6 +11,7 @@ public record ErasureScope(
         List<String> citationKeys,
         List<String> exportArtifactKeys,
         List<String> reviewCaseKeys,
+        List<String> screeningFindingSetRefs,
         List<String> tombstoneTargetEvidenceIds) {
 
     public ErasureScope {
@@ -18,11 +19,13 @@ public record ErasureScope(
         citationKeys = List.copyOf(citationKeys);
         exportArtifactKeys = List.copyOf(exportArtifactKeys);
         reviewCaseKeys = List.copyOf(reviewCaseKeys);
+        screeningFindingSetRefs = List.copyOf(screeningFindingSetRefs);
         tombstoneTargetEvidenceIds = List.copyOf(tombstoneTargetEvidenceIds);
     }
 
     public boolean empty() {
         return transcriptKeys.isEmpty() && citationKeys.isEmpty() && exportArtifactKeys.isEmpty()
-                && reviewCaseKeys.isEmpty() && tombstoneTargetEvidenceIds.isEmpty();
+                && reviewCaseKeys.isEmpty() && screeningFindingSetRefs.isEmpty()
+                && tombstoneTargetEvidenceIds.isEmpty();
     }
 }

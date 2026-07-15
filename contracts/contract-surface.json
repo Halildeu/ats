@@ -507,6 +507,7 @@
       "WEBHOOK"
     ],
     "OutcomeCode": [
+      "CONFLICT",
       "DENIED",
       "INVALID",
       "NOT_CONFIGURED",

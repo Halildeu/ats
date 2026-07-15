@@ -58,6 +58,8 @@ class SecurityConfig {
             Map.entry("ats.transcription.write", "TRANSCRIPTION_WRITE"),
             Map.entry("ats.transcript.read", "TRANSCRIPT_READ"),
             Map.entry("ats.citation.write", "CITATION_WRITE"),
+            Map.entry("ats.screening.write", "SCREENING_WRITE"),
+            Map.entry("ats.screening.read", "SCREENING_READ"),
             Map.entry("ats.review.write", "REVIEW_WRITE"),
             Map.entry("ats.review.read", "REVIEW_READ"),
             // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
@@ -89,6 +91,10 @@ class SecurityConfig {
                             .hasAuthority("TRANSCRIPT_READ")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/citations")
                             .hasAuthority("CITATION_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/screenings")
+                            .hasAuthority("SCREENING_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/screenings/*")
+                            .hasAuthority("SCREENING_READ")
                         .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/review-case",
                                 "/api/v1/interviews/*/review-cases")
                             .hasAuthority("REVIEW_READ")

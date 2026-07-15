@@ -27,9 +27,16 @@ import com.ats.orchestration.Transcript;
 import com.ats.review.HumanReviewService;
 import com.ats.review.InMemoryReviewCaseStore;
 import com.ats.review.ReviewState;
+import com.ats.screening.FindingSetRef;
+import com.ats.screening.ScreeningEvidenceStore;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +56,7 @@ class DsrServiceTest {
     private InMemoryReviewCaseStore reviewStore;
     private HumanReviewService humanReview;
     private FakeLedger ledger;
+    private NoopScreeningStore screeningStore;
     private DsrService service;
 
     private String transcriptKey;
@@ -97,6 +105,41 @@ class DsrServiceTest {
         }
     }
 
+    static final class NoopScreeningStore implements ScreeningEvidenceStore {
+        final List<PurgeCommand> purges = new ArrayList<>();
+        final Set<String> missingRefs = new HashSet<>();
+
+        @Override public Outcome<SaveReceipt> save(SaveCommand command) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "test-no-screening");
+        }
+        @Override public Outcome<IdempotentSaveResult> saveIdempotent(
+                SaveCommand command, RequestBinding binding) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "test-no-screening");
+        }
+        @Override public Outcome<RequestReplay> findRequest(
+                TenantId tenantId, InterviewId interviewId, RequestBinding expectedBinding) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "test-no-screening");
+        }
+        @Override public Outcome<RequestReplay> getBoundEvidence(
+                TenantId tenantId, InterviewId interviewId, FindingSetRef findingSetRef) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "test-no-screening");
+        }
+        @Override public Outcome<StoredEvidence> get(TenantId tenantId, FindingSetRef findingSetRef) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "test-no-screening");
+        }
+        @Override public Outcome<PurgeTargetState> inspectPurgeTarget(
+                TenantId tenantId, InterviewId interviewId, FindingSetRef findingSetRef) {
+            return missingRefs.contains(findingSetRef.value())
+                    ? Outcome.fail(OutcomeCode.NOT_FOUND, "test-missing-screening")
+                    : Outcome.ok(PurgeTargetState.ACTIVE);
+        }
+        @Override public Outcome<PurgeReceipt> purge(PurgeCommand command) {
+            purges.add(command);
+            return Outcome.ok(new PurgeReceipt(
+                    command.findingSetRef(), new EvidenceId("fake-screening-tombstone-1"), false));
+        }
+    }
+
     @BeforeEach
     void setUp() {
         consentStore = new InMemoryConsentStore();
@@ -107,9 +150,11 @@ class DsrServiceTest {
         artifactStore = new InMemoryExportArtifactStore();
         reviewStore = new InMemoryReviewCaseStore();
         ledger = new FakeLedger();
+        screeningStore = new NoopScreeningStore();
         humanReview = new HumanReviewService(new ConsentGate(consentStore, sink), reviewStore, ledger, sink);
         service = new DsrService(dsarStore, transcriptStore, citationStore, artifactStore,
-                reviewStore, humanReview, ledger, sink);
+                reviewStore, humanReview, screeningStore, ledger, sink,
+                Clock.fixed(Instant.parse("2026-07-02T15:00:00Z"), ZoneOffset.UTC));
         consentStore.put(new RecordingPermission(T1, I1, "subj-opaque", PermissionState.GRANTED, "2026-07-02T00:00:00Z"));
 
         transcriptKey = transcriptStore.put(new Transcript(T1, I1, "i1/rec-" + "a".repeat(64), "tr",
@@ -124,6 +169,7 @@ class DsrServiceTest {
     private ErasureScope fullScope() {
         return new ErasureScope(
                 List.of(transcriptKey), List.of(citationKey), List.of(artifactKey), List.of(caseKey),
+                List.of(),
                 List.of("fake-ev-cit-1", "fake-ev-case-1"));
     }
 
@@ -159,6 +205,65 @@ class DsrServiceTest {
             assertTrue(sink.emitted().stream().anyMatch(e -> e.eventTypeId().equals(eventType)),
                     "beklenen op-event eksik: " + eventType);
         }
+    }
+
+    @Test
+    void erasure_purges_screening_restricted_plane_and_counts_its_tombstone() {
+        String findingSetRef = "fsr_" + "1".repeat(64);
+        ErasureScope screeningOnly = new ErasureScope(
+                List.of(), List.of(), List.of(), List.of(), List.of(findingSetRef), List.of());
+
+        ErasureReceipt receipt = service.executeErasure(
+                T1, OPERATOR, I1, dsarKey, screeningOnly).asOptional().orElseThrow();
+
+        assertEquals(1, receipt.tombstoneCount());
+        assertEquals(1, receipt.deletedContentCount());
+        assertFalse(receipt.caseTransitioned());
+        assertEquals(1, screeningStore.purges.size());
+        ScreeningEvidenceStore.PurgeCommand purge = screeningStore.purges.getFirst();
+        assertEquals(T1, purge.tenantId());
+        assertEquals(I1, purge.interviewId());
+        assertEquals(findingSetRef, purge.findingSetRef().value());
+        assertEquals(ScreeningEvidenceStore.PurgeReason.DATA_SUBJECT_ERASURE, purge.reason());
+        assertEquals(DsarRequest.State.FULFILLED,
+                dsarStore.find(T1, I1, dsarKey).asOptional().orElseThrow().state());
+    }
+
+    @Test
+    void malformed_screening_ref_is_rejected_before_any_partial_purge() {
+        ErasureScope mixed = new ErasureScope(
+                List.of(), List.of(), List.of(), List.of(),
+                List.of("fsr_" + "2".repeat(64), "not-a-finding-ref"), List.of());
+
+        Outcome<ErasureReceipt> out = service.executeErasure(
+                T1, OPERATOR, I1, dsarKey, mixed);
+
+        assertFalse(out.isOk());
+        assertEquals(OutcomeCode.INVALID, ((Outcome.Fail<ErasureReceipt>) out).code());
+        assertTrue(screeningStore.purges.isEmpty(),
+                "tüm ref'ler prevalidate edilmeden ilk geçerli ref bile purge edilmemeli");
+        assertEquals(DsarRequest.State.RECEIVED,
+                dsarStore.find(T1, I1, dsarKey).asOptional().orElseThrow().state());
+    }
+
+    @Test
+    void well_formed_missing_screening_ref_is_rejected_before_any_partial_purge() {
+        String active = "fsr_" + "3".repeat(64);
+        String missing = "fsr_" + "4".repeat(64);
+        screeningStore.missingRefs.add(missing);
+        ErasureScope mixed = new ErasureScope(
+                List.of(), List.of(), List.of(), List.of(),
+                List.of(active, missing), List.of());
+
+        Outcome<ErasureReceipt> out = service.executeErasure(
+                T1, OPERATOR, I1, dsarKey, mixed);
+
+        assertFalse(out.isOk());
+        assertEquals(OutcomeCode.NOT_FOUND, ((Outcome.Fail<ErasureReceipt>) out).code());
+        assertTrue(screeningStore.purges.isEmpty(),
+                "varlık preflight'i tamamlanmadan aktif ref purge edilmemeli");
+        assertEquals(DsarRequest.State.RECEIVED,
+                dsarStore.find(T1, I1, dsarKey).asOptional().orElseThrow().state());
     }
 
     @Test
@@ -207,7 +312,8 @@ class DsrServiceTest {
 
     @Test
     void empty_scope_rejected() {
-        ErasureScope empty = new ErasureScope(List.of(), List.of(), List.of(), List.of(), List.of());
+        ErasureScope empty = new ErasureScope(
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         assertFalse(service.executeErasure(T1, OPERATOR, I1, dsarKey, empty).isOk(),
                 "boş scope ile 'erasure yapıldı' iddiası üretilemez (No Fake Work)");
     }
@@ -215,7 +321,8 @@ class DsrServiceTest {
     @Test
     void unknown_case_in_scope_fails_not_swallowed() {
         ErasureScope badCase = new ErasureScope(
-                List.of(), List.of(), List.of(), List.of("i1/case-999"), List.of("fake-ev-1"));
+                List.of(), List.of(), List.of(), List.of("i1/case-999"), List.of(),
+                List.of("fake-ev-1"));
         Outcome<ErasureReceipt> out = service.executeErasure(T1, OPERATOR, I1, dsarKey, badCase);
         assertFalse(out.isOk(), "scope'taki bilinmeyen vaka yutulmaz");
         assertEquals(DsarRequest.State.RECEIVED, dsarStore.find(T1, I1, dsarKey).asOptional().orElseThrow().state(),

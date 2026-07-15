@@ -17,6 +17,15 @@ import com.ats.orchestration.TranscriptStore;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCase;
 import com.ats.review.ReviewCaseStore;
+import com.ats.screening.FindingSetRef;
+import com.ats.screening.ScreeningEvidenceStore;
+import com.ats.screening.ScreeningEvidenceStore.PurgeCommand;
+import com.ats.screening.ScreeningEvidenceStore.PurgeReason;
+import com.ats.screening.ScreeningEvidenceStore.PurgeTargetState;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -50,20 +59,25 @@ public final class DsrService {
     private final ExportArtifactStore artifactStore;
     private final ReviewCaseStore reviewStore;
     private final HumanReviewService humanReview;
+    private final ScreeningEvidenceStore screeningStore;
     private final EvidenceLedger ledger;
     private final OperationalEventSink sink;
+    private final Clock clock;
 
     public DsrService(DsarStore dsarStore, TranscriptStore transcriptStore, CitationStore citationStore,
             ExportArtifactStore artifactStore, ReviewCaseStore reviewStore, HumanReviewService humanReview,
-            EvidenceLedger ledger, OperationalEventSink sink) {
+            ScreeningEvidenceStore screeningStore, EvidenceLedger ledger,
+            OperationalEventSink sink, Clock clock) {
         this.dsarStore = dsarStore;
         this.transcriptStore = transcriptStore;
         this.citationStore = citationStore;
         this.artifactStore = artifactStore;
         this.reviewStore = reviewStore;
         this.humanReview = humanReview;
+        this.screeningStore = screeningStore;
         this.ledger = ledger;
         this.sink = sink;
+        this.clock = clock;
     }
 
     /** DSAR kabul kaydı — talep gövdesi/kimlik içeriği TUTULMAZ (opak subject-ref + reason kodu). */
@@ -94,6 +108,29 @@ public final class DsrService {
             return Outcome.fail(OutcomeCode.INVALID, "dsar zaten FULFILLED (çift-yürütme yok; yeni talep = yeni dsar)");
         }
 
+        // Yeni screening hedeflerinin TAMAMI herhangi bir tombstone/delete yan etkisinden önce
+        // doğrulanır. Ortadaki bozuk ref yüzünden önceki geçerli ref'lerin kısmi silinmesi yoktur;
+        // bozuk hedefi yok sayıp DSAR'ı FULFILLED saymak da yasaktır.
+        List<FindingSetRef> screeningRefs = new ArrayList<>();
+        for (String refValue : scope.screeningFindingSetRefs()) {
+            try {
+                screeningRefs.add(new FindingSetRef(refValue));
+            } catch (IllegalArgumentException ex) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "screening findingSetRef biçimi geçersiz (content silinmedi)");
+            }
+        }
+        for (FindingSetRef ref : screeningRefs) {
+            Outcome<PurgeTargetState> inspected = screeningStore.inspectPurgeTarget(
+                    tenantId, interviewId, ref);
+            if (!(inspected instanceof Outcome.Ok<PurgeTargetState>)) {
+                Outcome.Fail<PurgeTargetState> fail =
+                        (Outcome.Fail<PurgeTargetState>) inspected;
+                return Outcome.fail(fail.code(),
+                        "screening erasure target preflight başarısız; content silinmedi");
+            }
+        }
+
         // 1) TOMBSTONE'lar önce — WORM denetim izi garanti altına alınmadan content silinmez
         int tombstones = 0;
         for (String evidenceId : scope.tombstoneTargetEvidenceIds()) {
@@ -110,6 +147,24 @@ public final class DsrService {
 
         // 2) Content-plane silme (silinebilir düzlem; idempotent — yok olanın delete'i no-op)
         int deleted = 0;
+        for (FindingSetRef ref : screeningRefs) {
+            Outcome<ScreeningEvidenceStore.PurgeReceipt> purged = screeningStore.purge(
+                    new PurgeCommand(tenantId, actorId, interviewId, ref,
+                            PurgeReason.DATA_SUBJECT_ERASURE, Instant.now(clock).toString()));
+            if (!(purged instanceof Outcome.Ok<ScreeningEvidenceStore.PurgeReceipt> purgeOk)) {
+                Outcome.Fail<ScreeningEvidenceStore.PurgeReceipt> fail =
+                        (Outcome.Fail<ScreeningEvidenceStore.PurgeReceipt>) purged;
+                return Outcome.fail(fail.code(),
+                        "screening evidence silme başarısız (partial-erasure; yutulmadı)");
+            }
+            if (!purgeOk.value().replayed()) {
+                tombstones++;
+                deleted++;
+                emit(tenantId, TOMBSTONE_APPENDED_EVENT, "evidence", "notice", PiiClass.ID_ONLY,
+                        Map.of("actor_ref", actorId.value(),
+                                "reason_code", PurgeReason.DATA_SUBJECT_ERASURE.name()));
+            }
+        }
         for (String key : scope.transcriptKeys()) {
             Outcome<Void> del = transcriptStore.delete(tenantId, key);
             if (!del.isOk()) {
@@ -185,6 +240,25 @@ public final class DsrService {
         for (RetentionScanner.ExpiredContent expired : ok.value()) {
             if (expired.empty()) {
                 continue;
+            }
+            for (String refValue : expired.screeningFindingSetRefs()) {
+                FindingSetRef ref;
+                try {
+                    ref = new FindingSetRef(refValue);
+                } catch (IllegalArgumentException ex) {
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "retention purge: screening findingSetRef biçimi geçersiz");
+                }
+                Outcome<ScreeningEvidenceStore.PurgeReceipt> purged = screeningStore.purge(
+                        new PurgeCommand(tenantId, actorId, expired.interviewId(), ref,
+                                PurgeReason.RETENTION_EXPIRED, Instant.now(clock).toString()));
+                if (!(purged instanceof Outcome.Ok<ScreeningEvidenceStore.PurgeReceipt> purgeOk)) {
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "retention purge: screening evidence silme başarısız (yutulmadı)");
+                }
+                if (!purgeOk.value().replayed()) {
+                    deleted++;
+                }
             }
             for (String key : expired.transcriptKeys()) {
                 Outcome<Void> del = transcriptStore.delete(tenantId, key);

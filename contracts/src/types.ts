@@ -39,6 +39,7 @@ export type OutcomeCode =
   | "UNAUTHENTICATED"
   | "TENANT_SCOPE_VIOLATION"
   | "INVALID"
+  | "CONFLICT"
   | "NOT_FOUND"
   | "NOT_CONFIGURED"
   | "UNSUPPORTED_IN_GATE";
