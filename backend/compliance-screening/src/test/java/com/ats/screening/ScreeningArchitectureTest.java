@@ -1,6 +1,7 @@
 package com.ats.screening;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
@@ -8,9 +9,9 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
 /**
- * ATS 156-a boundary (ArchUnit): compliance-screening framework-free SAF ÇEKİRDEKtir.
- * Framework/persistence/vendor'a VE runtime-akışına (orchestration/provider/export/governance/
- * contracts-port) bağlanamaz — 156-a KERNEL, runtime-wiring 156-b/c/d'de yapılır.
+ * ATS 156-a/156-b boundary (ArchUnit): compliance-screening framework-free çekirdek + port
+ * sahibidir. Framework/persistence/vendor'a ve runtime-akışına bağlanamaz; adapter bağımlılığı
+ * ters yöndedir ({@code persistence-postgres -> compliance-screening}).
  */
 class ScreeningArchitectureTest {
 
@@ -24,6 +25,7 @@ class ScreeningArchitectureTest {
                 .should().dependOnClassesThat()
                 .resideInAnyPackage(
                         "org.springframework..",
+                        "java.sql..", "javax.sql..",
                         "jakarta.persistence..", "javax.persistence..",
                         "org.springframework.data..", "org.flywaydb..", "org.hibernate..",
                         "com.platform..", "io.keycloak..", "org.keycloak..",
@@ -40,17 +42,25 @@ class ScreeningArchitectureTest {
                 .resideInAnyPackage(
                         "com.ats.orchestration..", "com.ats.provider..", "com.ats.export..",
                         "com.ats.governance..", "com.ats.contracts..")
-                .as("156-a KERNEL runtime-akışına (orchestration/provider/export/governance/contracts) "
-                        + "bağlanamaz — wiring 156-b/c/d")
+                .as("screening çekirdek+portu runtime-akışına veya EvidenceLedger'a bağlanamaz; "
+                        + "adapter ters yönden bağlanır")
                 .check(ATS);
     }
 
     @Test
-    void screening_kernel_depends_only_on_kernel_and_jdk() {
-        noClasses().that().resideInAPackage("com.ats..")
-                .and().resideOutsideOfPackage("com.ats.screening..")
-                .should().dependOnClassesThat().resideInAPackage("com.ats.screening..")
-                .as("çekirdek tek-yön: başka ats modülü screening'e bağlanmaz (156-a inert)")
+    void screening_never_depends_on_its_persistence_adapter() {
+        noClasses().that().resideInAPackage("com.ats.screening..")
+                .should().dependOnClassesThat().resideInAPackage("com.ats.persistence..")
+                .as("hexagonal yön: screening portu persistence adapter'ını göremez")
+                .check(ATS);
+    }
+
+    @Test
+    void screening_depends_only_on_itself_shared_kernel_and_jdk() {
+        classes().that().resideInAPackage("com.ats.screening..")
+                .should().onlyDependOnClassesThat().resideInAnyPackage(
+                        "com.ats.screening..", "com.ats.kernel..", "java..")
+                .as("screening çekirdek+portu yalnız kendisi, shared-kernel ve JDK'ya bağlanabilir")
                 .check(ATS);
     }
 }

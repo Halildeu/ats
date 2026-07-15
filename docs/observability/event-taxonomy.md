@@ -51,6 +51,8 @@ Yasak sınıflar (`raw-pii`/`content`/`secret`) bu bölümde **tanımlıdır**, 
 | **evidence.append.succeeded** | evidence | info | id-only | ledger_entry_ref | gate-locked |
 | **evidence.append.failed** | evidence | error | id-only | reason_code | gate-locked |
 | **evidence.append.deduplicated** | evidence | info | id-only | actor_ref, ledger_entry_ref | gate-locked |
+| **evidence.screening.persisted** | evidence | info | id-only | ledger_entry_ref | gate-locked |
+| **evidence.screening.persist_failed** | evidence | error | id-only | reason_code | gate-locked |
 | **evidence.tombstone.appended** | evidence | notice | id-only | actor_ref, reason_code | gate-locked |
 | **evidence.human_decision.finalized** | evidence | notice | id-only | actor_ref, ledger_entry_ref | gate-locked |
 | **evidence.packet.accessed** | evidence | notice | id-only | actor_ref | gate-locked |
