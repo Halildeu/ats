@@ -11,10 +11,12 @@ ALTER TABLE worm_ledger ADD CONSTRAINT worm_screening_receipt_pointer_only_ck CH
     event_type <> 'evidence.screening.protected_attribute.recorded'
     OR (
         jsonb_typeof(payload) = 'object'
-        AND jsonb_object_length(payload) = 8
         AND payload ?& ARRAY[
             'schema_version', 'finding_set_ref', 'screening_run_id', 'policy_ref',
             'coverage', 'disposition', 'source_kind', 'restricted_store_version']
+        AND payload - ARRAY[
+            'schema_version', 'finding_set_ref', 'screening_run_id', 'policy_ref',
+            'coverage', 'disposition', 'source_kind', 'restricted_store_version'] = '{}'::jsonb
         AND jsonb_typeof(payload->'schema_version') = 'string'
         AND jsonb_typeof(payload->'finding_set_ref') = 'string'
         AND jsonb_typeof(payload->'screening_run_id') = 'string'
