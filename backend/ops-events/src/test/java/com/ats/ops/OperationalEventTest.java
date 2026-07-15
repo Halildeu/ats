@@ -24,6 +24,12 @@ class OperationalEventTest {
         assertTrue(appendSucceeded(PiiClass.ID_ONLY, Map.of("ledger_entry_ref", "ev-1")).isOk());
         assertTrue(OperationalEvent.create(T1, "evidence.recording.blocked_no_consent", "evidence", "warning",
                         PiiClass.ID_ONLY, Map.of("reason_code", "consent_record_missing")).isOk());
+        assertTrue(OperationalEvent.create(T1, "evidence.screening.persisted", "evidence", "info",
+                PiiClass.ID_ONLY, Map.of("ledger_entry_ref", "ev-screening-1")).isOk());
+        assertTrue(OperationalEvent.create(T1, "evidence.screening.persist_failed", "evidence", "error",
+                PiiClass.ID_ONLY, Map.of("reason_code", "restricted_store_unavailable")).isOk());
+        assertFalse(OperationalEvent.create(T1, "evidence.screening.persisted", "evidence", "info",
+                PiiClass.ID_ONLY, Map.of()).isOk(), "screening success pointer'sız üretilemez");
     }
 
     @Test
