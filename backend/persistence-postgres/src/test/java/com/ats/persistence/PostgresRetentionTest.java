@@ -212,7 +212,7 @@ class PostgresRetentionTest {
                         new PostgresEvidenceLedger(ds), sink),
                 screenings, new PostgresEvidenceLedger(ds), sink, Clock.systemUTC());
         String dsarKey = service.receiveDsar(
-                tenant, interview, "subject-opaque-503", "DATA_SUBJECT_ERASURE")
+                tenant, interview, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE")
                 .asOptional().orElseThrow();
 
         DsrService.ErasureReceipt receipt = service.executeErasure(

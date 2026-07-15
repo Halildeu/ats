@@ -1,6 +1,7 @@
 package com.ats.app.web;
 
 import com.ats.dsr.DsrService;
+import com.ats.dsr.DsarInputPolicy;
 import com.ats.dsr.DsrService.ErasureReceipt;
 import com.ats.dsr.DsrService.ErasureResult;
 import com.ats.dsr.DsrService.ErasureStatus;
@@ -45,7 +46,23 @@ class DsarApiController {
         this.tenantAccess = tenantAccess;
     }
 
-    record DsarBody(String subjectRef, String reasonCode) {}
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record DsarBody(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    minLength = DsarInputPolicy.SUBJECT_REF_MIN_LENGTH,
+                    maxLength = DsarInputPolicy.SUBJECT_REF_MAX_LENGTH,
+                    pattern = DsarInputPolicy.SUBJECT_REF_PATTERN)
+            String subjectRef,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    minLength = DsarInputPolicy.REASON_CODE_LENGTH,
+                    maxLength = DsarInputPolicy.REASON_CODE_LENGTH,
+                    pattern = DsarInputPolicy.REASON_CODE_PATTERN,
+                    allowableValues = DsarInputPolicy.DATA_SUBJECT_ERASURE_REASON)
+            String reasonCode) {}
+
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record DsarIntakeResponse(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String dsarKey) {}
 
     @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ErasureBody(
@@ -116,19 +133,43 @@ class DsarApiController {
     }
 
     @PostMapping("/api/v1/interviews/{interviewId}/dsar")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "DSAR intake kalıcı olarak alındı",
+                    content = @Content(schema = @Schema(
+                            implementation = DsarIntakeResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Kapalı intake sözleşmesi ihlali",
+                    content = @Content(schema = @Schema(
+                            implementation = ApiErrorResponse.class))),
+    })
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(schema = @Schema(implementation = DsarBody.class)))
     ResponseEntity<?> receiveDsar(Authentication auth,
-            @PathVariable("interviewId") String interviewId, @RequestBody DsarBody body) {
-        if (body == null || body.subjectRef() == null || body.subjectRef().isBlank()) {
-            return badRequest("subjectRef zorunlu (opak referans)");
+            @PathVariable("interviewId") String interviewId,
+            @RequestBody(required = false) String rawBody) {
+        JsonNode body = null;
+        if (rawBody != null && !rawBody.isBlank()) {
+            try {
+                body = STRICT_BODY_READER.readTree(rawBody);
+            } catch (com.fasterxml.jackson.core.JacksonException exception) {
+                return badRequest("gövde geçerli ve duplicate-key içermeyen JSON olmalı");
+            }
+        }
+        // Serbest/extra alanın PII'yi sessizce log/state düzlemine taşımasına izin verme.
+        if (body == null || !body.isObject() || body.size() != 2
+                || !body.has("subjectRef") || !body.get("subjectRef").isTextual()
+                || !body.has("reasonCode") || !body.get("reasonCode").isTextual()) {
+            return badRequest("yalnız subjectRef + reasonCode metin alanları kabul edilir");
         }
         Outcome<String> out = dsrService.receiveDsar(tenantAccess.tenant(auth),
-                new InterviewId(interviewId), body.subjectRef(), body.reasonCode());
+                new InterviewId(interviewId), body.get("subjectRef").textValue(),
+                body.get("reasonCode").textValue());
         if (out instanceof Outcome.Fail<String> fail) {
             ResponseEntity<Map<String, String>> failed = OutcomeHttp.fail(fail);
             return noStore(ResponseEntity.status(failed.getStatusCode())).body(failed.getBody());
         }
         return noStore(ResponseEntity.status(HttpStatus.CREATED))
-                .body(Map.of("dsarKey", ((Outcome.Ok<String>) out).value()));
+                .body(new DsarIntakeResponse(((Outcome.Ok<String>) out).value()));
     }
 
     @PostMapping("/api/v1/interviews/{interviewId}/dsar/erasure")
@@ -155,7 +196,7 @@ class DsarApiController {
         JsonNode body = null;
         if (rawBody != null && !rawBody.isBlank()) {
             try {
-                body = ERASURE_BODY_READER.readTree(rawBody);
+                body = STRICT_BODY_READER.readTree(rawBody);
             } catch (com.fasterxml.jackson.core.JacksonException exception) {
                 return badRequest("gövde geçerli ve duplicate-key içermeyen JSON olmalı");
             }
@@ -284,6 +325,6 @@ class DsarApiController {
         return builder.header("Cache-Control", "no-store").header("Pragma", "no-cache");
     }
 
-    private static final ObjectMapper ERASURE_BODY_READER = new ObjectMapper()
+    private static final ObjectMapper STRICT_BODY_READER = new ObjectMapper()
             .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 }

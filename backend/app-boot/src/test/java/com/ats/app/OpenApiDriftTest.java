@@ -160,9 +160,24 @@ class OpenApiDriftTest {
     }
 
     @org.junit.jupiter.api.Test
-    void erasure_recovery_and_replay_contracts_are_pinned_semantically() throws Exception {
+    void dsar_intake_erasure_recovery_and_replay_contracts_are_pinned_semantically()
+            throws Exception {
         com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode intake = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/dsar").path("post");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                intake.path("requestBody").path("required").asBoolean(false));
+        org.junit.jupiter.api.Assertions.assertFalse(intake.path("responses").has("200"));
+        org.junit.jupiter.api.Assertions.assertTrue(intake.path("responses").has("201"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "#/components/schemas/DsarIntakeResponse",
+                intake.path("responses").path("201").path("content")
+                        .path("*/*").path("schema").path("$ref").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "#/components/schemas/ApiErrorResponse",
+                intake.path("responses").path("400").path("content")
+                        .path("*/*").path("schema").path("$ref").asText());
         com.fasterxml.jackson.databind.JsonNode erasure = snap.path("paths")
                 .path("/api/v1/interviews/{interviewId}/dsar/erasure").path("post");
         org.junit.jupiter.api.Assertions.assertTrue(
@@ -204,7 +219,8 @@ class OpenApiDriftTest {
 
         com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
         for (String name : java.util.List.of(
-                "ErasureBody", "ErasureReceiptResponse", "ErasureExecutionResponse",
+                "DsarBody", "DsarIntakeResponse", "ErasureBody",
+                "ErasureReceiptResponse", "ErasureExecutionResponse",
                 "RunningErasureStatusResponse", "FulfilledErasureStatusResponse",
                 "ApiErrorResponse")) {
             com.fasterxml.jackson.databind.JsonNode schema = schemas.path(name);
@@ -212,6 +228,26 @@ class OpenApiDriftTest {
             org.junit.jupiter.api.Assertions.assertFalse(
                     schema.path("additionalProperties").asBoolean(true), name);
         }
+        com.fasterxml.jackson.databind.JsonNode dsarBody = schemas.path("DsarBody");
+        assertRequiredExactly(dsarBody, "subjectRef", "reasonCode");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.ats.dsr.DsarInputPolicy.SUBJECT_REF_MIN_LENGTH,
+                dsarBody.path("properties").path("subjectRef").path("minLength").asInt());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.ats.dsr.DsarInputPolicy.SUBJECT_REF_MAX_LENGTH,
+                dsarBody.path("properties").path("subjectRef").path("maxLength").asInt());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.ats.dsr.DsarInputPolicy.SUBJECT_REF_PATTERN,
+                dsarBody.path("properties").path("subjectRef").path("pattern").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.ats.dsr.DsarInputPolicy.REASON_CODE_PATTERN,
+                dsarBody.path("properties").path("reasonCode").path("pattern").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(com.ats.dsr.DsarInputPolicy.DATA_SUBJECT_ERASURE_REASON),
+                java.util.stream.StreamSupport.stream(dsarBody.path("properties")
+                                .path("reasonCode").path("enum").spliterator(), false)
+                        .map(com.fasterxml.jackson.databind.JsonNode::asText).toList());
+        assertRequiredExactly(schemas.path("DsarIntakeResponse"), "dsarKey");
         assertRequiredExactly(schemas.path("ErasureReceiptResponse"),
                 "dsarKey", "tombstoneCount", "deletedContentCount",
                 "objectDeleteIssuedCount", "caseTransitioned");

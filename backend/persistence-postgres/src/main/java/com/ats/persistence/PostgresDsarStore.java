@@ -63,8 +63,13 @@ public final class PostgresDsarStore implements DsarStore {
                 } catch (IllegalArgumentException e) {
                     return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "state değeri bozuk (fail-closed)");
                 }
-                return Outcome.ok(new DsarRequest(tenantId, interviewId,
-                        rs.getString("subject_ref"), rs.getString("reason_code"), state));
+                try {
+                    return Outcome.ok(new DsarRequest(tenantId, interviewId,
+                            rs.getString("subject_ref"), rs.getString("reason_code"), state));
+                } catch (IllegalArgumentException invalidPersistedContract) {
+                    return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
+                            "dsar satırı input contract'ına uymuyor (fail-closed)");
+                }
             }
         } catch (SQLException e) {
             return Pg.sqlFail(e);

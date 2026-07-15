@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DsarPanel } from "./DsarPanel";
 
 const fetchMock = vi.fn();
+const VALID_SUBJECT_REF = "550e8400-e29b-41d4-a716-446655440000";
 
 beforeEach(() => {
   fetchMock.mockReset();
@@ -32,22 +33,56 @@ function renderPanel(onErased = vi.fn()) {
   return onErased;
 }
 
-describe("DSAR intake — reason zorunlu (backend sözleşmesi)", () => {
-  it("subjectRef dolu ama reason boşken buton disabled; reason girilince enabled", () => {
+describe("DSAR intake — kapalı erasure türü + opak ref sözleşmesi", () => {
+  it("serbest reason alanı göstermez; geçerli subjectRef ile kapalı türü kullanır", () => {
     renderPanel();
     const btn = screen.getByTestId("dsar-receive-button") as HTMLButtonElement;
-    fireEvent.change(screen.getByTestId("dsar-subject-input"), { target: { value: "subj-1" } });
     expect(btn.disabled).toBe(true);
-    fireEvent.change(screen.getByTestId("dsar-reason-input"), { target: { value: "kvkk-madde-7" } });
+    expect(screen.queryByTestId("dsar-reason-input")).toBeNull();
+    expect(screen.getByTestId("dsar-request-type").textContent).toContain("Legal-DPO");
+    fireEvent.change(screen.getByTestId("dsar-subject-input"), {
+      target: { value: VALID_SUBJECT_REF },
+    });
     expect(btn.disabled).toBe(false);
+  });
+
+  it("yaygın PII biçimlerini fetch öncesi fail-closed keser", () => {
+    renderPanel();
+    const subject = screen.getByTestId("dsar-subject-input");
+    const btn = screen.getByTestId("dsar-receive-button") as HTMLButtonElement;
+
+    fireEvent.change(subject, { target: { value: "candidate@example.com" } });
+    expect(btn.disabled).toBe(true);
+    expect(screen.getByText(/yalnız UUIDv4 veya subj-\/subject-/i)).toBeTruthy();
+
+    fireEvent.change(subject, { target: { value: "11111111110" } });
+    expect(btn.disabled).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("UUIDv4 ile yalnız kapalı reasonCode'u gönderir ve extra alan üretmez", async () => {
+    renderPanel();
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { dsarKey: "iv-1/dsar-uuid" }));
+    fireEvent.change(screen.getByTestId("dsar-subject-input"), {
+      target: { value: VALID_SUBJECT_REF },
+    });
+    fireEvent.click(screen.getByTestId("dsar-receive-button"));
+    await screen.findByTestId("dsar-key");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      subjectRef: "550e8400-e29b-41d4-a716-446655440000",
+      reasonCode: "DATA_SUBJECT_ERASURE",
+    });
   });
 });
 
 describe("erasure — iki-adımlı yıkıcı onay", () => {
   async function intake() {
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { dsarKey: "iv-1/dsar-x" }));
-    fireEvent.change(screen.getByTestId("dsar-subject-input"), { target: { value: "subj-1" } });
-    fireEvent.change(screen.getByTestId("dsar-reason-input"), { target: { value: "kvkk-madde-7" } });
+    fireEvent.change(screen.getByTestId("dsar-subject-input"), {
+      target: { value: VALID_SUBJECT_REF },
+    });
     fireEvent.click(screen.getByTestId("dsar-receive-button"));
     await screen.findByTestId("dsar-key");
   }

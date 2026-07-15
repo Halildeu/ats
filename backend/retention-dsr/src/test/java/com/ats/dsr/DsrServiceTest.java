@@ -120,7 +120,7 @@ class DsrServiceTest {
                 transcriptStore, citationStore, artifactStore, reviewStore, humanReview,
                 screeningStore, ledger, sink, CLOCK);
         dsarKey = service.receiveDsar(
-                TENANT, INTERVIEW, "subject-pointer", "erasure_request")
+                TENANT, INTERVIEW, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE")
                 .asOptional().orElseThrow();
     }
 
@@ -188,6 +188,23 @@ class DsrServiceTest {
                 TENANT, OPERATOR, INTERVIEW, "missing-dsar").isOk());
         assertTrue(objectStore.contains(TENANT, objectKey));
         assertEquals(0, resolveCalls);
+    }
+
+    @Test
+    void intake_rejects_pii_and_free_text_before_store_or_event_side_effect() {
+        int eventsBefore = sink.emitted().size();
+        List.of(
+                "candidate@example.com",
+                "11111111110",
+                "+905551112233",
+                "Ada Lovelace",
+                "eyJhbGciOiJIUzI1NiJ9.payload.signature")
+                .forEach(subjectRef -> assertFalse(service.receiveDsar(
+                        TENANT, INTERVIEW, subjectRef, "DATA_SUBJECT_ERASURE").isOk()));
+        assertFalse(service.receiveDsar(
+                TENANT, INTERVIEW, "550e8400-e29b-41d4-a716-446655440000", "KVKK madde 7 talebi").isOk());
+        assertEquals(eventsBefore, sink.emitted().size(),
+                "geçersiz intake privacy event veya reason_code üretmemeli");
     }
 
     @Test

@@ -179,7 +179,7 @@ class PostgresErasureExecutionStoreTest {
                 List.of(new Transcript.Segment(0, "S1", 0, 1, "erase-me")))));
         PostgresDsarStore dsars = new PostgresDsarStore(dataSource);
         String dsarKey = ok(dsars.put(new DsarRequest(
-                tenant, interview, "subject-opaque", "DATA_SUBJECT_ERASURE",
+                tenant, interview, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE",
                 DsarRequest.State.RECEIVED)));
 
         AtomicBoolean injectCommitLoss = new AtomicBoolean(true);
@@ -216,7 +216,7 @@ class PostgresErasureExecutionStoreTest {
                 null, null, null, null, null, null, null)));
         PostgresDsarStore dsars = new PostgresDsarStore(dataSource);
         String dsarKey = ok(dsars.put(new DsarRequest(
-                tenant, interview, "subject-opaque", "DATA_SUBJECT_ERASURE",
+                tenant, interview, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE",
                 DsarRequest.State.RECEIVED)));
 
         DsrService.ErasureReceipt receipt = ok(service(

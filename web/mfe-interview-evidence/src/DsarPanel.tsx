@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Input, Text } from "@ats/ui/f3";
 import {
+  DATA_SUBJECT_ERASURE_REASON,
+  DSAR_SUBJECT_REF_MAX_LENGTH,
   ErasureInProgressError,
   executeErasure,
+  isValidDsarSubjectRef,
   receiveDsar,
   reconcileErasure,
   type ErasureReceipt,
@@ -27,7 +30,6 @@ type Props = {
  */
 export function DsarPanel({ token, interviewId, onErased }: Props) {
   const [subjectRef, setSubjectRef] = useState("");
-  const [reasonCode, setReasonCode] = useState("");
   const [dsarKey, setDsarKey] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -39,6 +41,7 @@ export function DsarPanel({ token, interviewId, onErased }: Props) {
   } | null>(null);
   const inFlightRef = useRef(false);
   const warningRef = useRef<HTMLElement | null>(null);
+  const subjectRefValid = isValidDsarSubjectRef(subjectRef);
 
   useEffect(() => {
     if (confirming) {
@@ -103,23 +106,26 @@ export function DsarPanel({ token, interviewId, onErased }: Props) {
             label={t("dsar.subjectRefLabel")}
             value={subjectRef}
             onChange={(e) => setSubjectRef(e.target.value)}
+            hint={t("dsar.intakeSubjectRefHelp")}
+            error={subjectRef.length > 0 && !subjectRefValid
+              ? t("dsar.subjectRefFormatError")
+              : undefined}
+            required
+            maxLength={DSAR_SUBJECT_REF_MAX_LENGTH}
+            autoComplete="off"
+            spellCheck={false}
             data-testid="dsar-subject-input"
           />
-          <Text as="p" size="sm" variant="secondary">
-            {t("dsar.subjectRefHelp")}
+          <Text as="p" size="sm" variant="secondary" data-testid="dsar-request-type">
+            {t("dsar.requestTypeErasure")}
           </Text>
-          <Input
-            label={t("dsar.reasonCodeLabel")}
-            value={reasonCode}
-            onChange={(e) => setReasonCode(e.target.value)}
-            data-testid="dsar-reason-input"
-          />
           <Button
-            disabled={busy || !subjectRef.trim() || !reasonCode.trim()}
+            disabled={busy || !subjectRefValid}
             data-testid="dsar-receive-button"
             onClick={() =>
               void run(async () => {
-                const key = await receiveDsar(token, interviewId, subjectRef.trim(), reasonCode.trim());
+                const key = await receiveDsar(
+                  token, interviewId, subjectRef, DATA_SUBJECT_ERASURE_REASON);
                 setDsarKey(key);
               })
             }

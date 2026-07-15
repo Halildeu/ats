@@ -296,7 +296,8 @@ class ExportDsarApiTest {
 
         // DSAR + ERASURE (tombstone hedefi: citation kanıtı)
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
-                "{\"subjectRef\":\"s-1\",\"reasonCode\":\"kvkk_talep\"}");
+                "{\"subjectRef\":\"550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}");
         assertEquals(201, dsar.getStatusCode().value(), "body: " + dsar.getBody());
         assertEquals("no-store", dsar.getHeaders().getCacheControl());
         assertEquals("no-cache", dsar.getHeaders().getFirst("Pragma"));
@@ -386,7 +387,9 @@ class ExportDsarApiTest {
     void scope_matrix_export_dsar_and_erasure_are_separate_authorities() {
         String exportOnly = token("ats.export.write", "user-a");
         assertEquals(403, post(exportOnly, "/api/v1/interviews/iv-s/dsar",
-                "{\"subjectRef\":\"s\",\"reasonCode\":\"r\"}").getStatusCode().value());
+                "{\"subjectRef\":\"550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
         String dsarOnly = token("ats.dsar.write", "user-b");
         assertEquals(403, post(dsarOnly, "/api/v1/interviews/iv-s/export",
                 "{\"caseKey\":\"k\",\"citationKeys\":[],\"context\":{}}").getStatusCode().value());
@@ -396,7 +399,9 @@ class ExportDsarApiTest {
         // erasure-only da intake AÇAMAZ
         String erasureOnly = token("ats.erasure.execute", "user-c");
         assertEquals(403, post(erasureOnly, "/api/v1/interviews/iv-s/dsar",
-                "{\"subjectRef\":\"s\",\"reasonCode\":\"r\"}").getStatusCode().value());
+                "{\"subjectRef\":\"550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
         assertEquals(403, rest.exchange(
                 "/api/v1/interviews/iv-s/dsar/erasure/receipt?dsarKey=k",
                 HttpMethod.GET, new HttpEntity<>(jsonBearer(dsarOnly)), String.class)
@@ -408,11 +413,64 @@ class ExportDsarApiTest {
     }
 
     @Test
+    void dsar_intake_rejects_pii_free_text_duplicate_and_extra_fields() {
+        String tok = token(ALL, "privacy-operator");
+        String endpoint = "/api/v1/interviews/iv-intake-contract/dsar";
+        String validRef = "550e8400-e29b-41d4-a716-446655440000";
+
+        assertEquals(400, post(tok, endpoint, "").getStatusCode().value());
+        assertEquals(400, post(tok, endpoint, "{").getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":42,\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"" + validRef + "\",\"reasonCode\":null}")
+                .getStatusCode().value());
+
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"candidate@example.com\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"11111111110\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"s-1\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"subject-" + validRef
+                        + "x\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"" + validRef
+                        + "\",\"reasonCode\":\"KVKK madde 7 talebi\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"" + validRef
+                        + "\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\",\"note\":\"PII\"}")
+                .getStatusCode().value());
+        assertEquals(400, post(tok, endpoint,
+                "{\"subjectRef\":\"" + validRef + "\",\"subjectRef\":\""
+                        + "subj-550e8400-e29b-41d4-a716-446655440000"
+                        + "\",\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}")
+                .getStatusCode().value());
+
+        ResponseEntity<String> accepted = post(tok, endpoint,
+                "{\"subjectRef\":\"" + validRef + "\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}");
+        assertEquals(201, accepted.getStatusCode().value(), "body: " + accepted.getBody());
+        assertEquals("no-store", accepted.getHeaders().getCacheControl());
+    }
+
+    @Test
     void live_worker_conflict_returns_retry_after_and_running_projection() throws Exception {
         String tok = token(ALL, "lease-reviewer");
         String iv = "iv-live-lease";
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
-                "{\"subjectRef\":\"subject-lease\",\"reasonCode\":\"kvkk_talep\"}");
+                "{\"subjectRef\":\"subject-550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}");
         assertEquals(201, dsar.getStatusCode().value());
         String dsarKey = field(dsar.getBody(), "dsarKey");
         BeginCommand command = new BeginCommand(
@@ -473,7 +531,8 @@ class ExportDsarApiTest {
         assertEquals(400, post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
                 "{\"dsarKey\":\"iv-e/dsar-x\",\"scope\":{}}").getStatusCode().value());
         ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/iv-e/dsar",
-                "{\"subjectRef\":\"s-1\",\"reasonCode\":\"r\"}");
+                "{\"subjectRef\":\"550e8400-e29b-41d4-a716-446655440000\","
+                        + "\"reasonCode\":\"DATA_SUBJECT_ERASURE\"}");
         assertEquals(201, dsar.getStatusCode().value());
         ResponseEntity<String> missing = post(tok, "/api/v1/interviews/iv-e/dsar/erasure",
                 "{\"dsarKey\":\"iv-e/dsar-YOK\"}");

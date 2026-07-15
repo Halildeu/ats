@@ -1,6 +1,6 @@
 /**
  * F10 DSAR/erasure istemcisi — DsrService invariant'ları backend'de fail-closed;
- * UI yalnız DSAR kimliğini taşır: subjectRef OPAK referanstır (PII değil),
+ * UI yalnız DSAR kimliğini taşır: subjectRef prefixed OPAK referans/UUIDv4'tür (PII değil),
  * erasure YIKICI ve geri alınamaz content işlemidir. Silme hedeflerini tarayıcı
  * üretmez; backend server truth'undan çözer, WORM'u silmez ve kaynak kanıtları
  * append-only tombstone ile bağlar.
@@ -43,6 +43,22 @@ const FULFILLED_STATUS_KEYS = [...RUNNING_STATUS_KEYS, "receipt"] as const;
 // DsrService.WORKER_LEASE ile aynı canonical transport sınırı; daha büyük değer
 // ürün reconcile butonunu saldırgan/bozuk response ile süresiz kilitleyemez.
 const ERASURE_WORKER_LEASE_SECONDS = 30;
+const DSAR_SUBJECT_REF = /^(?:(?:subj|subject)[._:-])?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89AaBb][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$/;
+export const DSAR_SUBJECT_REF_MIN_LENGTH = 36;
+export const DSAR_SUBJECT_REF_MAX_LENGTH = 44;
+export const DATA_SUBJECT_ERASURE_REASON = "DATA_SUBJECT_ERASURE";
+
+/** UX guard; backend domain + PostgreSQL constraint otoriterdir. */
+export function isValidDsarSubjectRef(value: string): boolean {
+  return value.length >= DSAR_SUBJECT_REF_MIN_LENGTH
+    && value.length <= DSAR_SUBJECT_REF_MAX_LENGTH
+    && DSAR_SUBJECT_REF.test(value);
+}
+
+/** Serbest hukuki açıklama değil; bu akışın tek desteklediği kapalı operasyon kodu. */
+export function isValidDsarReasonCode(value: string): boolean {
+  return value === DATA_SUBJECT_ERASURE_REASON;
+}
 
 export type ErasureStatus = {
   dsarKey: string;
@@ -79,15 +95,15 @@ async function failWithReason(resp: Response): Promise<never> {
   throw await errorFromResponse(resp);
 }
 
-class ErasureContractError extends Error {
+class DsarContractError extends Error {
   constructor(reason: string) {
-    super(`erasure response sözleşmesi geçersiz: ${reason} (fail-closed)`);
-    this.name = "ErasureContractError";
+    super(`DSAR/erasure response sözleşmesi geçersiz: ${reason} (fail-closed)`);
+    this.name = "DsarContractError";
   }
 }
 
-function contractError(reason: string): ErasureContractError {
-  return new ErasureContractError(reason);
+function contractError(reason: string): DsarContractError {
+  return new DsarContractError(reason);
 }
 
 function objectBody(value: unknown, label: string): JsonObject {
@@ -239,6 +255,9 @@ export async function receiveDsar(
   // backend sözleşmesi (DsrService): reason_code ZORUNLU — UI da zorunlu taşır
   reasonCode: string,
 ): Promise<string> {
+  if (!isValidDsarSubjectRef(subjectRef) || !isValidDsarReasonCode(reasonCode)) {
+    throw contractError("DSAR intake opak subjectRef + bounded reasonCode gerektirir");
+  }
   const resp = await fetch(
     `/api/v1/interviews/${encodeURIComponent(interviewId)}/dsar`,
     {
@@ -362,7 +381,7 @@ async function reconcileAfterUncertainFailure(
     return await reconcileErasure(token, interviewId, dsarKey);
   } catch (reconcileError) {
     if (reconcileError instanceof ErasureInProgressError
-        || reconcileError instanceof ErasureContractError) {
+        || reconcileError instanceof DsarContractError) {
       throw reconcileError;
     }
     throw originalError instanceof Error ? originalError : new Error(String(originalError));

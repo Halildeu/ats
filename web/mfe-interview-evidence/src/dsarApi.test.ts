@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DATA_SUBJECT_ERASURE_REASON,
   executeErasure,
   fetchErasureStatus,
   receiveDsar,
@@ -7,6 +8,7 @@ import {
 } from "./dsarApi";
 
 const fetchMock = vi.fn();
+const VALID_SUBJECT_REF = "550e8400-e29b-41d4-a716-446655440000";
 
 beforeEach(() => {
   fetchMock.mockReset();
@@ -42,12 +44,21 @@ function receipt(overrides: Record<string, unknown> = {}) {
 describe("DSAR runtime response contract", () => {
   it("intake response'u exact ve non-empty dsarKey ile bağlar", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ dsarKey: "iv-1/dsar-x" }, {}, 201));
-    await expect(receiveDsar("t", "iv-1", "subject-ref", "kvkk-7"))
+    await expect(receiveDsar("t", "iv-1", VALID_SUBJECT_REF, DATA_SUBJECT_ERASURE_REASON))
       .resolves.toBe("iv-1/dsar-x");
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ dsarKey: "", extra: true }, {}, 201));
-    await expect(receiveDsar("t", "iv-1", "subject-ref", "kvkk-7"))
+    await expect(receiveDsar("t", "iv-1", VALID_SUBJECT_REF, DATA_SUBJECT_ERASURE_REASON))
       .rejects.toThrow("response sözleşmesi geçersiz");
+  });
+
+  it("serbest reasonCode veya PII-biçimli subjectRef için fetch üretmez", async () => {
+    await expect(receiveDsar("t", "iv-1", VALID_SUBJECT_REF, "kvkk-madde-7"))
+      .rejects.toThrow("response sözleşmesi geçersiz");
+    await expect(receiveDsar(
+      "t", "iv-1", "candidate@example.com", DATA_SUBJECT_ERASURE_REASON,
+    )).rejects.toThrow("response sözleşmesi geçersiz");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("POST receipt'i istenen dsarKey ve non-negative integer sayaçlarla bağlar", async () => {

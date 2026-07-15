@@ -159,9 +159,11 @@ public final class DsrService {
     /** DSAR kabul kaydı; subjectRef opak pointer'dır, aday içeriği değildir. */
     public Outcome<String> receiveDsar(
             TenantId tenantId, InterviewId interviewId, String subjectRef, String reasonCode) {
-        if (isBlank(subjectRef) || isBlank(reasonCode)) {
+        if (tenantId == null || interviewId == null
+                || !DsarInputPolicy.validSubjectRef(subjectRef)
+                || !DsarInputPolicy.validReasonCode(reasonCode)) {
             return Outcome.fail(OutcomeCode.INVALID,
-                    "subject_ref + reason_code zorunlu (opak pointer)");
+                    "subject_ref prefixed opak ref/UUIDv4; reason_code desteklenen kapalı erasure kodu olmalı");
         }
         Outcome<String> stored = dsarStore.put(new DsarRequest(
                 tenantId, interviewId, subjectRef, reasonCode, DsarRequest.State.RECEIVED));

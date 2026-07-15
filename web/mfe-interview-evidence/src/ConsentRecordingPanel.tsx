@@ -108,7 +108,7 @@ export function ConsentRecordingPanel({ token, interviewId, onTranscribed }: Pro
           data-testid="consent-subject-input"
         />
         <Text as="p" size="sm" variant="secondary">
-          {t("dsar.subjectRefHelp")}
+          {t("consent.subjectRefHelp")}
         </Text>
 
         <label style={{ display: "grid", gap: 4, fontSize: 14 }}>

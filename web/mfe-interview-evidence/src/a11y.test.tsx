@@ -56,8 +56,9 @@ describe("a11y smoke (axe-core; color-contrast hariç — jsdom sınırı)", () 
         { status: 201, headers: { "Content-Type": "application/json" } }));
     const { container } = render(
         <DsarPanel token="t" interviewId="iv-1" onErased={() => {}} />);
-    fireEvent.change(screen.getByTestId("dsar-subject-input"), { target: { value: "subj-1" } });
-    fireEvent.change(screen.getByTestId("dsar-reason-input"), { target: { value: "kvkk-madde-7" } });
+    fireEvent.change(screen.getByTestId("dsar-subject-input"), {
+      target: { value: "550e8400-e29b-41d4-a716-446655440000" },
+    });
     fireEvent.click(screen.getByTestId("dsar-receive-button"));
     await screen.findByTestId("dsar-key");
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // onay modu: role=alert uyarı görünür
