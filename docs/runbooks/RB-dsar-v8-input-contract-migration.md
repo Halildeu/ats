@@ -12,12 +12,21 @@ transaction'ını durdurur; uygulama yarım-çalışır durumda açılmaz.
   kimlik bağını bozabilir ve sahte bir eşleme üretir.
 - Hukuki gerekçe metni `reason_code` alanına taşınmaz. Bu akışta yalnız
   `DATA_SUBJECT_ERASURE` desteklenir; yeni kategori #170 Legal/DPO kararı ve ayrı migration ister.
+- `dsar-input-contract/v1` ve Flyway `V8` ana dala girdikten sonra immutable'dır. Generator
+  `--write` çağrısını reddeder; semantik veya reason-code değişikliği `v2` contract ile `V9` ya da
+  daha sonraki yeni bir forward migration olarak tasarlanır. Eski V8 checksum'u yeniden yazılmaz.
+- Source guard, PR/push CI'da exact base commit'e karşı bu değişikliği tespit edip job'ı reddeder.
+  Ancak repository branch protection ve CODEOWNERS review zorunluluğu owner tarafından etkinleştirilene
+  kadar doğrudan `main` push'unu önceden engellediği iddia edilmez; başarısız post-push alarmı
+  geçmişi otomatik geri almaz. Bu repository-governance kapısı ayrı owner kararıdır.
 - Düzeltme production ise migration-owner + DPO/owner onayı ve şifreli backup zorunludur.
 
 ## 1. PII-safe preflight
 
 Migration-owner bağlantısıyla yalnız aşağıdaki toplamı ölçün; satır değerlerini seçmeyin:
 
+<!-- BEGIN GENERATED: DSAR_INPUT_CONTRACT_PREFLIGHT -->
+<!-- GENERATED from contracts/policies/dsar-input-contract.v1.json; DO NOT EDIT THIS BLOCK. -->
 ```sql
 SELECT count(*) AS invalid_row_count
 FROM dsar_request
@@ -27,6 +36,7 @@ WHERE NOT (
     AND reason_code = 'DATA_SUBJECT_ERASURE'
 );
 ```
+<!-- END GENERATED: DSAR_INPUT_CONTRACT_PREFLIGHT -->
 
 Sonuç `0` ise V8 yeniden çalıştırılabilir. Sıfırdan büyükse rollout'u durdurun; bu sayı dışında
 değer/log paylaşmayın.

@@ -1,0 +1,16 @@
+# Immutable history ve gate kodu owner review olmadan değişmemeli.
+/.github/workflows/ @Halildeu
+/scripts/check-published-immutability.mjs @Halildeu
+/scripts/generate-dsar-input-contract.mjs @Halildeu
+/scripts/test/published-immutability.test.mjs @Halildeu
+/scripts/test/dsar-input-contract-generator.test.mjs @Halildeu
+/contracts/policies/ @Halildeu
+/backend/persistence-postgres/src/main/resources/db/migration/ @Halildeu
+/backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputPolicy.java @Halildeu
+/backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputContractGenerated.java @Halildeu
+/backend/retention-dsr/src/test/java/com/ats/dsr/DsarInputPolicyTest.java @Halildeu
+/backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresStoresTest.java @Halildeu
+/web/mfe-interview-evidence/src/dsarApi.ts @Halildeu
+/web/mfe-interview-evidence/src/dsarApi.test.ts @Halildeu
+/web/mfe-interview-evidence/src/generated/ @Halildeu
+/docs/runbooks/RB-dsar-v8-input-contract-migration.md @Halildeu

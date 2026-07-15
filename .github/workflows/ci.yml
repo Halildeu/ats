@@ -17,8 +17,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
       - name: ATS-0001 boundary guard
         run: bash scripts/check-boundary.sh
+      - name: published Flyway + versioned policy immutability
+        env:
+          PUBLISHED_IMMUTABILITY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-published-immutability.mjs
+
+  dsar-input-contract-guard:
+    # ATS #169: UUIDv4/prefix/closed reason sözleşmesi Java, TypeScript, PostgreSQL
+    # ve operator preflight'ta tek canonical JSON'dan deterministic üretilir.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Exact PR-base/push-before SHA'daki yayımlanmış v1/V8 immutability kontrolü.
+          fetch-depth: 0
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "20"
+      - name: generated drift + lexical pattern corpus
+        env:
+          DSAR_CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PUBLISHED_IMMUTABILITY_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          node scripts/check-published-immutability.mjs
+          node scripts/generate-dsar-input-contract.mjs --check
+          node --test scripts/test/dsar-input-contract-generator.test.mjs
+          node --test scripts/test/published-immutability.test.mjs
 
   contracts:
     runs-on: ubuntu-latest

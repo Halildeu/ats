@@ -16,6 +16,7 @@ class DsarInputPolicyTest {
         assertTrue(DsarInputPolicy.validSubjectRef("550e8400-e29b-41d4-a716-446655440000"));
         assertTrue(DsarInputPolicy.validSubjectRef("subj-550e8400-e29b-41d4-a716-446655440000"));
         assertTrue(DsarInputPolicy.validSubjectRef("subject:550e8400-e29b-41d4-a716-446655440000"));
+        assertTrue(DsarInputPolicy.validSubjectRef("subject_550e8400-e29b-41d4-8716-446655440000"));
 
         List.of(
                 "candidate@example.com",
@@ -26,7 +27,11 @@ class DsarInputPolicyTest {
                 "eyJhbGciOiJIUzI1NiJ9.payload.signature",
                 "subj-11111111110",
                 "subj-Ada-Lovelace",
+                "550e8400-e29b-11d4-a716-446655440000",
+                "550e8400-e29b-51d4-a716-446655440000",
+                "550e8400-e29b-41d4-7716-446655440000",
                 "550e8400-e29b-41d4-a716-446655440000 ",
+                "550e8400-e29b-41d4-a716-446655440000\n",
                 "s-1")
                 .forEach(value -> assertFalse(
                         DsarInputPolicy.validSubjectRef(value), "reddedilmeliydi: " + value));

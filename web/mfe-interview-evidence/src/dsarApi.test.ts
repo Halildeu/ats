@@ -3,6 +3,7 @@ import {
   DATA_SUBJECT_ERASURE_REASON,
   executeErasure,
   fetchErasureStatus,
+  isValidDsarSubjectRef,
   receiveDsar,
   reconcileErasure,
 } from "./dsarApi";
@@ -42,6 +43,14 @@ function receipt(overrides: Record<string, unknown> = {}) {
 }
 
 describe("DSAR runtime response contract", () => {
+  it("generated UUIDv4/prefix contract'ını consumer düzeyinde uygular", () => {
+    expect(isValidDsarSubjectRef(VALID_SUBJECT_REF)).toBe(true);
+    expect(isValidDsarSubjectRef(`subject:${VALID_SUBJECT_REF}`)).toBe(true);
+    expect(isValidDsarSubjectRef("550e8400-e29b-51d4-a716-446655440000")).toBe(false);
+    expect(isValidDsarSubjectRef("550e8400-e29b-41d4-7716-446655440000")).toBe(false);
+    expect(isValidDsarSubjectRef(`${VALID_SUBJECT_REF}\n`)).toBe(false);
+  });
+
   it("intake response'u exact ve non-empty dsarKey ile bağlar", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ dsarKey: "iv-1/dsar-x" }, {}, 201));
     await expect(receiveDsar("t", "iv-1", VALID_SUBJECT_REF, DATA_SUBJECT_ERASURE_REASON))

@@ -6,6 +6,21 @@
  * append-only tombstone ile bağlar.
  */
 import type { ApiError } from "./api";
+import {
+  DATA_SUBJECT_ERASURE_REASON,
+  DSAR_SUBJECT_REF_MAX_LENGTH,
+  DSAR_SUBJECT_REF_MIN_LENGTH,
+  isValidDsarReasonCode,
+  isValidDsarSubjectRef,
+} from "./generated/dsarInputContract";
+
+export {
+  DATA_SUBJECT_ERASURE_REASON,
+  DSAR_SUBJECT_REF_MAX_LENGTH,
+  DSAR_SUBJECT_REF_MIN_LENGTH,
+  isValidDsarReasonCode,
+  isValidDsarSubjectRef,
+} from "./generated/dsarInputContract";
 
 export type ErasureReceipt = {
   dsarKey: string;
@@ -43,23 +58,6 @@ const FULFILLED_STATUS_KEYS = [...RUNNING_STATUS_KEYS, "receipt"] as const;
 // DsrService.WORKER_LEASE ile aynı canonical transport sınırı; daha büyük değer
 // ürün reconcile butonunu saldırgan/bozuk response ile süresiz kilitleyemez.
 const ERASURE_WORKER_LEASE_SECONDS = 30;
-const DSAR_SUBJECT_REF = /^(?:(?:subj|subject)[._:-])?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89AaBb][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$/;
-export const DSAR_SUBJECT_REF_MIN_LENGTH = 36;
-export const DSAR_SUBJECT_REF_MAX_LENGTH = 44;
-export const DATA_SUBJECT_ERASURE_REASON = "DATA_SUBJECT_ERASURE";
-
-/** UX guard; backend domain + PostgreSQL constraint otoriterdir. */
-export function isValidDsarSubjectRef(value: string): boolean {
-  return value.length >= DSAR_SUBJECT_REF_MIN_LENGTH
-    && value.length <= DSAR_SUBJECT_REF_MAX_LENGTH
-    && DSAR_SUBJECT_REF.test(value);
-}
-
-/** Serbest hukuki açıklama değil; bu akışın tek desteklediği kapalı operasyon kodu. */
-export function isValidDsarReasonCode(value: string): boolean {
-  return value === DATA_SUBJECT_ERASURE_REASON;
-}
-
 export type ErasureStatus = {
   dsarKey: string;
   state: "RUNNING" | "FULFILLED";

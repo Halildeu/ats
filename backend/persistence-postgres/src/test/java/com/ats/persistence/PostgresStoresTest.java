@@ -233,7 +233,7 @@ class PostgresStoresTest {
     }
 
     @Test
-    void dsar_database_constraint_rejects_pii_and_free_text_even_outside_domain_adapter()
+    void dsar_database_constraint_matches_canonical_uuid_v4_and_reason_even_outside_domain_adapter()
             throws java.sql.SQLException {
         try (java.sql.Connection c = ds.getConnection();
                 java.sql.PreparedStatement ps = c.prepareStatement(
@@ -251,6 +251,22 @@ class PostgresStoresTest {
             ps.setString(4, "550e8400-e29b-41d4-a716-446655440000");
             ps.setString(5, "KVKK madde 7 talebi");
             org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate);
+
+            ps.setString(4, "550e8400-e29b-51d4-a716-446655440000");
+            ps.setString(5, "DATA_SUBJECT_ERASURE");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "UUIDv5 veritabanı sınırında da reddedilmeli");
+
+            ps.setString(4, "550e8400-e29b-41d4-7716-446655440000");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "geçersiz UUID variant veritabanı sınırında da reddedilmeli");
+
+            ps.setString(4, "550e8400-e29b-41d4-a716-446655440000\n");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "satır-sonu PostgreSQL anchor semantiğinde kabul edilmemeli");
+
+            ps.setString(4, "subject:550e8400-e29b-41d4-a716-446655440000");
+            assertEquals(1, ps.executeUpdate(), "canonical prefix + UUIDv4 PostgreSQL dialectinde geçmeli");
         }
     }
 

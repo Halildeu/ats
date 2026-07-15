@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "dsar-input-contract/v1",
+  "subjectRef": {
+    "prefixes": [
+      "subj",
+      "subject"
+    ],
+    "separators": [
+      ".",
+      "_",
+      ":",
+      "-"
+    ],
+    "uuidVersion": 4,
+    "hexClass": "0-9A-Fa-f",
+    "variantHexClass": "89AaBb"
+  },
+  "reasonCodes": [
+    "DATA_SUBJECT_ERASURE"
+  ]
+}

@@ -1,3 +1,5 @@
+-- GENERATED from contracts/policies/dsar-input-contract.v1.json by scripts/generate-dsar-input-contract.mjs.
+-- DO NOT EDIT: ilk yayından önce canonical contract+generator; sonrasında v2+V9+ değişir.
 -- ATS #169: DSAR state/log düzlemine yaygın PII biçimleri veya serbest gerekçe metni yazılmasını kes.
 -- Eski uygunsuz satırı sessizce sertifikalandırıp yarım-çalışır runtime açılmaz: yalnız violation
 -- SAYISI raporlanır (ham değer yok), Flyway transaction durur ve operatör runbook'a yönlendirilir.
