@@ -51,38 +51,46 @@ class ScreeningApiController {
             Set.of("sourceKind", "citationKey");
 
     @Schema(name = "TranscriptSegmentScreeningRequest",
-            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"sourceKind", "transcriptKey", "segmentIndex"})
     record TranscriptSegmentSchema(
             @Schema(allowableValues = "TRANSCRIPT_SEGMENT") String sourceKind,
             String transcriptKey,
             Integer segmentIndex) {}
 
     @Schema(name = "CitationClaimScreeningRequest",
-            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"sourceKind", "citationKey"})
     record CitationClaimSchema(
             @Schema(allowableValues = "CITATION_CLAIM") String sourceKind,
             String citationKey) {}
 
-    @Schema(name = "ScreeningSource", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    @Schema(name = "ScreeningSource", additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"kind", "canonicalSourceRef"})
     record ScreeningSourceResponse(
             String kind,
             String canonicalSourceRef,
             @Schema(nullable = true) Integer segmentIndex) {}
 
-    @Schema(name = "ScreeningTextSpan", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    @Schema(name = "ScreeningTextSpan", additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"startInclusive", "endExclusive"})
     record ScreeningTextSpanResponse(
             int startInclusive,
             int endExclusive,
             @Schema(nullable = true) Integer segmentIndex) {}
 
-    @Schema(name = "ScreeningFinding", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    @Schema(name = "ScreeningFinding", additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"category", "signal", "sourceKind", "span"})
     record ScreeningFindingResponse(
             String category,
             String signal,
             String sourceKind,
             ScreeningTextSpanResponse span) {}
 
-    @Schema(name = "ScreeningEvidence", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    @Schema(name = "ScreeningEvidence", additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"findingSetRef", "runId", "policyRef", "coverage",
+                    "disposition", "source", "findings", "evidenceId", "schemaVersion",
+                    "occurredAt", "spanUnit"})
     record ScreeningResponse(
             String findingSetRef,
             String runId,
@@ -96,7 +104,8 @@ class ScreeningApiController {
             String occurredAt,
             String spanUnit) {}
 
-    @Schema(name = "ScreeningError", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    @Schema(name = "ScreeningError", additionalProperties = Schema.AdditionalPropertiesValue.FALSE,
+            requiredProperties = {"error", "reason"})
     record ScreeningErrorResponse(String error, String reason) {}
 
     private final ScreeningRuntimeService service;
@@ -111,7 +120,7 @@ class ScreeningApiController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
-            content = @Content(schema = @Schema(oneOf = {
+            content = @Content(schema = @Schema(type = "object", oneOf = {
                     TranscriptSegmentSchema.class, CitationClaimSchema.class})))
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Yeni screening evidence üretildi",

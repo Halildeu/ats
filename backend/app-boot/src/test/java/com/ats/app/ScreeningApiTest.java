@@ -122,7 +122,7 @@ class ScreeningApiTest {
         String transcriptKey = seedTranscript(interview, "Normal soru", "Normal yanıt");
         String citationKey = citationStore.put(new Citation(
                 new TenantId(TENANT), new InterviewId(interview), transcriptKey,
-                "Hangi dine inanıyorsunuz?", List.of(0), Entailment.SUPPORTED))
+                "Dininiz nedir?", List.of(0), Entailment.SUPPORTED))
                 .asOptional().orElseThrow();
         String token = token("ats.screening.write", "writer-2");
         String body = "{\"sourceKind\":\"CITATION_CLAIM\",\"citationKey\":\""
@@ -130,7 +130,7 @@ class ScreeningApiTest {
         ResponseEntity<String> first = post(interview, requestKey(2), body, token);
         assertEquals(201, first.getStatusCode().value(), "body: " + first.getBody());
         assertTrue(first.getBody().contains("RELIGION_BELIEF"));
-        assertFalse(first.getBody().contains("Hangi dine"));
+        assertFalse(first.getBody().contains("Dininiz nedir"));
 
         String otherCitation = citationStore.put(new Citation(
                 new TenantId(TENANT), new InterviewId(interview), transcriptKey,

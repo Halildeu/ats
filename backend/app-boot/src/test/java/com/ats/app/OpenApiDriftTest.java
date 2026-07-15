@@ -127,4 +127,28 @@ class OpenApiDriftTest {
                 .path("RepairBody").path("properties");
         org.junit.jupiter.api.Assertions.assertTrue(props.has("caseKey"), props.toString());
     }
+
+    @org.junit.jupiter.api.Test
+    void screening_union_and_closed_required_schemas_are_pinned_semantically() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode requestSchema = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/screenings").path("post")
+                .path("requestBody").path("content").path("application/json").path("schema");
+        org.junit.jupiter.api.Assertions.assertEquals("object", requestSchema.path("type").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(2, requestSchema.path("oneOf").size());
+
+        com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
+        for (String name : java.util.List.of(
+                "TranscriptSegmentScreeningRequest", "CitationClaimScreeningRequest",
+                "ScreeningSource", "ScreeningTextSpan", "ScreeningFinding",
+                "ScreeningEvidence", "ScreeningError")) {
+            com.fasterxml.jackson.databind.JsonNode schema = schemas.path(name);
+            org.junit.jupiter.api.Assertions.assertFalse(schema.isMissingNode(), name);
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    schema.path("additionalProperties").asBoolean(true), name);
+            org.junit.jupiter.api.Assertions.assertTrue(schema.path("required").isArray(), name);
+            org.junit.jupiter.api.Assertions.assertFalse(schema.path("required").isEmpty(), name);
+        }
+    }
 }
