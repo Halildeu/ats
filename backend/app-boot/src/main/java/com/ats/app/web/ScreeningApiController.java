@@ -124,8 +124,14 @@ class ScreeningApiController {
                     TranscriptSegmentSchema.class, CitationClaimSchema.class})))
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Yeni screening evidence üretildi",
+                    headers = @io.swagger.v3.oas.annotations.headers.Header(
+                            name = "X-ATS-Replay", description = "Yeni kayıt için false",
+                            schema = @Schema(type = "boolean")),
                     content = @Content(schema = @Schema(implementation = ScreeningResponse.class))),
             @ApiResponse(responseCode = "200", description = "Aynı request'in doğrulanmış replay'i",
+                    headers = @io.swagger.v3.oas.annotations.headers.Header(
+                            name = "X-ATS-Replay", description = "Doğrulanmış replay için true",
+                            schema = @Schema(type = "boolean")),
                     content = @Content(schema = @Schema(implementation = ScreeningResponse.class))),
             @ApiResponse(responseCode = "400", description = "Kapalı request sözleşmesi ihlali",
                     content = @Content(schema = @Schema(implementation = ScreeningErrorResponse.class))),

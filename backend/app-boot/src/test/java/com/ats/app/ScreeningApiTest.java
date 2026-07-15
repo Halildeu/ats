@@ -114,6 +114,16 @@ class ScreeningApiTest {
                 HttpMethod.GET, new HttpEntity<>(bearer(token("ats.screening.read", "reader-1"))),
                 String.class);
         assertEquals(404, crossInterview.getStatusCode().value());
+
+        String otherTenant = JWT.token(
+                java.util.Map.of("tenant", "screen-api-other-tenant",
+                        "scope", "ats.screening.read"),
+                JwtTestSupport.ISSUER, List.of(JwtTestSupport.AUDIENCE), "reader-other-tenant");
+        ResponseEntity<String> crossTenant = rest.exchange(
+                "/api/v1/interviews/" + interview + "/screenings/" + findingSetRef,
+                HttpMethod.GET, new HttpEntity<>(bearer(otherTenant)), String.class);
+        assertEquals(404, crossTenant.getStatusCode().value(),
+                "başka tenant aynı findingSetRef'i ayırt edememeli");
     }
 
     @Test
