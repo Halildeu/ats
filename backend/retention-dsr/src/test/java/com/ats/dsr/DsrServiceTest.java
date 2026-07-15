@@ -2,6 +2,7 @@ package com.ats.dsr;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.consent.ConsentGate;
@@ -125,8 +126,10 @@ class DsrServiceTest {
 
     @Test
     void server_scope_cross_plane_happy_path_is_durable_and_replayable() {
-        DsrService.ErasureReceipt first = service.executeErasure(
+        DsrService.ErasureResult firstResult = service.executeErasure(
                 TENANT, OPERATOR, INTERVIEW, dsarKey).asOptional().orElseThrow();
+        DsrService.ErasureReceipt first = firstResult.receipt();
+        assertFalse(firstResult.replayed());
 
         assertEquals(3, first.tombstoneCount(), "2 WORM + 1 screening tombstone");
         assertEquals(4, first.deletedContentCount(), "screening + 3 durable content row");
@@ -143,10 +146,17 @@ class DsrServiceTest {
                 dsarStore.find(TENANT, INTERVIEW, dsarKey).asOptional().orElseThrow().state());
         assertEquals(1, resolveCalls);
 
-        DsrService.ErasureReceipt replay = service.executeErasure(
+        DsrService.ErasureResult replayResult = service.executeErasure(
                 TENANT, new ActorId("other-operator"), INTERVIEW, dsarKey)
                 .asOptional().orElseThrow();
-        assertEquals(first, replay);
+        assertTrue(replayResult.replayed());
+        assertEquals(first, replayResult.receipt());
+        DsrService.ErasureStatus status = service.erasureStatus(
+                TENANT, INTERVIEW, dsarKey).asOptional().orElseThrow();
+        assertEquals(ErasureExecutionStore.ExecutionState.FULFILLED, status.state());
+        assertEquals(status.totalStepCount(), status.completedStepCount());
+        assertEquals(0, status.retryAfterSeconds());
+        assertEquals(first, status.receipt());
         assertEquals(1, resolveCalls, "durable execution varken scope yeniden çözülmez");
         assertEquals(2, ledger.tombstoneTargets.size(), "replay yeni WORM tombstone üretmez");
         assertEquals(1, screeningStore.purges.size(), "replay yeni screening purge üretmez");
@@ -155,7 +165,7 @@ class DsrServiceTest {
     @Test
     void tombstone_failure_keeps_content_and_retry_resumes_same_plan() {
         ledger.failTombstone = true;
-        Outcome<DsrService.ErasureReceipt> failed = service.executeErasure(
+        Outcome<DsrService.ErasureResult> failed = service.executeErasure(
                 TENANT, OPERATOR, INTERVIEW, dsarKey);
         assertFalse(failed.isOk());
         assertTrue(objectStore.contains(TENANT, objectKey));
@@ -181,12 +191,36 @@ class DsrServiceTest {
     }
 
     @Test
+    void running_erasure_status_projects_lease_retry_without_content_or_receipt() {
+        ok(executionStore.begin(new ErasureExecutionStore.BeginCommand(
+                TENANT, INTERVIEW, dsarKey,
+                ErasureExecutionStore.ExecutionKind.DATA_SUBJECT_ERASURE,
+                resolvedScope.digest(), OPERATOR.value(),
+                List.of(new ErasureExecutionStore.PlannedStep(
+                        0, ErasureExecutionStore.StepType.INTERVIEW_SEAL, INTERVIEW.value())))));
+        ok(executionStore.acquire(
+                TENANT, INTERVIEW, dsarKey, "live-worker", CLOCK.instant(),
+                CLOCK.instant().plusSeconds(17)));
+
+        DsrService.ErasureStatus status = ok(service.erasureStatus(
+                TENANT, INTERVIEW, dsarKey));
+        assertEquals(ErasureExecutionStore.ExecutionState.RUNNING, status.state());
+        assertEquals(0, status.completedStepCount());
+        assertEquals(1, status.totalStepCount());
+        assertEquals(17, status.retryAfterSeconds());
+        assertNull(status.receipt(), "RUNNING projection terminal receipt taşımaz");
+        assertFalse(service.erasureStatus(
+                new TenantId("other"), INTERVIEW, dsarKey).isOk(),
+                "status projection tenant-scope dışına sızmamalı");
+    }
+
+    @Test
     void empty_authoritative_scope_still_records_terminal_seal_receipt() {
         resolvedScope = new ErasureScope(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
 
         DsrService.ErasureReceipt receipt = service.executeErasure(
-                TENANT, OPERATOR, INTERVIEW, dsarKey).asOptional().orElseThrow();
+                TENANT, OPERATOR, INTERVIEW, dsarKey).asOptional().orElseThrow().receipt();
         assertEquals(0, receipt.tombstoneCount());
         assertEquals(0, receipt.deletedContentCount());
         assertEquals(0, receipt.objectDeleteIssuedCount());

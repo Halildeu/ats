@@ -61,6 +61,10 @@ describe("a11y smoke (axe-core; color-contrast hariç — jsdom sınırı)", () 
     fireEvent.click(screen.getByTestId("dsar-receive-button"));
     await screen.findByTestId("dsar-key");
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // onay modu: role=alert uyarı görünür
+    const warning = screen.getByTestId("dsar-erase-warning");
+    expect(document.activeElement).toBe(warning);
+    expect(screen.getByTestId("dsar-erase-button").getAttribute("aria-describedby"))
+      .toBe("dsar-erase-warning");
     await expectNoViolations(container);
   });
 

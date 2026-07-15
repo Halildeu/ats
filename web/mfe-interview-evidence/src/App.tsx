@@ -191,9 +191,11 @@ export default function App() {
 
       {erasedReceipt && (
         <div data-testid="erased-info" style={{ display: "grid", gap: 4, margin: "12px 0" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <Badge variant="success">{t("dsar.eraseDone")}</Badge>
-            <Text as="span" size="sm">{erasedReceipt.dsarKey}</Text>
+            <Text as="span" size="sm" style={{ overflowWrap: "anywhere" }}>
+              {erasedReceipt.dsarKey}
+            </Text>
           </div>
           <Text as="p" variant="warning" role="status">
             {t("dsar.erasedInfo")}
@@ -208,6 +210,11 @@ export default function App() {
           {erasedReceipt.caseTransitioned && (
             <Text as="p" size="sm" variant="secondary" data-testid="dsar-case-transitioned">
               {t("dsar.caseTransitioned")}
+            </Text>
+          )}
+          {erasedReceipt.replayed && (
+            <Text as="p" size="sm" variant="secondary" data-testid="dsar-replay-recovered">
+              {t("dsar.replayRecovered")}
             </Text>
           )}
         </div>

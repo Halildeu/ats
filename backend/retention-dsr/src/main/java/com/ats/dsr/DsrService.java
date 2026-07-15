@@ -71,6 +71,38 @@ public final class DsrService {
             int objectDeleteIssuedCount,
             boolean caseTransitioned) {}
 
+    /** İlk yürütme ile terminal receipt replay'ini transport katmanına dürüstçe ayırır. */
+    public record ErasureResult(ErasureReceipt receipt, boolean replayed) {}
+
+    /**
+     * Salt-okunur execution projection'ı. Hedef ref, actor veya içerik taşımaz; yalnız
+     * operatörün timeout/lease sonrası güvenli biçimde reconcile edebileceği durum ve makbuzdur.
+     */
+    public record ErasureStatus(
+            String dsarKey,
+            ExecutionState state,
+            int completedStepCount,
+            int totalStepCount,
+            int retryAfterSeconds,
+            ErasureReceipt receipt) {
+        public ErasureStatus {
+            if (isBlank(dsarKey) || state == null || completedStepCount < 0
+                    || totalStepCount < 1 || completedStepCount > totalStepCount
+                    || retryAfterSeconds < 0 || retryAfterSeconds > WORKER_LEASE.toSeconds()) {
+                throw new IllegalArgumentException("erasure status projection geçersiz");
+            }
+            if (state == ExecutionState.RUNNING && receipt != null) {
+                throw new IllegalArgumentException("RUNNING status terminal receipt taşıyamaz");
+            }
+            if (state == ExecutionState.FULFILLED
+                    && (receipt == null || completedStepCount != totalStepCount
+                            || retryAfterSeconds != 0)) {
+                throw new IllegalArgumentException(
+                        "FULFILLED status tam adım + receipt + retry=0 gerektirir");
+            }
+        }
+    }
+
     public record PurgeReceipt(
             int interviewCount, int deletedContentCount, int objectDeleteIssuedCount) {}
 
@@ -144,7 +176,7 @@ public final class DsrService {
      * Caller yalnız DSAR anahtarı verir. Silinecek object/content/review/WORM hedefleri server
      * truth'undan resolve edilir; caller-authored scope kabul eden overload bilinçli olarak yoktur.
      */
-    public Outcome<ErasureReceipt> executeErasure(
+    public Outcome<ErasureResult> executeErasure(
             TenantId tenantId, ActorId actorId, InterviewId interviewId, String dsarKey) {
         if (tenantId == null || actorId == null || interviewId == null
                 || isBlank(actorId.value()) || isBlank(dsarKey)) {
@@ -200,9 +232,38 @@ public final class DsrService {
             emit(tenantId, DSAR_FULFILLED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
                     Map.of("actor_ref", receipt.actorRef()));
         }
-        return Outcome.ok(new ErasureReceipt(dsarKey, receipt.tombstoneCount(),
-                receipt.deletedContentCount(), receipt.objectDeleteIssuedCount(),
-                receipt.caseTransitioned()));
+        ErasureReceipt erasureReceipt = receiptOf(dsarKey, receipt);
+        return Outcome.ok(new ErasureResult(erasureReceipt, !runOk.value().newlyFulfilled()));
+    }
+
+    /**
+     * POST timeout/409 sonrasında yan etkisiz durum ve terminal receipt recovery yüzeyi.
+     * Tenant + interview scope store tarafından enforce edilir; execution yoksa NOT_FOUND.
+     */
+    public Outcome<ErasureStatus> erasureStatus(
+            TenantId tenantId, InterviewId interviewId, String dsarKey) {
+        if (tenantId == null || interviewId == null || isBlank(dsarKey)) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenant/interview/dsarKey zorunlu");
+        }
+        Outcome<Execution> found = executionStore.find(tenantId, interviewId, dsarKey);
+        if (!(found instanceof Outcome.Ok<Execution> ok)) {
+            return copyFailure(found);
+        }
+        Execution execution = ok.value();
+        if (execution.kind() != ExecutionKind.DATA_SUBJECT_ERASURE) {
+            return Outcome.fail(OutcomeCode.CONFLICT,
+                    "execution data-subject erasure değildir");
+        }
+        int completed = (int) execution.steps().stream()
+                .filter(step -> step.state() == StepState.COMPLETED)
+                .count();
+        int retryAfter = retryAfterSeconds(execution, Instant.now(clock));
+        ErasureReceipt receipt = execution.state() == ExecutionState.FULFILLED
+                ? receiptOf(dsarKey, execution)
+                : null;
+        return Outcome.ok(new ErasureStatus(
+                dsarKey, execution.state(), completed, execution.steps().size(),
+                retryAfter, receipt));
     }
 
     /**
@@ -364,6 +425,30 @@ public final class DsrService {
             return copyFailure(fulfilled);
         }
         return Outcome.ok(new RunReceipt(fulfilledOk.value(), true));
+    }
+
+    private static ErasureReceipt receiptOf(String dsarKey, Execution execution) {
+        return new ErasureReceipt(dsarKey, execution.tombstoneCount(),
+                execution.deletedContentCount(), execution.objectDeleteIssuedCount(),
+                execution.caseTransitioned());
+    }
+
+    private static int retryAfterSeconds(Execution execution, Instant now) {
+        if (execution.state() != ExecutionState.RUNNING || execution.leaseUntil() == null) {
+            return 0;
+        }
+        Instant leaseUntil;
+        try {
+            leaseUntil = Instant.parse(execution.leaseUntil());
+        } catch (java.time.format.DateTimeParseException exception) {
+            return 0;
+        }
+        long millis = Duration.between(now, leaseUntil).toMillis();
+        if (millis <= 0) {
+            return 0;
+        }
+        long roundedUp = (millis + 999L) / 1000L;
+        return (int) Math.min(WORKER_LEASE.toSeconds(), Math.max(1L, roundedUp));
     }
 
     private Outcome<StepEffect> performStep(

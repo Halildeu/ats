@@ -195,7 +195,7 @@ class PostgresErasureExecutionStoreTest {
 
         DsrService resumed = service(dsars, transcripts, store);
         DsrService.ErasureReceipt receipt = ok(
-                resumed.executeErasure(tenant, actor, interview, dsarKey));
+                resumed.executeErasure(tenant, actor, interview, dsarKey)).receipt();
         assertEquals(1, receipt.deletedContentCount(),
                 "idempotent fiziksel replay tek mantıksal delete makbuzu üretmeli");
         assertEquals(ExecutionState.FULFILLED,
@@ -221,7 +221,7 @@ class PostgresErasureExecutionStoreTest {
 
         DsrService.ErasureReceipt receipt = ok(service(
                 dsars, new PostgresTranscriptStore(dataSource), store)
-                .executeErasure(tenant, actor, interview, dsarKey));
+                .executeErasure(tenant, actor, interview, dsarKey)).receipt();
 
         assertTrue(receipt.caseTransitioned(),
                 "durable REVIEW_WITHDRAW adımı makbuza yansımalı");

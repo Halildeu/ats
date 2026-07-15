@@ -3,6 +3,11 @@ package com.ats.app;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ats.dsr.ErasureExecutionStore;
+import com.ats.dsr.ErasureExecutionStore.BeginCommand;
+import com.ats.dsr.ErasureExecutionStore.ExecutionKind;
+import com.ats.dsr.ErasureExecutionStore.PlannedStep;
+import com.ats.dsr.ErasureExecutionStore.StepType;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
@@ -17,6 +22,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.List;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
@@ -102,6 +108,7 @@ class ExportDsarApiTest {
     @Autowired private TestRestTemplate rest;
     @Autowired private DataSource dataSource;
     @Autowired private TranscriptStore transcriptStore;
+    @Autowired private ErasureExecutionStore erasureExecutionStore;
     @Autowired private com.ats.review.ReviewCaseStore reviewCaseStore;
 
     private static final String TENANT = "ed-tenant";
@@ -298,13 +305,47 @@ class ExportDsarApiTest {
         String erasureBody = "{\"dsarKey\":\"" + dsarKey + "\"}";
         ResponseEntity<String> er = post(tok, "/api/v1/interviews/" + iv + "/dsar/erasure", erasureBody);
         assertEquals(200, er.getStatusCode().value(), "body: " + er.getBody());
+        assertEquals("false", er.getHeaders().getFirst("X-ATS-Replay"));
         assertEquals("no-store", er.getHeaders().getCacheControl());
-        assertTrue(JSON_READER.readTree(er.getBody()).path("tombstoneCount").asInt() >= 1,
+        JsonNode erasureJson = JSON_READER.readTree(er.getBody());
+        assertEquals(false, erasureJson.path("replayed").asBoolean());
+        assertTrue(erasureJson.path("tombstoneCount").asInt() >= 1,
                 "server-authoritative WORM hedefleri tombstone olmalı; body: " + er.getBody());
-        assertTrue(JSON_READER.readTree(er.getBody()).has("objectDeleteIssuedCount"),
+        assertTrue(erasureJson.has("objectDeleteIssuedCount"),
                 "object-store çağrısı kalıcı silme sayısından ayrı, dürüst receipt alanı olmalı");
         assertTrue(er.getBody().contains("\"caseTransitioned\":false"),
                 "terminal EXPORTED state değişmez (dürüst receipt); body: " + er.getBody());
+
+        // Timeout/recovery yüzeyi terminal makbuzu yan etkisiz döndürür; ikinci POST
+        // doğrulanmış replay'dir ve WORM/content side-effect üretmez.
+        int wormAfterErasure = wormTotal(TENANT);
+        ResponseEntity<String> erasureStatus = rest.exchange(
+                "/api/v1/interviews/" + iv + "/dsar/erasure/receipt?dsarKey=" + dsarKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
+        assertEquals(200, erasureStatus.getStatusCode().value(), "body: " + erasureStatus.getBody());
+        assertEquals("no-store", erasureStatus.getHeaders().getCacheControl());
+        JsonNode statusJson = JSON_READER.readTree(erasureStatus.getBody());
+        assertEquals("FULFILLED", statusJson.path("state").asText());
+        assertEquals(statusJson.path("totalStepCount").asInt(),
+                statusJson.path("completedStepCount").asInt());
+        for (String f : List.of("dsarKey", "tombstoneCount", "deletedContentCount",
+                "objectDeleteIssuedCount", "caseTransitioned")) {
+            assertEquals(erasureJson.get(f), statusJson.path("receipt").get(f),
+                    "terminal status receipt alanı birebir olmalı: " + f);
+        }
+
+        ResponseEntity<String> erasureReplay = post(
+                tok, "/api/v1/interviews/" + iv + "/dsar/erasure", erasureBody);
+        assertEquals(200, erasureReplay.getStatusCode().value(), "body: " + erasureReplay.getBody());
+        assertEquals("true", erasureReplay.getHeaders().getFirst("X-ATS-Replay"));
+        JsonNode erasureReplayJson = JSON_READER.readTree(erasureReplay.getBody());
+        assertEquals(true, erasureReplayJson.path("replayed").asBoolean());
+        for (String f : List.of("dsarKey", "tombstoneCount", "deletedContentCount",
+                "objectDeleteIssuedCount", "caseTransitioned")) {
+            assertEquals(erasureJson.get(f), erasureReplayJson.get(f),
+                    "replay core receipt alanı birebir olmalı: " + f);
+        }
+        assertEquals(wormAfterErasure, wormTotal(TENANT), "erasure replay WORM'a satır YAZMAZ");
 
         // content-plane gerçekten silindi: transcript GET 404; WORM tombstone satırı var
         ResponseEntity<String> gone = rest.exchange(
@@ -356,6 +397,52 @@ class ExportDsarApiTest {
         String erasureOnly = token("ats.erasure.execute", "user-c");
         assertEquals(403, post(erasureOnly, "/api/v1/interviews/iv-s/dsar",
                 "{\"subjectRef\":\"s\",\"reasonCode\":\"r\"}").getStatusCode().value());
+        assertEquals(403, rest.exchange(
+                "/api/v1/interviews/iv-s/dsar/erasure/receipt?dsarKey=k",
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(dsarOnly)), String.class)
+                .getStatusCode().value());
+        assertEquals(404, rest.exchange(
+                "/api/v1/interviews/iv-s/dsar/erasure/receipt?dsarKey=k",
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(erasureOnly)), String.class)
+                .getStatusCode().value());
+    }
+
+    @Test
+    void live_worker_conflict_returns_retry_after_and_running_projection() throws Exception {
+        String tok = token(ALL, "lease-reviewer");
+        String iv = "iv-live-lease";
+        ResponseEntity<String> dsar = post(tok, "/api/v1/interviews/" + iv + "/dsar",
+                "{\"subjectRef\":\"subject-lease\",\"reasonCode\":\"kvkk_talep\"}");
+        assertEquals(201, dsar.getStatusCode().value());
+        String dsarKey = field(dsar.getBody(), "dsarKey");
+        BeginCommand command = new BeginCommand(
+                new TenantId(TENANT), new InterviewId(iv), dsarKey,
+                ExecutionKind.DATA_SUBJECT_ERASURE, "a".repeat(64), "lease-actor",
+                List.of(new PlannedStep(0, StepType.INTERVIEW_SEAL, iv)));
+        assertTrue(erasureExecutionStore.begin(command).isOk());
+        Instant now = Instant.now();
+        assertTrue(erasureExecutionStore.acquire(
+                new TenantId(TENANT), new InterviewId(iv), dsarKey,
+                "other-live-worker", now, now.plusSeconds(20)).isOk());
+
+        ResponseEntity<String> conflict = post(tok,
+                "/api/v1/interviews/" + iv + "/dsar/erasure",
+                "{\"dsarKey\":\"" + dsarKey + "\"}");
+        assertEquals(409, conflict.getStatusCode().value(), "body: " + conflict.getBody());
+        int retryAfter = Integer.parseInt(conflict.getHeaders().getFirst("Retry-After"));
+        assertTrue(retryAfter >= 1 && retryAfter <= 30, "Retry-After: " + retryAfter);
+        assertEquals("no-store", conflict.getHeaders().getCacheControl());
+
+        ResponseEntity<String> status = rest.exchange(
+                "/api/v1/interviews/" + iv + "/dsar/erasure/receipt?dsarKey=" + dsarKey,
+                HttpMethod.GET, new HttpEntity<>(jsonBearer(tok)), String.class);
+        assertEquals(200, status.getStatusCode().value(), "body: " + status.getBody());
+        assertTrue(Integer.parseInt(status.getHeaders().getFirst("Retry-After")) >= 1);
+        JsonNode body = JSON_READER.readTree(status.getBody());
+        assertEquals("RUNNING", body.path("state").asText());
+        assertEquals(0, body.path("completedStepCount").asInt());
+        assertEquals(1, body.path("totalStepCount").asInt());
+        assertTrue(body.path("receipt").isMissingNode());
     }
 
     @Test

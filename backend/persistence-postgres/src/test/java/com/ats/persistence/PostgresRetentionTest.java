@@ -217,7 +217,7 @@ class PostgresRetentionTest {
 
         DsrService.ErasureReceipt receipt = service.executeErasure(
                 tenant, dpo, interview, dsarKey)
-                .asOptional().orElseThrow();
+                .asOptional().orElseThrow().receipt();
 
         assertEquals(1, receipt.tombstoneCount());
         assertEquals(1, receipt.deletedContentCount());

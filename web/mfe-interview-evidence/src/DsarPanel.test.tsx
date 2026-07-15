@@ -20,10 +20,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function jsonResponse(status: number, body: unknown): Response {
+function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }
 
@@ -59,8 +59,12 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
 
     fireEvent.click(screen.getByTestId("dsar-erase-button"));
     expect(fetchMock).toHaveBeenCalledTimes(1); // erasure ÇAĞRILMADI
-    expect(screen.getByTestId("dsar-erase-warning").textContent).toContain("YIKICI");
-    expect(screen.getByTestId("dsar-erase-button").textContent).toContain("Eminim");
+    const warning = screen.getByTestId("dsar-erase-warning");
+    const button = screen.getByTestId("dsar-erase-button");
+    expect(warning.textContent).toContain("YIKICI");
+    expect(button.textContent).toContain("Eminim");
+    expect(document.activeElement).toBe(warning);
+    expect(button.getAttribute("aria-describedby")).toBe("dsar-erase-warning");
   });
 
   it("ikinci tık yalnız dsarKey gönderir ve onErased receipt alır", async () => {
@@ -68,7 +72,7 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
     await intake();
     fetchMock.mockResolvedValueOnce(jsonResponse(200, {
       dsarKey: "iv-1/dsar-x", tombstoneCount: 0, deletedContentCount: 1,
-      objectDeleteIssuedCount: 1, caseTransitioned: false,
+      objectDeleteIssuedCount: 1, caseTransitioned: false, replayed: false,
     }));
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // 1. tık: onay modu
     fireEvent.click(screen.getByTestId("dsar-erase-button")); // 2. tık: yürüt
@@ -80,5 +84,122 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
     expect(Object.keys(body)).toEqual(["dsarKey"]); // caller scope/target kesinlikle yok
     expect(onErased.mock.calls[0][0].deletedContentCount).toBe(1);
     expect(onErased.mock.calls[0][0].objectDeleteIssuedCount).toBe(1);
+    expect(onErased.mock.calls[0][0].replayed).toBe(false);
+  });
+
+  it("confirm çift-click aynı tickte yalnız bir yıkıcı POST ve bir receipt üretir", async () => {
+    const onErased = renderPanel();
+    await intake();
+    let resolveErasure!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => {
+      resolveErasure = resolve;
+    }));
+
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    await vi.waitFor(() => expect(screen.getByTestId("dsar-erase-button").textContent)
+      .toContain("Eminim"));
+    const confirmButton = screen.getByTestId("dsar-erase-button");
+    // React disabled render'ı araya girmeden aynı tickte iki click üret:
+    // in-flight ref ikinci yıkıcı çağrıyı senkron olarak kesmeli.
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2)); // intake + tek erasure POST
+
+    resolveErasure(jsonResponse(200, {
+      dsarKey: "iv-1/dsar-x", tombstoneCount: 1, deletedContentCount: 2,
+      objectDeleteIssuedCount: 1, caseTransitioned: false, replayed: false,
+    }));
+    await vi.waitFor(() => expect(onErased).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("dsar-error")).toBeNull();
+  });
+
+  it("409 canlı lease durumunu salt-okunur status ile gösterir ve terminal receipt'i geri alır", async () => {
+    const onErased = renderPanel();
+    await intake();
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: "CONFLICT", reason: "execution başka canlı worker lease'inde",
+      }), { status: 409, headers: { "Content-Type": "application/json", "Retry-After": "12" } }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        dsarKey: "iv-1/dsar-x", state: "RUNNING", completedStepCount: 3,
+        totalStepCount: 8, retryAfterSeconds: 1,
+      }));
+
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    const progress = await screen.findByTestId("dsar-progress");
+    expect(progress.textContent).toContain("3/8");
+    expect(fetchMock).toHaveBeenCalledTimes(3); // intake + POST + GET status
+    expect(onErased).not.toHaveBeenCalled();
+    expect((screen.getByTestId("dsar-erase-button") as HTMLButtonElement).disabled).toBe(true);
+    const reconcile = screen.getByTestId("dsar-reconcile-button") as HTMLButtonElement;
+    expect(reconcile.disabled).toBe(true);
+    fireEvent.click(reconcile);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // Retry-After dolmadan GET yok
+    await vi.waitFor(() => expect(reconcile.disabled).toBe(false), { timeout: 1_500 });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+      dsarKey: "iv-1/dsar-x", state: "FULFILLED", completedStepCount: 8,
+      totalStepCount: 8, retryAfterSeconds: 0,
+      receipt: {
+        dsarKey: "iv-1/dsar-x", tombstoneCount: 2, deletedContentCount: 4,
+        objectDeleteIssuedCount: 1, caseTransitioned: true,
+      },
+    }));
+    fireEvent.click(reconcile);
+    await vi.waitFor(() => expect(onErased).toHaveBeenCalledTimes(1));
+    expect(onErased.mock.calls[0][0].replayed).toBe(true);
+  });
+
+  it("Retry-After taşımayan 409'u lease sanıp status oracle'ına dönüştürmez", async () => {
+    const onErased = renderPanel();
+    await intake();
+    fetchMock.mockResolvedValueOnce(jsonResponse(409, {
+      error: "CONFLICT", reason: "execution farklı tür ile bağlı",
+    }));
+
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    const error = await screen.findByTestId("dsar-error");
+    expect(error.textContent).toContain("farklı tür");
+    expect(fetchMock).toHaveBeenCalledTimes(2); // intake + POST; recovery GET yok
+    expect(screen.queryByTestId("dsar-progress")).toBeNull();
+    expect(onErased).not.toHaveBeenCalled();
+  });
+
+  it("POST replay body/header birbiriyle çelişirse makbuzu fail-closed reddeder", async () => {
+    const onErased = renderPanel();
+    await intake();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+      dsarKey: "iv-1/dsar-x", tombstoneCount: 1, deletedContentCount: 2,
+      objectDeleteIssuedCount: 1, caseTransitioned: false, replayed: false,
+    }, { "X-ATS-Replay": "true" }));
+
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    const error = await screen.findByTestId("dsar-error");
+    expect(error.textContent).toContain("tutarsız");
+    expect(onErased).not.toHaveBeenCalled();
+  });
+
+  it("POST network cevabı kaybolursa terminal receipt'i GET ile yan etkisiz reconcile eder", async () => {
+    const onErased = renderPanel();
+    await intake();
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("network drop after commit"))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        dsarKey: "iv-1/dsar-x", state: "FULFILLED", completedStepCount: 8,
+        totalStepCount: 8, retryAfterSeconds: 0,
+        receipt: {
+          dsarKey: "iv-1/dsar-x", tombstoneCount: 2, deletedContentCount: 4,
+          objectDeleteIssuedCount: 1, caseTransitioned: false,
+        },
+      }));
+
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    fireEvent.click(screen.getByTestId("dsar-erase-button"));
+    await vi.waitFor(() => expect(onErased).toHaveBeenCalledTimes(1));
+    expect(onErased.mock.calls[0][0].replayed).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // intake + belirsiz POST + GET status
   });
 });

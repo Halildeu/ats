@@ -158,4 +158,76 @@ class OpenApiDriftTest {
             org.junit.jupiter.api.Assertions.assertFalse(schema.path("required").isEmpty(), name);
         }
     }
+
+    @org.junit.jupiter.api.Test
+    void erasure_recovery_and_replay_contracts_are_pinned_semantically() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode erasure = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/dsar/erasure").path("post");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                erasure.path("requestBody").path("required").asBoolean(false));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                erasure.path("responses").path("200").path("headers").has("X-ATS-Replay"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                erasure.path("responses").path("409").path("headers").has("Retry-After"));
+        String receiptRef = erasure.path("responses").path("200").path("content")
+                .path("*/*").path("schema").path("$ref").asText();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                receiptRef.endsWith("/ErasureExecutionResponse"), receiptRef);
+        String postConflictRef = erasure.path("responses").path("409").path("content")
+                .path("*/*").path("schema").path("$ref").asText();
+        org.junit.jupiter.api.Assertions.assertTrue(
+                postConflictRef.endsWith("/ApiErrorResponse"), postConflictRef);
+
+        com.fasterxml.jackson.databind.JsonNode recovery = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/dsar/erasure/receipt").path("get");
+        org.junit.jupiter.api.Assertions.assertFalse(recovery.isMissingNode());
+        com.fasterxml.jackson.databind.JsonNode dsarKey = java.util.stream.StreamSupport.stream(
+                        recovery.path("parameters").spliterator(), false)
+                .filter(p -> "dsarKey".equals(p.path("name").asText()))
+                .findFirst().orElseThrow();
+        org.junit.jupiter.api.Assertions.assertTrue(dsarKey.path("required").asBoolean(false));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                recovery.path("responses").path("200").path("headers").has("Retry-After"));
+        org.junit.jupiter.api.Assertions.assertTrue(recovery.path("responses").has("409"));
+        java.util.Set<String> statusRefs = java.util.stream.StreamSupport.stream(
+                        recovery.path("responses").path("200").path("content")
+                                .path("*/*").path("schema").path("oneOf").spliterator(), false)
+                .map(node -> node.path("$ref").asText())
+                .collect(java.util.stream.Collectors.toSet());
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of(
+                "#/components/schemas/RunningErasureStatusResponse",
+                "#/components/schemas/FulfilledErasureStatusResponse"), statusRefs);
+
+        com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
+        for (String name : java.util.List.of(
+                "ErasureBody", "ErasureReceiptResponse", "ErasureExecutionResponse",
+                "RunningErasureStatusResponse", "FulfilledErasureStatusResponse",
+                "ApiErrorResponse")) {
+            com.fasterxml.jackson.databind.JsonNode schema = schemas.path(name);
+            org.junit.jupiter.api.Assertions.assertFalse(schema.isMissingNode(), name);
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    schema.path("additionalProperties").asBoolean(true), name);
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(
+                schemas.path("ErasureExecutionResponse").path("required").toString()
+                        .contains("replayed"));
+        com.fasterxml.jackson.databind.JsonNode running = schemas.path("RunningErasureStatusResponse");
+        com.fasterxml.jackson.databind.JsonNode fulfilled = schemas.path("FulfilledErasureStatusResponse");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("RUNNING"), java.util.stream.StreamSupport.stream(
+                                running.path("properties").path("state").path("enum").spliterator(), false)
+                        .map(com.fasterxml.jackson.databind.JsonNode::asText).toList());
+        org.junit.jupiter.api.Assertions.assertFalse(running.path("properties").has("receipt"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("FULFILLED"), java.util.stream.StreamSupport.stream(
+                                fulfilled.path("properties").path("state").path("enum").spliterator(), false)
+                        .map(com.fasterxml.jackson.databind.JsonNode::asText).toList());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "#/components/schemas/ErasureReceiptResponse",
+                fulfilled.path("properties").path("receipt").path("$ref").asText());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                fulfilled.path("required").toString().contains("receipt"));
+    }
 }
