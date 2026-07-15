@@ -123,7 +123,7 @@ describe("erasure — iki-adımlı yıkıcı onay", () => {
       .mockResolvedValueOnce(jsonResponse(200, {
         dsarKey: "iv-1/dsar-x", state: "RUNNING", completedStepCount: 3,
         totalStepCount: 8, retryAfterSeconds: 1,
-      }));
+      }, { "Retry-After": "1" }));
 
     fireEvent.click(screen.getByTestId("dsar-erase-button"));
     fireEvent.click(screen.getByTestId("dsar-erase-button"));

@@ -20,7 +20,29 @@ export type ErasureReceipt = {
 };
 
 type ErasureReceiptBody = Omit<ErasureReceipt, "replayed">;
-type ErasureExecutionBody = ErasureReceiptBody & { replayed?: boolean };
+type ErasureExecutionBody = ErasureReceiptBody & { replayed: boolean };
+
+type JsonObject = Record<string, unknown>;
+
+const RECEIPT_KEYS = [
+  "dsarKey",
+  "tombstoneCount",
+  "deletedContentCount",
+  "objectDeleteIssuedCount",
+  "caseTransitioned",
+] as const;
+const EXECUTION_KEYS = [...RECEIPT_KEYS, "replayed"] as const;
+const RUNNING_STATUS_KEYS = [
+  "dsarKey",
+  "state",
+  "completedStepCount",
+  "totalStepCount",
+  "retryAfterSeconds",
+] as const;
+const FULFILLED_STATUS_KEYS = [...RUNNING_STATUS_KEYS, "receipt"] as const;
+// DsrService.WORKER_LEASE ile aynı canonical transport sınırı; daha büyük değer
+// ürün reconcile butonunu saldırgan/bozuk response ile süresiz kilitleyemez.
+const ERASURE_WORKER_LEASE_SECONDS = 30;
 
 export type ErasureStatus = {
   dsarKey: string;
@@ -57,6 +79,159 @@ async function failWithReason(resp: Response): Promise<never> {
   throw await errorFromResponse(resp);
 }
 
+class ErasureContractError extends Error {
+  constructor(reason: string) {
+    super(`erasure response sözleşmesi geçersiz: ${reason} (fail-closed)`);
+    this.name = "ErasureContractError";
+  }
+}
+
+function contractError(reason: string): ErasureContractError {
+  return new ErasureContractError(reason);
+}
+
+function objectBody(value: unknown, label: string): JsonObject {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw contractError(`${label} object olmalı`);
+  }
+  return value as JsonObject;
+}
+
+function hasExactKeys(
+  body: JsonObject,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): boolean {
+  const keys = Object.keys(body);
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => Object.hasOwn(body, key))
+    && keys.every((key) => allowed.has(key));
+}
+
+function nonNegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw contractError(`${field} non-negative safe integer olmalı`);
+  }
+  return value;
+}
+
+async function jsonBody(resp: Response, label: string): Promise<unknown> {
+  try {
+    return await resp.json();
+  } catch {
+    throw contractError(`${label} geçerli JSON olmalı`);
+  }
+}
+
+function parseReceiptBody(value: unknown, expectedDsarKey: string): ErasureReceiptBody {
+  const body = objectBody(value, "receipt");
+  if (!hasExactKeys(body, RECEIPT_KEYS)) {
+    throw contractError("receipt alanları eksik veya canonical sözleşme dışında");
+  }
+  if (body.dsarKey !== expectedDsarKey) {
+    throw contractError("receipt dsarKey istek ile eşleşmiyor");
+  }
+  if (typeof body.caseTransitioned !== "boolean") {
+    throw contractError("caseTransitioned boolean olmalı");
+  }
+  return {
+    dsarKey: expectedDsarKey,
+    tombstoneCount: nonNegativeInteger(body.tombstoneCount, "tombstoneCount"),
+    deletedContentCount: nonNegativeInteger(body.deletedContentCount, "deletedContentCount"),
+    objectDeleteIssuedCount: nonNegativeInteger(
+      body.objectDeleteIssuedCount,
+      "objectDeleteIssuedCount",
+    ),
+    caseTransitioned: body.caseTransitioned,
+  };
+}
+
+function parseExecutionBody(value: unknown, expectedDsarKey: string): ErasureExecutionBody {
+  const body = objectBody(value, "execution receipt");
+  if (!hasExactKeys(body, EXECUTION_KEYS)) {
+    throw contractError("execution receipt alanları eksik veya canonical sözleşme dışında");
+  }
+  if (typeof body.replayed !== "boolean") {
+    throw contractError("replayed boolean olmalı");
+  }
+  const receipt = parseReceiptBody(
+    Object.fromEntries(RECEIPT_KEYS.map((key) => [key, body[key]])),
+    expectedDsarKey,
+  );
+  return { ...receipt, replayed: body.replayed };
+}
+
+function bindRetryAfter(resp: Response, retryAfterSeconds: number): void {
+  const raw = resp.headers.get("Retry-After");
+  if (raw !== null && !/^(0|[1-9][0-9]*)$/.test(raw)) {
+    throw contractError("Retry-After header tam sayı saniye olmalı");
+  }
+  const headerSeconds = raw === null ? null : Number(raw);
+  if (headerSeconds !== null && headerSeconds !== retryAfterSeconds) {
+    throw contractError("Retry-After body/header arasında tutarsız");
+  }
+  if (retryAfterSeconds > 0 && headerSeconds === null) {
+    throw contractError("pozitif retryAfterSeconds için Retry-After header eksik");
+  }
+}
+
+function parseStatusBody(
+  value: unknown,
+  expectedDsarKey: string,
+  resp: Response,
+): ErasureStatus {
+  const body = objectBody(value, "erasure status");
+  if (body.state !== "RUNNING" && body.state !== "FULFILLED") {
+    throw contractError("state RUNNING veya FULFILLED olmalı");
+  }
+  const requiredKeys = body.state === "RUNNING"
+    ? RUNNING_STATUS_KEYS
+    : FULFILLED_STATUS_KEYS;
+  if (!hasExactKeys(body, requiredKeys)) {
+    throw contractError("status alanları eksik veya canonical sözleşme dışında");
+  }
+  if (body.dsarKey !== expectedDsarKey) {
+    throw contractError("status dsarKey istek ile eşleşmiyor");
+  }
+  const completedStepCount = nonNegativeInteger(
+    body.completedStepCount,
+    "completedStepCount",
+  );
+  const totalStepCount = nonNegativeInteger(body.totalStepCount, "totalStepCount");
+  const retryAfterSeconds = nonNegativeInteger(
+    body.retryAfterSeconds,
+    "retryAfterSeconds",
+  );
+  if (retryAfterSeconds > ERASURE_WORKER_LEASE_SECONDS) {
+    throw contractError("retryAfterSeconds server worker lease üst sınırını aşıyor");
+  }
+  if (totalStepCount < 1 || completedStepCount > totalStepCount) {
+    throw contractError("status adım sayaçları tutarsız");
+  }
+  bindRetryAfter(resp, retryAfterSeconds);
+
+  if (body.state === "RUNNING") {
+    return {
+      dsarKey: expectedDsarKey,
+      state: "RUNNING",
+      completedStepCount,
+      totalStepCount,
+      retryAfterSeconds,
+    };
+  }
+  if (completedStepCount !== totalStepCount || retryAfterSeconds !== 0) {
+    throw contractError("FULFILLED status tam adım ve retryAfterSeconds=0 gerektirir");
+  }
+  return {
+    dsarKey: expectedDsarKey,
+    state: "FULFILLED",
+    completedStepCount,
+    totalStepCount,
+    retryAfterSeconds,
+    receipt: parseReceiptBody(body.receipt, expectedDsarKey),
+  };
+}
+
 export async function receiveDsar(
   token: string,
   interviewId: string,
@@ -75,7 +250,11 @@ export async function receiveDsar(
   if (!resp.ok) {
     await failWithReason(resp);
   }
-  const body = (await resp.json()) as { dsarKey: string };
+  const body = objectBody(await jsonBody(resp, "DSAR intake response"), "DSAR intake response");
+  if (!hasExactKeys(body, ["dsarKey"])
+      || typeof body.dsarKey !== "string" || body.dsarKey.trim() === "") {
+    throw contractError("DSAR intake yalnız non-empty dsarKey taşımalı");
+  }
   return body.dsarKey;
 }
 
@@ -107,7 +286,10 @@ export async function executeErasure(
     }
     throw error;
   }
-  const receipt = (await resp.json()) as ErasureExecutionBody;
+  const receipt = parseExecutionBody(
+    await jsonBody(resp, "execution receipt"),
+    dsarKey,
+  );
   return { ...receipt, replayed: replayFlag(receipt, resp) };
 }
 
@@ -115,6 +297,9 @@ function replayFlag(body: ErasureExecutionBody, resp: Response): boolean {
   const bodyFlag = typeof body.replayed === "boolean" ? body.replayed : null;
   const header = resp.headers.get("X-ATS-Replay");
   const headerFlag = header === "true" ? true : header === "false" ? false : null;
+  if (header !== null && headerFlag === null) {
+    throw contractError("X-ATS-Replay header true veya false olmalı");
+  }
   if (bodyFlag !== null && headerFlag !== null && bodyFlag !== headerFlag) {
     throw new Error("erasure replay kanıtı body/header arasında tutarsız (fail-closed)");
   }
@@ -140,7 +325,11 @@ export async function fetchErasureStatus(
   if (!resp.ok) {
     await failWithReason(resp);
   }
-  return (await resp.json()) as ErasureStatus;
+  return parseStatusBody(
+    await jsonBody(resp, "erasure status"),
+    dsarKey,
+    resp,
+  );
 }
 
 /** Salt-okunur recovery: RUNNING ise typed progress, terminalse replay receipt döndürür. */
@@ -172,7 +361,8 @@ async function reconcileAfterUncertainFailure(
   try {
     return await reconcileErasure(token, interviewId, dsarKey);
   } catch (reconcileError) {
-    if (reconcileError instanceof ErasureInProgressError) {
+    if (reconcileError instanceof ErasureInProgressError
+        || reconcileError instanceof ErasureContractError) {
       throw reconcileError;
     }
     throw originalError instanceof Error ? originalError : new Error(String(originalError));
