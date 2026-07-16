@@ -74,9 +74,10 @@ public final class ModelGovernanceOperatorCli {
             Command command = parseCommand(args);
             Credentials credentials = parseCredentials(stdin);
             try (RoleAssumingDataSource dataSource = new RoleAssumingDataSource(credentials)) {
-                // Keep credential/member/admin-attribute failures in the operator-failure boundary;
-                // the canonical ledger intentionally collapses SQL failures to WORM_UNAVAILABLE.
-                dataSource.assertOperatorBoundary();
+                int preflight = preflightAndClassify(dataSource, stderr);
+                if (preflight != 0) {
+                    return preflight;
+                }
                 return execute(command, dataSource, stdout, stderr);
             }
         } catch (InputRejected rejected) {
@@ -87,6 +88,54 @@ public final class ModelGovernanceOperatorCli {
             stderr.println("MODEL_GOVERNANCE_OPERATOR:v1 outcome=FAILED code=OPERATOR_FAILURE");
             return 4;
         }
+    }
+
+    /**
+     * Distinguishes a real connection outage from a rejected/misconfigured operator authority before the
+     * canonical ledger converts both to its generic fail-closed NOT_CONFIGURED outcome.
+     */
+    static int preflightAndClassify(DataSource dataSource, PrintStream err) {
+        try {
+            return preflightAuthority(dataSource, err);
+        } catch (SQLException failure) {
+            // Never print the exception: role/auth failures can carry endpoint or login details.
+            err.println("MODEL_GOVERNANCE_OPERATOR:v1 outcome=FAILED code=OPERATOR_FAILURE");
+            return 4;
+        }
+    }
+
+    private static int preflightAuthority(DataSource dataSource, PrintStream err) throws SQLException {
+        try (Connection ignored = dataSource.getConnection()) {
+            return 0;
+        } catch (SQLException failure) {
+            if (isConnectionUnavailable(failure)) {
+                err.println("MODEL_GOVERNANCE_OPERATOR:v1 outcome=REJECTED code=WORM_UNAVAILABLE");
+                return 3;
+            }
+            throw failure;
+        }
+    }
+
+    private static boolean isConnectionUnavailable(SQLException failure) {
+        SQLException current = failure;
+        for (int depth = 0; current != null && depth < 32; depth++, current = current.getNextException()) {
+            String state = current.getSQLState();
+            if (state != null && state.startsWith("08")) {
+                // SQLState class 08 is intentionally availability; successful-transport role/assertion
+                // failures surface as non-08 and are classified as operator authority/configuration.
+                return true;
+            }
+        }
+        Throwable cause = failure.getCause();
+        for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
+            if (cause instanceof SQLException sql) {
+                String state = sql.getSQLState();
+                if (state != null && state.startsWith("08")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static int execute(Command command, DataSource dataSource, PrintStream out, PrintStream err) {
@@ -382,12 +431,6 @@ public final class ModelGovernanceOperatorCli {
             this.username = credentials.username();
             this.password = credentials.password();
             this.sslMode = credentials.sslMode();
-        }
-
-        private void assertOperatorBoundary() throws SQLException {
-            try (Connection ignored = getConnection()) {
-                // Opening the connection proves SET ROLE and all session assertions before ledger use.
-            }
         }
 
         @Override
