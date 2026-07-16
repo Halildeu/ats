@@ -74,6 +74,9 @@ public final class ModelGovernanceOperatorCli {
             Command command = parseCommand(args);
             Credentials credentials = parseCredentials(stdin);
             try (RoleAssumingDataSource dataSource = new RoleAssumingDataSource(credentials)) {
+                // Keep credential/member/admin-attribute failures in the operator-failure boundary;
+                // the canonical ledger intentionally collapses SQL failures to WORM_UNAVAILABLE.
+                dataSource.assertOperatorBoundary();
                 return execute(command, dataSource, stdout, stderr);
             }
         } catch (InputRejected rejected) {
@@ -379,6 +382,12 @@ public final class ModelGovernanceOperatorCli {
             this.username = credentials.username();
             this.password = credentials.password();
             this.sslMode = credentials.sslMode();
+        }
+
+        private void assertOperatorBoundary() throws SQLException {
+            try (Connection ignored = getConnection()) {
+                // Opening the connection proves SET ROLE and all session assertions before ledger use.
+            }
         }
 
         @Override
