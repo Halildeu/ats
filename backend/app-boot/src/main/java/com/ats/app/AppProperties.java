@@ -75,19 +75,23 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
         }
     }
 
-    public record Ai(String provider, String baseUrl, String bearer, Duration timeout,
+    public record Ai(boolean enabled, String provider, String baseUrl, String bearer, Duration timeout,
                      String language, Duration grantTtl, Mtls mtls,
                      String endpointRef, Approvals approvals) {
         public Ai {
-            // slice-36: kapalı küme — bilinmeyen değer BOOT'ta düşürür (fail-closed).
+            // Faz 25 müşteri-öncelikli ayrıştırma: AI default-off iken ilan/başvuru/İK
+            // çekirdeği AI endpoint'i, mTLS materyali veya model onayı olmadan boot eder.
+            // enabled=true anında önceki sıkı doğrulamalar aynen fail-closed devreye girer.
             if (provider == null || provider.isBlank()) {
                 provider = "http-json";
             }
-            if (!provider.equals("http-json") && !provider.equals("live-stt")) {
+            if (enabled && !provider.equals("http-json") && !provider.equals("live-stt")) {
                 throw new IllegalStateException(
                         "ats.ai.provider kapalı küme: http-json|live-stt (fail-closed boot); verilen: " + provider);
             }
-            require(baseUrl, "ats.ai.base-url (env ATS_AI_BASE_URL)");
+            if (enabled) {
+                require(baseUrl, "ats.ai.base-url (env ATS_AI_BASE_URL)");
+            }
             // P3-gov0 boot-gate girdileri (Codex durable-fix): endpointRef opak deploy-referansı,
             // approvals capability-başına onay-ref'i. BURADA yalnız blank→null normalize edilir;
             // provider-bağımlı zorunluluk + registry-çözümü + cross-check ModelGovernanceBoot
@@ -117,7 +121,7 @@ public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Rete
             // slice-38: live-stt kanonik yol client-auth'tur — mTLS default REQUIRED
             // (fail-closed); plain'e düşmek yalnız AÇIK "disabled" beyanıyla mümkün
             // (Codex: sessiz downgrade YASAK). http-json bu alanı yok sayar.
-            if ("live-stt".equals(provider) && "required".equals(mtls.mode())
+            if (enabled && "live-stt".equals(provider) && "required".equals(mtls.mode())
                     && (mtls.keyStorePath() == null || mtls.trustStorePath() == null
                         || mtls.keyStorePassword() == null)) {
                 throw new IllegalStateException(

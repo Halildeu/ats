@@ -67,6 +67,7 @@ final class AiGovernanceTestSupport {
      */
     static void registerHttpJson(DynamicPropertyRegistry registry) {
         HttpJsonGovernance g = httpJson();
+        registry.add("ats.ai.enabled", () -> "true");
         registry.add("ats.ai.endpoint-ref", g::endpointRef);
         registry.add("ats.ai.approvals.transcribe-ref", g::transcribeRef);
         registry.add("ats.ai.approvals.cite-ref", g::citeRef);

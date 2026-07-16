@@ -52,6 +52,16 @@ WORM-backed registry bean `Reader` + catalog-resource'la kurulur (Reader Flyway'
 
 **Normal boot HİÇBİR initial-approval transition YAZMAZ (boot-seed YASAK).** 1e-b `ModelGovernanceAdminAppender` normal composition'da bean DEĞİLDİR (yalnız `Reader` wire edilir — least-privilege; app-boot runtime rolü SELECT-only `ats_app`). Gerçek deployment'ın ilk `UNINITIALIZED→APPROVED` transition'ı owner-gated ayrı CLI/workflow'da yazılır (§5 + runbook).
 
+**Faz 25 müşteri-öncelikli ayrıştırma:** `ats.ai.enabled=false` (güvenli default) iken ilan, aday başvurusu,
+aday takip ve İK inbox/durum akışı AI endpoint/ref/mTLS veya WORM onayına bağlı olmadan boot eder. Bu
+modda `AudioAccessGrants`, `AIProvider`, `SegmentSanitizer`, `AuthorizedModelBindings`,
+`ModelGovernanceGate`, `ModelGovernanceJournal`,
+`TranscriptionService` ve `CitationService` bean'leri kurulmaz; yalnız AI çağrı uçları `503
+AI_NOT_APPROVED` + `Cache-Control: no-store` verir. `ats.ai.enabled=true` olduğunda bu bölümdeki WORM
+gate'i aynen fail-closed devreye girer: eksik/bozuk/ref-uyuşmaz/onaysız kimlikle uygulama AI'yı callable
+hale getiremez. Bu bir governance gevşetmesi değil, opsiyonel AI özelliğinin çekirdek müşteri yolundan
+ayrılmasıdır.
+
 ### 5. Owner-gated initial-transition workflow
 
 İlk onay (`INITIAL_APPROVAL`) ve sonraki geçişler (`REVOKED_BY_OWNER`/`REAPPROVED`/…) ayrı

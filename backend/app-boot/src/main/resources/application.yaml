@@ -26,6 +26,10 @@ ats:
     username: ${ATS_DB_USERNAME:}
     password: ${ATS_DB_PASSWORD:}
   ai:
+    # Müşteri-öncelikli çekirdek (ilan -> başvuru -> İK) AI'dan bağımsızdır.
+    # AI yalnız açık owner-approved GitOps aktivasyonuyla açılır; enabled=true iken
+    # endpoint/ref/WORM/mTLS kapıları aşağıda fail-closed zorunlu kalır.
+    enabled: ${ATS_AI_ENABLED:false}
     provider: ${ATS_AI_PROVIDER:http-json}
     base-url: ${ATS_AI_BASE_URL:}
     # P3-gov0 boot-gate: opak deploy endpoint-referansı (URL DEĞİL). Onaylı-model kaydının

@@ -30,13 +30,13 @@ class LiveSttWiringTest {
     // gov0 boot-gate girdileri (endpointRef/approvals) bu provider-seçim testlerinde ilgisiz →
     // null (buildAiProvider gate'ten bağımsız seçim birimidir; gate authorizeProvider'da test edilir).
     private static AppProperties.Ai ai(String provider, String baseUrl) {
-        return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
+        return new AppProperties.Ai(true, provider, baseUrl, null, Duration.ofSeconds(5), "tr",
                 Duration.ofSeconds(60), new AppProperties.Mtls("disabled", null, null, null), null, null);
     }
 
     private static AppProperties.Ai aiMtls(String provider, String baseUrl, String mode,
             String ks, String ksPass, String ts) {
-        return new AppProperties.Ai(provider, baseUrl, null, Duration.ofSeconds(5), "tr",
+        return new AppProperties.Ai(true, provider, baseUrl, null, Duration.ofSeconds(5), "tr",
                 Duration.ofSeconds(60), new AppProperties.Mtls(mode, ks, ksPass, ts), null, null);
     }
 
