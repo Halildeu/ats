@@ -193,8 +193,22 @@ class ApplicationApiTest {
                 + ",\"tenantId\":\"forged\"}";
         HttpHeaders unknown = json(); unknown.set("X-ATS-Idempotency-Key", "idem-" + UUID.randomUUID());
         unknown.set("X-ATS-Candidate-Access", "C".repeat(43));
-        assertEquals(400, rest.exchange("/api/v1/jobs/product-designer/applications", HttpMethod.POST,
-                new HttpEntity<>(withTenant, unknown), String.class).getStatusCode().value());
+        ResponseEntity<String> unknownResponse = rest.exchange(
+                "/api/v1/jobs/product-designer/applications", HttpMethod.POST,
+                new HttpEntity<>(withTenant, unknown), String.class);
+        assertEquals(400, unknownResponse.getStatusCode().value());
+        assertEquals("no-store", unknownResponse.getHeaders().getCacheControl());
+        assertEquals("INVALID_REQUEST",
+                objectMapper.readTree(unknownResponse.getBody()).path("error").asText());
+
+        HttpHeaders malformed = json();
+        malformed.set("X-ATS-Idempotency-Key", "idem-" + UUID.randomUUID());
+        malformed.set("X-ATS-Candidate-Access", "D".repeat(43));
+        ResponseEntity<String> malformedResponse = rest.exchange(
+                "/api/v1/jobs/product-designer/applications", HttpMethod.POST,
+                new HttpEntity<>("{\"fullName\":", malformed), String.class);
+        assertEquals(400, malformedResponse.getStatusCode().value());
+        assertEquals("no-store", malformedResponse.getHeaders().getCacheControl());
 
         String readOnly = token(TENANT, "ats.application.read", "read-only");
         HttpHeaders readOnlyHeaders = bearer(readOnly); readOnlyHeaders.setContentType(MediaType.APPLICATION_JSON);

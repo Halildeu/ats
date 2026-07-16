@@ -10,7 +10,6 @@ import com.ats.application.ApplicationStore.TransitionState;
 import com.ats.application.CandidateApplication;
 import com.ats.application.JobPosting;
 import com.ats.kernel.Outcome;
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -32,13 +31,10 @@ class ApplicationApiController {
 
     private final ApplicationIntakeService service;
     private final TenantAccess tenantAccess;
-    private final PublicApplicationRateLimiter rateLimiter;
 
-    ApplicationApiController(ApplicationIntakeService service, TenantAccess tenantAccess,
-            PublicApplicationRateLimiter rateLimiter) {
+    ApplicationApiController(ApplicationIntakeService service, TenantAccess tenantAccess) {
         this.service = service;
         this.tenantAccess = tenantAccess;
-        this.rateLimiter = rateLimiter;
     }
 
     record JobDto(String slug, String title, String team, String location, String mode,
@@ -65,16 +61,10 @@ class ApplicationApiController {
             String accuracyConfirmedAt) {}
 
     @PostMapping("/api/v1/jobs/{jobSlug}/applications")
-    ResponseEntity<?> submit(HttpServletRequest request,
-            @PathVariable("jobSlug") String jobSlug,
+    ResponseEntity<?> submit(@PathVariable("jobSlug") String jobSlug,
             @RequestHeader(value = "X-ATS-Idempotency-Key", required = false) String idempotencyKey,
             @RequestHeader(value = "X-ATS-Candidate-Access", required = false) String candidateAccessToken,
             @RequestBody SubmitBody body) {
-        if (!rateLimiter.allow(request.getRemoteAddr(), jobSlug)) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .header("Retry-After", "600")
-                    .body(Map.of("error", "RATE_LIMITED", "reason", "daha sonra tekrar deneyin"));
-        }
         Submission submission = body == null ? null : new Submission(
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
