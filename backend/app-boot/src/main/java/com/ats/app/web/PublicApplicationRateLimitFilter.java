@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -38,7 +39,7 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
         String uri = request.getRequestURI();
         String jobSlug = uri.substring(PREFIX.length(), uri.length() - SUFFIX.length());
         if (!limiter.allow(request.getRemoteAddr(), jobSlug)) {
-            response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setHeader("Retry-After", "600");
             response.setHeader("Cache-Control", CacheControl.noStore().getHeaderValue());
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
