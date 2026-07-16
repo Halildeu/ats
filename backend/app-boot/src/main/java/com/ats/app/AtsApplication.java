@@ -9,10 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  * domain modülleri (com.ats.consent/ingest/orchestration/review/export/dsr)
  * framework-annotation'sız kalır; bean wiring {@link WiringConfig}'te açıktır.
  *
- * Veri-endpoint'leri {@link com.ats.app.web} altında ve TÜMÜ authn/z kapısının
- * arkasındadır ({@link SecurityConfig}: JWT + tenant-claim zorunlu; /healthz
- * hariç kapısız yüzey yok — slice-9 "kapısız veri yüzeyi açılmaz" taahhüdü
- * slice-10'da böyle tutuldu; ATS-0007 threat-register).
+ * Veri-endpoint'leri {@link com.ats.app.web} altındadır. Recruiter/interview
+ * yüzeyleri JWT + tenant-claim ile kapalıdır. Yalnız yayınlanmış ilan, adayın
+ * kendi başvuru yazımı ve opak token ile minimal durum okuması explicit public
+ * matcher'dır; bunlar body-limit/idempotency/token-digest kapılarıyla korunur.
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

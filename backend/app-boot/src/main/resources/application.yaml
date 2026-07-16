@@ -2,12 +2,25 @@
 # eksikte startup'ı düşürür). Tüm değerler env'den; parola yalnız env.
 server:
   port: ${ATS_PORT:8080}
+  # Workload yalnız ClusterIP arkasında NGINX ingress'ten erişilir. Tomcat'in
+  # RFC forwarded header desteği remoteAddr'ı gerçek client IP'ye indirger;
+  # public application rate-limit tüm kullanıcıları ingress pod IP'sinde birleştirmez.
+  forward-headers-strategy: native
 
 spring:
   main:
     banner-mode: off
+  jackson:
+    deserialization:
+      # Public başvuru gövdesinde caller-supplied tenant/status gibi gölge
+      # alanlar sessizce yutulmaz; tüm controller DTO'larında fail-closed 400.
+      fail-on-unknown-properties: true
 
 ats:
+  application:
+    # Public careers host tek bir tenant kataloğuna bağlanır; caller header/body
+    # tenant seçemez. Test seed anchor'ı güvenli varsayılandır, deploy override edebilir.
+    public-tenant-id: ${ATS_PUBLIC_TENANT_ID:00000000-0000-0000-0000-000000000001}
   db:
     url: ${ATS_DB_URL:}
     username: ${ATS_DB_USERNAME:}

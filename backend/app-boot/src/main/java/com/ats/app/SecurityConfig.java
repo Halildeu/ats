@@ -60,6 +60,8 @@ class SecurityConfig {
             Map.entry("ats.citation.write", "CITATION_WRITE"),
             Map.entry("ats.review.write", "REVIEW_WRITE"),
             Map.entry("ats.review.read", "REVIEW_READ"),
+            Map.entry("ats.application.read", "APPLICATION_READ"),
+            Map.entry("ats.application.status.write", "APPLICATION_STATUS_WRITE"),
             // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
             Map.entry("ats.export.read", "EXPORT_READ"),
             Map.entry("ats.export.repair", "EXPORT_REPAIR"),
@@ -78,6 +80,15 @@ class SecurityConfig {
                         // OpenAPI metadata (yalnız şema; KİŞİSEL/İŞ VERİSİ DEĞİL — buyer-trust yüzeyi).
                         // Swagger-UI bilinçle yok; prod'da edge katmanında ayrıca kısıtlanabilir.
                         .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**").permitAll()
+                        // Careers standardı: yayınlanmış ilan ve adayın kendi başvuru/takip
+                        // yüzeyi public; tenant request'ten değil server-side ilandan çözülür.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications")
+                            .hasAuthority("APPLICATION_READ")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/applications/*/status")
+                            .hasAuthority("APPLICATION_STATUS_WRITE")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
