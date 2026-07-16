@@ -1,5 +1,7 @@
 package com.ats.app;
 
+import com.ats.app.operator.ModelGovernanceOperatorCli;
+import java.util.function.IntSupplier;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -19,6 +21,21 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class AtsApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(AtsApplication.class, args);
+        int exit = launch(
+                args,
+                () -> ModelGovernanceOperatorCli.run(args, System.in, System.out, System.err),
+                () -> SpringApplication.run(AtsApplication.class, args));
+        if (exit != 0) {
+            System.exit(exit);
+        }
+    }
+
+    /** Testable dispatch seam: operator selection can be proven to bypass normal Spring composition. */
+    static int launch(String[] args, IntSupplier operator, Runnable spring) {
+        if (ModelGovernanceOperatorCli.isOperatorCommand(args)) {
+            return operator.getAsInt();
+        }
+        spring.run();
+        return 0;
     }
 }
