@@ -1,5 +1,7 @@
 package com.ats.app;
 
+import com.ats.application.ApplicationIntakeService;
+import com.ats.application.ApplicationStore;
 import com.ats.consent.ConsentGate;
 import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
@@ -34,6 +36,7 @@ import com.ats.orchestration.SegmentSanitizer;
 import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
+import com.ats.persistence.PostgresApplicationStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
@@ -49,6 +52,7 @@ import com.ats.review.ReviewCaseStore;
 import com.zaxxer.hikari.HikariConfig;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.security.SecureRandom;
 import java.util.EnumMap;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
@@ -59,6 +63,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * ATS-0008 D-A composition: TÜM domain bean'leri burada AÇIKÇA kurulur —
@@ -145,6 +150,19 @@ class WiringConfig {
     @Bean
     RetentionScanner retentionScanner(DataSource ds, Flyway flyway) {
         return new PostgresRetentionScanner(ds);
+    }
+
+    @Bean
+    ApplicationStore applicationStore(DataSource ds, Flyway flyway) {
+        return new PostgresApplicationStore(ds);
+    }
+
+    @Bean
+    ApplicationIntakeService applicationIntakeService(ApplicationStore store,
+            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+        return new ApplicationIntakeService(
+                store, new com.ats.kernel.Ids.TenantId(publicTenantId),
+                Clock.systemUTC(), new SecureRandom());
     }
 
     // --- ingest ---

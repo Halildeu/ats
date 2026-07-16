@@ -46,6 +46,11 @@
     </dependency>
     <dependency>
       <groupId>com.ats</groupId>
+      <artifactId>application-intake</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
       <artifactId>retention-dsr</artifactId>
       <version>0.0.0</version>
     </dependency>

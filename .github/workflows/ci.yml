@@ -50,6 +50,17 @@ jobs:
           java-version: "21"
       - name: backend tests (ats-core skeleton)
         run: mvn -B test
+      - name: OpenAPI drift canonical diagnostic
+        if: failure()
+        run: |
+          if [ -f app-boot/target/openapi-live.json ]; then
+            echo 'OPENAPI_LIVE_CANONICAL_BEGIN'
+            cat app-boot/target/openapi-live.json
+            echo
+            echo 'OPENAPI_LIVE_CANONICAL_END'
+          else
+            echo 'OpenAPI live canonical was not produced; failure occurred before drift comparison.'
+          fi
 
   ai-eval:
     # eval-harness BİRİM testleri (harness sağlığı + citation fail-closed invariant).

@@ -239,7 +239,7 @@ class ContractTest {
         assertEquals(OutcomeCode.NOT_CONFIGURED, code(conn.writeBack(ctx, pkt, new WriteBackTarget("d", "x"))));
     }
 
-    // ---- forbidden-surface: ADR-0005 (scoring/affect/auto-reject) + candidate-write ----
+    // ---- forbidden-surface: ADR-0005 (scoring/affect/auto-reject) + AI/connector candidate-write ----
     @Test
     void no_forbidden_methods_on_contracts() {
         String[] forbidden = {"score", "rank", "fit", "recommend", "compare", "sentiment",
