@@ -111,18 +111,20 @@ class ModelGovernanceOperatorCliTest {
         assertEquals(2, result.exit());
         assertTrue(result.err().contains("CREDENTIAL_ENVELOPE_SCHEMA"));
         assertFalse(result.allOutput().contains(secret));
+        assertFalse(result.allOutput().contains(cliJdbcUrl()));
         assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
     }
 
     @Test
     void jdbc_query_parameters_are_rejected_and_tls_mode_is_a_closed_envelope_field() {
         byte[] envelope = credentials(
-                PG.getJdbcUrl() + "?sslmode=disable", OPERATOR_USERNAME, OPERATOR_PASSWORD, false);
+                cliJdbcUrl() + "?sslmode=disable", OPERATOR_USERNAME, OPERATOR_PASSWORD, false);
         Run result = run(args("check", ModelGovernanceOperatorCli.CHECK_CONFIRM,
                         "mgt_12345678-1234-4abc-8def-123456789abc", ACTOR), envelope);
         assertEquals(2, result.exit());
         assertTrue(result.err().contains("CREDENTIAL_ENVELOPE_VALUE"));
         assertFalse(result.allOutput().contains(OPERATOR_PASSWORD));
+        assertFalse(result.allOutput().contains(cliJdbcUrl()));
         assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
     }
 
@@ -142,6 +144,7 @@ class ModelGovernanceOperatorCliTest {
         assertEquals(4, result.exit());
         assertTrue(result.err().contains("OPERATOR_FAILURE"));
         assertFalse(result.allOutput().contains(password));
+        assertFalse(result.allOutput().contains(cliJdbcUrl()));
         assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
     }
 
@@ -153,6 +156,7 @@ class ModelGovernanceOperatorCliTest {
         assertEquals(4, result.exit());
         assertTrue(result.err().contains("OPERATOR_FAILURE"));
         assertFalse(result.allOutput().contains(PG.getPassword()));
+        assertFalse(result.allOutput().contains(cliJdbcUrl()));
         assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
     }
 
@@ -184,7 +188,14 @@ class ModelGovernanceOperatorCliTest {
     }
 
     private static byte[] credentials(String username, String password, boolean extraKey) {
-        return credentials(PG.getJdbcUrl(), username, password, extraKey);
+        return credentials(cliJdbcUrl(), username, password, extraKey);
+    }
+
+    /** Testcontainers appends loggerLevel, while the production CLI intentionally forbids URL queries. */
+    private static String cliJdbcUrl() {
+        String jdbcUrl = PG.getJdbcUrl();
+        int queryStart = jdbcUrl.indexOf('?');
+        return queryStart < 0 ? jdbcUrl : jdbcUrl.substring(0, queryStart);
     }
 
     private static byte[] credentials(String jdbcUrl, String username, String password, boolean extraKey) {
