@@ -16,6 +16,8 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -59,7 +61,7 @@ class ModelGovernanceOperatorCliTest {
     void check_append_and_idempotent_replay_use_canonical_worm_path() throws Exception {
         Run check = run(args("check", ModelGovernanceOperatorCli.CHECK_CONFIRM, ID, ACTOR),
                 credentials(OPERATOR_USERNAME, OPERATOR_PASSWORD, false));
-        assertEquals(0, check.exit());
+        assertEquals(0, check.exit(), diagnostic(check));
         assertTrue(check.out().contains("MODEL_GOVERNANCE_CHECK:v1 outcome=OK"));
         assertTrue(check.out().contains("current=UNINITIALIZED"));
         assertEquals(0, rowCount());
@@ -141,7 +143,7 @@ class ModelGovernanceOperatorCliTest {
         Run result = run(args("check", ModelGovernanceOperatorCli.CHECK_CONFIRM,
                         "mgt_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", ACTOR),
                 credentials(username, password, false));
-        assertEquals(4, result.exit());
+        assertEquals(4, result.exit(), diagnostic(result));
         assertTrue(result.err().contains("OPERATOR_FAILURE"));
         assertFalse(result.allOutput().contains(password));
         assertFalse(result.allOutput().contains(cliJdbcUrl()));
@@ -153,7 +155,7 @@ class ModelGovernanceOperatorCliTest {
         Run result = run(args("check", ModelGovernanceOperatorCli.CHECK_CONFIRM,
                         "mgt_bbbbbbbb-cccc-4ddd-8eee-ffffffffffff", ACTOR),
                 credentials(PG.getUsername(), PG.getPassword(), false));
-        assertEquals(4, result.exit());
+        assertEquals(4, result.exit(), diagnostic(result));
         assertTrue(result.err().contains("OPERATOR_FAILURE"));
         assertFalse(result.allOutput().contains(PG.getPassword()));
         assertFalse(result.allOutput().contains(cliJdbcUrl()));
@@ -219,6 +221,11 @@ class ModelGovernanceOperatorCliTest {
                 new PrintStream(out, true, StandardCharsets.UTF_8),
                 new PrintStream(err, true, StandardCharsets.UTF_8));
         return new Run(exit, out.toString(StandardCharsets.UTF_8), err.toString(StandardCharsets.UTF_8));
+    }
+
+    private static String diagnostic(Run run) {
+        Matcher code = Pattern.compile("code=([A-Z0-9_]{1,80})").matcher(run.allOutput());
+        return code.find() ? "operator code=" + code.group(1) : "operator code missing";
     }
 
     private static int rowCount() throws Exception {
