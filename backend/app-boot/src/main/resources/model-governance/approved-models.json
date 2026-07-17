@@ -32,6 +32,17 @@
       "endpointRef": "faz24-stt-prod",
       "invocationProfileVersion": "ip-live-stt-1",
       "scope": "GLOBAL"
+    },
+    {
+      "capability": "TRANSCRIBE",
+      "configuredProviderRef": "faz24-live-stt",
+      "requestedModelId": "Systran/faster-whisper-medium",
+      "requestedModelVersion": "hf:08e178d48790749d25932bbc082711ddcfdfbc4f@sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+      "allowedReportedModelIdAliases": [],
+      "allowedReportedModelVersionAliases": [],
+      "endpointRef": "faz24-stt-prod",
+      "invocationProfileVersion": "ip-live-stt-1",
+      "scope": "GLOBAL"
     }
   ]
 }

@@ -32,7 +32,7 @@ class LiveSttOpenApiConformanceTest {
     @BeforeAll
     static void loadPinnedSpec() throws IOException {
         try (InputStream in = LiveSttOpenApiConformanceTest.class
-                .getResourceAsStream("/live-stt-openapi-v0.1.0.json")) {
+                .getResourceAsStream("/live-stt-openapi-v0.2.0.json")) {
             assertNotNull(in, "pinli spec resource eksik");
             spec = (JsonValue.JsonObject) JsonParse.parse(
                     new String(in.readAllBytes(), StandardCharsets.UTF_8));
@@ -64,7 +64,7 @@ class LiveSttOpenApiConformanceTest {
     void pinned_spec_identity() {
         JsonValue.JsonObject info = obj(spec, "info");
         assertEquals("live-stt-service", str(info, "title"));
-        assertEquals("0.1.0", str(info, "version"));
+        assertEquals("0.2.0", str(info, "version"));
         assertTrue(str(spec, "openapi").startsWith("3."));
     }
 
@@ -116,8 +116,15 @@ class LiveSttOpenApiConformanceTest {
         JsonValue.JsonObject responseProps = obj(response, "properties");
         assertTrue(responseProps.values().containsKey("language"));
         assertTrue(responseProps.values().containsKey("segments"));
+        assertTrue(responseProps.values().containsKey("model"));
+        assertTrue(responseProps.values().containsKey("model_revision"));
+        assertTrue(responseProps.values().containsKey("model_sha256"));
         assertTrue(arrayContainsString(response, "required", "language"),
                 "adaptör varsayımı: language response'ta zorunlu");
+        assertTrue(arrayContainsString(response, "required", "model_revision"),
+                "artifact revision response'ta zorunlu");
+        assertTrue(arrayContainsString(response, "required", "model_sha256"),
+                "doğrulanmış artifact digest response'ta zorunlu");
         // spec segments'i required saymaz; adaptör bilinçli olarak SIKI (fail-closed) —
         // bkz. Faz24LiveSttProvider.mapTranscribeResponse notu.
         assertFalse(arrayContainsString(response, "required", "segments"),

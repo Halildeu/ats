@@ -21,8 +21,10 @@ class ShippedApprovalRefGoldenTest {
             "mapr_0db783774bf0616f9fb7ca0483008aee94529d41a464b7f3e63083a5652ef57c";
     private static final String GOLDEN_HTTP_CITE =
             "mapr_4dc0a8f55f2c7d49d737a4393d041e12e904470ecded9056bd6062ac72255f85";
-    private static final String GOLDEN_LIVE_TRANSCRIBE =
+    private static final String GOLDEN_LIVE_TRANSCRIBE_LEGACY =
             "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d";
+    private static final String GOLDEN_LIVE_TRANSCRIBE_ARTIFACT =
+            "mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43";
 
     @Test
     void http_json_transcribe_ref_is_pinned() {
@@ -43,11 +45,23 @@ class ShippedApprovalRefGoldenTest {
     }
 
     @Test
-    void live_stt_transcribe_ref_is_pinned() {
+    void legacy_live_stt_transcribe_ref_remains_in_cumulative_catalog() {
         ApprovedModelSpec s = ApprovedModelSpec.of(Capability.TRANSCRIBE, "faz24-live-stt",
                 "whisper-tr", "v0.1.0", Set.of("whisper-large-v3-tr"), Set.of(), "faz24-stt-prod",
                 "ip-live-stt-1", ModelScope.GLOBAL);
-        assertEquals(GOLDEN_LIVE_TRANSCRIBE, s.approvalRef().value(),
-                "status kaldırmak live-stt TRANSCRIBE ref'ini değiştirmemeli (golden-pin)");
+        assertEquals(GOLDEN_LIVE_TRANSCRIBE_LEGACY, s.approvalRef().value(),
+                "eski WORM subject catalog'dan silinmemeli (append-only catalog)");
+    }
+
+    @Test
+    void content_addressed_live_stt_transcribe_ref_is_pinned() {
+        ApprovedModelSpec s = ApprovedModelSpec.of(Capability.TRANSCRIBE, "faz24-live-stt",
+                "Systran/faster-whisper-medium",
+                "hf:08e178d48790749d25932bbc082711ddcfdfbc4f"
+                        + "@sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+                Set.of(), Set.of(), "faz24-stt-prod",
+                "ip-live-stt-1", ModelScope.GLOBAL);
+        assertEquals(GOLDEN_LIVE_TRANSCRIBE_ARTIFACT, s.approvalRef().value(),
+                "content-addressed live-stt TRANSCRIBE ref'i drift etmemeli (golden-pin)");
     }
 }
