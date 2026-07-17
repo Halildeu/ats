@@ -456,12 +456,16 @@ public final class ModelGovernanceOperatorCli {
                                         + "COALESCE((SELECT rolsuper OR rolcreatedb OR rolcreaterole "
                                         + "OR rolreplication OR rolbypassrls FROM pg_roles "
                                         + "WHERE rolname=session_user), true), "
-                                        + "pg_has_role(session_user, 'ats_governance_writer', 'member')")) {
+                                        + "pg_has_role(session_user, 'ats_governance_writer', 'member'), "
+                                        + "COALESCE((SELECT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole "
+                                        + "OR rolreplication OR rolbypassrls FROM pg_roles "
+                                        + "WHERE rolname=current_user), true)")) {
                     if (!rs.next()
                             || !WRITER_ROLE.equals(rs.getString(1))
                             || WRITER_ROLE.equals(rs.getString(2))
                             || rs.getBoolean(3)
                             || !rs.getBoolean(4)
+                            || rs.getBoolean(5)
                             || rs.next()) {
                         throw new SQLException("writer role assertion failed", "28000");
                     }
