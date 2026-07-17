@@ -32,7 +32,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class ModelGovernanceOperatorCliTest {
 
     private static final String REF =
-            "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d";
+            "mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43";
     private static final String ID = "mgt_01234567-89ab-4cde-8fab-0123456789ab";
     private static final String ACTOR = "cross-ai/faz25/2526";
     private static final String OPERATOR_USERNAME = "governance_operator_test";
