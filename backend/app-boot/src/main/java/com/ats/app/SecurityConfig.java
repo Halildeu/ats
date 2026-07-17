@@ -21,6 +21,9 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 /**
  * Authn/z kapısı — İLK veri-endpoint'leriyle BİRLİKTE gelir (slice-9 taahhüdü:
@@ -62,6 +65,9 @@ class SecurityConfig {
             Map.entry("ats.review.read", "REVIEW_READ"),
             Map.entry("ats.application.read", "APPLICATION_READ"),
             Map.entry("ats.application.status.write", "APPLICATION_STATUS_WRITE"),
+            Map.entry("ats.job.read", "JOB_READ"),
+            Map.entry("ats.job.write", "JOB_WRITE"),
+            Map.entry("ats.job.publish", "JOB_PUBLISH"),
             // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
             Map.entry("ats.export.read", "EXPORT_READ"),
             Map.entry("ats.export.repair", "EXPORT_REPAIR"),
@@ -73,6 +79,8 @@ class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder, AppProperties props)
             throws Exception {
+        AuthorizationManager<RequestAuthorizationContext> tenantAuthenticated =
+                tenantAuthenticated(props.security().tenantClaimName());
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
@@ -84,11 +92,24 @@ class SecurityConfig {
                         // yüzeyi public; tenant request'ten değil server-side ilandan çözülür.
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/careers/*/jobs",
+                                "/api/v1/careers/*/jobs/*").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/careers/*/jobs/*/applications").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications")
-                            .hasAuthority("APPLICATION_READ")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/applications/*/status")
-                            .hasAuthority("APPLICATION_STATUS_WRITE")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
+                                "/api/v1/recruiter/jobs/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recruiter/jobs")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/jobs/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recruiter/jobs/*/transitions")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
@@ -222,5 +243,20 @@ class SecurityConfig {
             }
         }
         return java.util.Set.copyOf(out);
+    }
+
+    /** Valid JWT + exact configured non-blank tenant claim; product permission controller guard'dadır. */
+    private static AuthorizationManager<RequestAuthorizationContext> tenantAuthenticated(
+            String tenantClaimName) {
+        String claim = tenantClaimName == null || tenantClaimName.isBlank()
+                ? "tenant" : tenantClaimName;
+        return (authentication, context) -> {
+            org.springframework.security.core.Authentication auth = authentication.get();
+            boolean granted = auth != null && auth.isAuthenticated()
+                    && auth.getPrincipal() instanceof Jwt jwt
+                    && jwt.getClaimAsString(claim) != null
+                    && !jwt.getClaimAsString(claim).isBlank();
+            return new AuthorizationDecision(granted);
+        };
     }
 }

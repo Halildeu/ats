@@ -3,6 +3,7 @@ package com.ats.app;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.ats.application.ApplicationIntakeService;
 import com.ats.kernel.JsonCodec;
 import com.ats.kernel.JsonValue;
 import java.io.IOException;
@@ -120,5 +121,151 @@ class OpenApiDriftTest {
         com.fasterxml.jackson.databind.JsonNode props = snap.path("components").path("schemas")
                 .path("RepairBody").path("properties");
         org.junit.jupiter.api.Assertions.assertTrue(props.has("caseKey"), props.toString());
+    }
+
+    @org.junit.jupiter.api.Test
+    void recruiter_job_contract_is_typed_versioned_and_does_not_shadow_review_transition()
+            throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+
+        com.fasterxml.jackson.databind.JsonNode create = snap.path("paths")
+                .path("/api/v1/recruiter/jobs").path("post");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                create.path("responses").has("201"), create.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                create.path("responses").path("201").path("content").path("*/*")
+                        .path("schema").path("$ref").asText()
+                        .endsWith("/RecruiterJobResponse"), create.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.util.stream.StreamSupport.stream(
+                                create.path("parameters").spliterator(), false)
+                        .anyMatch(p -> "X-ATS-Idempotency-Key".equals(p.path("name").asText())
+                                && p.path("required").asBoolean(false)),
+                create.toString());
+
+        com.fasterxml.jackson.databind.JsonNode transition = snap.path("components").path("schemas")
+                .path("RecruiterJobTransitionRequest");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                java.util.stream.StreamSupport.stream(
+                                transition.path("required").spliterator(), false)
+                        .anyMatch(v -> "expectedVersion".equals(v.asText())),
+                transition.toString());
+        org.junit.jupiter.api.Assertions.assertEquals(0,
+                transition.path("properties").path("expectedVersion").path("minimum").asInt(-1));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of("PUBLISHED", "PAUSED", "CLOSED", "ARCHIVED"),
+                textValues(transition.path("properties").path("targetStatus").path("enum")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                transition.path("additionalProperties").asBoolean(true));
+
+        com.fasterxml.jackson.databind.JsonNode update = snap.path("paths")
+                .path("/api/v1/recruiter/jobs/{jobId}").path("put");
+        com.fasterxml.jackson.databind.JsonNode transitionOperation = snap.path("paths")
+                .path("/api/v1/recruiter/jobs/{jobId}/transitions").path("post");
+        for (com.fasterxml.jackson.databind.JsonNode operation
+                : java.util.List.of(create, update, transitionOperation)) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    hasRequiredParameter(operation, "X-ATS-Idempotency-Key"),
+                    operation.toString());
+            org.junit.jupiter.api.Assertions.assertTrue(operation.path("responses").has("403"),
+                    operation.toString());
+            org.junit.jupiter.api.Assertions.assertTrue(operation.path("responses").has("503"),
+                    operation.toString());
+        }
+
+        com.fasterxml.jackson.databind.JsonNode response = snap.path("components").path("schemas")
+                .path("RecruiterJobResponse");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                response.path("properties").has("publicHandle"), response.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                response.path("properties").has("applicationFields"), response.toString());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
+                textValues(response.path("properties").path("noticeVersion").path("enum")));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                response.path("additionalProperties").asBoolean(true));
+
+        for (String requestName : java.util.List.of(
+                "RecruiterJobCreateRequest", "RecruiterJobUpdateRequest")) {
+            com.fasterxml.jackson.databind.JsonNode request = snap.path("components").path("schemas")
+                    .path(requestName);
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    textValues(request.path("required")).contains("applicationFields"), request.toString());
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    textValues(request.path("required")).contains("noticeVersion"), request.toString());
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
+                    textValues(request.path("properties").path("noticeVersion").path("enum")));
+        }
+
+        com.fasterxml.jackson.databind.JsonNode reviewTransition = snap.path("components")
+                .path("schemas").path("TransitionBody").path("properties");
+        org.junit.jupiter.api.Assertions.assertTrue(reviewTransition.has("caseKey"),
+                "recruiter DTO review TransitionBody'yi gölgelememeli: " + reviewTransition);
+        org.junit.jupiter.api.Assertions.assertFalse(reviewTransition.has("expectedVersion"),
+                reviewTransition.toString());
+    }
+
+    @org.junit.jupiter.api.Test
+    void public_career_contract_is_tenant_bound_typed_strict_and_retry_safe() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode paths = snap.path("paths");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                paths.has("/api/v1/careers/{publicHandle}/jobs"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                paths.has("/api/v1/careers/{publicHandle}/jobs/{jobSlug}"));
+        com.fasterxml.jackson.databind.JsonNode submit = paths
+                .path("/api/v1/careers/{publicHandle}/jobs/{jobSlug}/applications")
+                .path("post");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                hasRequiredParameter(submit, "X-ATS-Idempotency-Key"), submit.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                hasRequiredParameter(submit, "X-ATS-Candidate-Access"), submit.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("201"));
+        org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("200"));
+        org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("404"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                submit.path("requestBody").path("content").path("application/json")
+                        .path("schema").path("$ref").asText()
+                        .endsWith("/ApplicationSubmitRequest"));
+
+        com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
+        for (String name : java.util.List.of(
+                "ApplicationSubmitRequest", "ApplicationReceiptResponse", "PublicJobResponse")) {
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    schemas.path(name).path("additionalProperties").asBoolean(true), name);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
+                textValues(schemas.path("ApplicationSubmitRequest").path("properties")
+                        .path("noticeVersion").path("enum")));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                schemas.path("PublicJobResponse").path("properties").has("applicationFields"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
+                textValues(schemas.path("PublicJobResponse").path("properties")
+                        .path("noticeVersion").path("enum")));
+        com.fasterxml.jackson.databind.JsonNode status = schemas
+                .path("RecruiterApplicationStatusRequest");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                textValues(status.path("required")).contains("expectedVersion"));
+        org.junit.jupiter.api.Assertions.assertEquals(0,
+                status.path("properties").path("expectedVersion").path("minimum").asInt(-1));
+    }
+
+    private static boolean hasRequiredParameter(
+            com.fasterxml.jackson.databind.JsonNode operation, String name) {
+        return java.util.stream.StreamSupport.stream(
+                        operation.path("parameters").spliterator(), false)
+                .anyMatch(parameter -> name.equals(parameter.path("name").asText())
+                        && parameter.path("required").asBoolean(false));
+    }
+
+    private static java.util.Set<String> textValues(com.fasterxml.jackson.databind.JsonNode array) {
+        java.util.Set<String> values = new java.util.HashSet<>();
+        array.forEach(value -> values.add(value.asText()));
+        return java.util.Set.copyOf(values);
     }
 }

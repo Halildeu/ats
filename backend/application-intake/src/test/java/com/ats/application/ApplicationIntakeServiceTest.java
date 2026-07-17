@@ -40,6 +40,7 @@ class ApplicationIntakeServiceTest {
         assertEquals(CANDIDATE_ACCESS, receipt.candidateAccessToken());
         assertEquals(ApplicationStatus.SUBMITTED, receipt.status());
         assertEquals("test-tenant", store.command.publicTenantId().value());
+        assertEquals(null, store.command.publicHandle());
         assertEquals("deniz@example.test", store.command.submission().email());
         assertEquals(64, store.command.candidateAccessDigest().length());
         assertFalse(store.command.candidateAccessDigest().equals(receipt.candidateAccessToken()));
@@ -116,6 +117,19 @@ class ApplicationIntakeServiceTest {
                 ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.SUBMITTED));
     }
 
+    @Test
+    void canonical_career_handle_resolves_server_side_and_is_bound_to_submission() {
+        CapturingStore store = new CapturingStore();
+
+        var out = service(store).submit(
+                "acik", "urun-yoneticisi", "idem-key-12345678",
+                CANDIDATE_ACCESS, submission());
+
+        assertTrue(out.isOk());
+        assertEquals("career-tenant", store.command.publicTenantId().value());
+        assertEquals("acik", store.command.publicHandle());
+    }
+
     private static ApplicationIntakeService service(ApplicationStore store) {
         return new ApplicationIntakeService(store, new TenantId("test-tenant"),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom());
@@ -137,6 +151,11 @@ class ApplicationIntakeServiceTest {
         }
         @Override public Outcome<JobPosting> findPublishedJob(TenantId publicTenantId, String slug) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan yok");
+        }
+        @Override public Outcome<TenantId> resolveActiveCareerTenant(String publicHandle) {
+            return "acik".equals(publicHandle)
+                    ? Outcome.ok(new TenantId("career-tenant"))
+                    : Outcome.fail(OutcomeCode.NOT_FOUND, "kariyer sitesi bulunamadı");
         }
         @Override public Outcome<SubmitResult> submit(SubmitCommand value) {
             command = value;
