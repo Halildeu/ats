@@ -14,9 +14,14 @@
 
 ## Önkoşullar (owner)
 
-1. **Writer-rol credential** (`ats_governance_writer`; INSERT+SELECT — V4 migration). Bağlantı DSN'i
-   **Vault'tan** alınır; plaintext credential shell-history/argv/log/WORM'a **GİRMEZ** (D43 stdin-pipe deseni).
-   Runtime app-rolü (`ats_app`) SELECT-only'dir → yazamaz (least-privilege; ADR-0021 §4).
+1. **Writer authority** (`ats_governance_writer`; INSERT+SELECT — V4; schema USAGE — V6). Bağlantı zarfı
+   **Vault/credential broker'dan doğrudan stdin pipe** ile gelir; plaintext credential shell-history/argv/log/WORM'a
+   **GİRMEZ** (D43). CLI her DB bağlantısında `SET ROLE ats_governance_writer` çalıştırır ve
+   `current_user` exact eşleşmesini doğrular. Ayrıca `session_user` ayrı, explicit member ve
+   `NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOREPLICATION/NOBYPASSRLS` değilse bağlantıyı reddeder; admin
+   credential CLI'ye verilemez. Runtime app-rolü (`ats_app`)
+   SELECT-only'dir ve bu role geçemez. Test recovery de kısa ömürlü ayrı operator login oluşturup member yapar;
+   PostgreSQL bootstrap/superuser parolasını CLI'ye taşımaz.
 2. **approvalRef** (içerik-adresli `mapr_<64hex>`): catalog politika alanlarından türetilir —
    `ApprovedModelSpec.of(capability, providerRef, modelId, version, idAliases, versionAliases, endpointRef,
    invocationProfileVersion, GLOBAL).approvalRef().value()` ([[ATS-0020]] §8). Shipped kimliklerin ref'leri
@@ -28,26 +33,57 @@
 
 ## Adımlar
 
-> Append yüzeyi: `com.ats.persistence.ModelGovernanceAdminAppender` (writer-authority cephesi).
-> `overPostgres(writerDataSource, Clock.systemUTC())` ile writer-DSN üstünde kurulur; `appendTransition(
-> AppendCommand)` çağrılır. `expectedFrom` = öznenin gerçek-son durumu (CAS); `occurredAt`/hash/sequence
-> adapter üretir (backdating YOK). Fail-closed: stale `expectedFrom` → `STALE_EXPECTED_FROM`; illegal geçiş
-> → `ILLEGAL_TRANSITION`; aynı `transitionId` farklı içerik → `TRANSITION_ID_CONFLICT`.
+> İcra yüzeyi: imaj içindeki `model-governance-transition` operator komutu. Normal Spring boot'tan ayrı dispatch
+> edilir; normal uygulama context'i hâlâ yalnız Reader görür ve boot-seed yapmaz. CLI de append/hash/CAS SQL'ini
+> kopyalamaz: `ModelGovernanceAdminAppender` + `PostgresModelGovernanceLedger` canonical yolunu kullanır.
+> `expectedFrom` = öznenin gerçek-son durumu (CAS); `occurredAt`/hash/sequence adapter üretir (backdating YOK).
+> Stale/illegal/conflict fail-closed ve tipli reddir.
 
-1. **Vault'tan writer-DSN yükle** (env'e export ETMEDEN; stdin-pipe). Bağlantıyı `ats_governance_writer`
-   kimliğiyle kur.
-2. **AppendCommand oluştur** (fields non-null; fail-closed):
-   `approvalRef`, `capability`, `expectedFrom` (ör. ilk onayda `UNINITIALIZED`), `toStatus` (`APPROVED`),
-   `actorRef` (`GovernanceActorRef` — opak/bounded; PII/secret YOK), `reasonCode` (`INITIAL_APPROVAL`),
-   `transitionId` (`TransitionId.random()` — UUIDv4).
-3. **`appendTransition` çağır** → `Outcome.Ok(transition)` bekle. Fail → **adım 4**.
-4. **Doğrula (fail sinyali + devam eşiği):**
+1. **Immutable imajı seç:** yalnız source-SHA + registry digest + kullanılan pod/iş digest'i eşleşen
+   `ghcr.io/halildeu/ats-app-boot@sha256:<64hex>` kabul edilir; tag tek başına kanıt değildir.
+2. **Credential zarfını stdin'e bağla:** exact-key JSON
+   `{ "jdbcUrl", "username", "password", "sslMode" }`, en çok 16 KiB. `sslMode` yalnız `disable` (yalnız
+   yerel/test network) veya `verify-full` (prod/uzak TLS) olabilir. TLS URL-query ile değil bu kapalı alanla
+   verilir; JDBC URL içinde query/userinfo credential, bilinmeyen key veya eksik alan reddedilir. Raw zarfı
+   terminale/loga yazdırma. Örnek yalnız veri akışı şablonudur:
+
+   ```bash
+   credential-broker --format ats-governance-stdin-json |
+     docker run --rm -i --network <db-network> <IMAGE_AT_DIGEST> \
+       model-governance-transition \
+       --mode=check \
+       --approval-ref=mapr_<64hex> \
+       --capability=TRANSCRIBE \
+       --expected-from=UNINITIALIZED \
+       --to-status=APPROVED \
+       --actor-ref=<opaque-owner-or-delegated-review-ref> \
+       --reason=INITIAL_APPROVAL \
+       --transition-id=mgt_<uuid-v4> \
+       --confirm=CHECK_MODEL_GOVERNANCE_TRANSITION
+   ```
+
+3. **Aynı command alanlarıyla check çalıştır:** `MODEL_GOVERNANCE_CHECK:v1 outcome=OK` bekle. CLI approvalRef
+   + capability'nin shipped kümülatif catalog'da exact tek kayıt olduğunu da doğrular. Check WORM'u
+   tam projekte eder; herhangi bir global integrity bulgusu, stale state, illegal geçiş veya transition-id
+   conflict varsa append'e geçmez ve yazım yapmaz. Check yalnız erken tanıdır; check→append arası başka writer
+   yarışabilir. Otoriter yarış kapısı append transaction'ındaki advisory lock + `expectedFrom` CAS'tır; stale
+   yarış yazmadan reddedilir.
+4. **Owner/delegated-review kanıtını bağla:** actorRef PII/secret içermeyen opak referanstır; gerçek approval
+   kaydı issue/evidence manifestindedir. Aynı `transitionId` korunur (yeniden koşum idempotent olsun).
+5. **Yalnız açık mutation confirmation ile append çalıştır:** `--mode=append` ve
+   `--confirm=APPEND_MODEL_GOVERNANCE_TRANSITION`. Credential zarfı yine stdin pipe'dır. Başarı çıktısı
+   yalnız `transitionId`, `approvalRef`, `capability`, `sequence`, `entryHash`, `idempotent` taşır; DSN/user/
+   password basılmaz.
+6. **`MODEL_GOVERNANCE_APPEND:v1 outcome=OK` bekle.** CLI append sonrası WORM'u tekrar okuyup global chain
+   bütünlüğünü, tek transition kimliğini ve hedef cari durumu doğrulamadan `OK` demez. Fail → **adım 7**.
+7. **Doğrula (fail sinyali + devam eşiği):**
    - `Ok` → WORM'a yazıldı; `entry_hash`/`sequence` audit'e kaydet.
    - `STALE_EXPECTED_FROM` → özne beklenen durumda değil (ör. zaten APPROVED / yarış). Gerçek-son durumu
      `readAll`+projeksiyonla oku, `expectedFrom`'u düzelt, tekrar dene. **Idempotent re-run güvenli.**
    - `ILLEGAL_TRANSITION` → geçiş matriste yok (ör. `APPROVED→DRAFT`) → gerekçe/hedef yanlış; düzelt.
    - `NOT_CONFIGURED` → WORM/DB erişilemez → bağlantı/rol kontrol.
-5. **Boot doğrula:** ilgili deployment'ı (yeniden) başlat → boot-gate `resolve` WORM'u okur → `APPROVED`
+8. **Boot doğrula:** ilgili deployment'ı GitOps desired-state ile rollout et → boot-gate `resolve` WORM'u
+   okur → `APPROVED`
    ise context kalkar. `resolve` DENIED kalıyorsa: özne gerçekten APPROVED mı, catalog↔WORM bütünlüğü
    (ref catalog'da mı, capability tutarlı mı, chain intact mi) kontrol et (ADR-0021 §3 taksonomi).
 
@@ -63,6 +99,7 @@
 - [[ATS-0021]] (WORM tek status-otorite) · [[ATS-0020]] (boot-gate) · V4 migration (`model_governance_ledger`
   + `ats_governance_writer` rolü) · `ModelGovernanceAdminAppender` / `PostgresModelGovernanceLedger`
   (persistence-postgres) · `ModelGovernanceTransitions` (izinli geçiş matrisi)
-- **Test-fixture karşılığı** (canlı-run DEĞİL): `WormGovernanceTestSeed` (app-boot; Testcontainers superuser
-  DataSource ile shipped kimlikleri `INITIAL_APPROVAL` seed'ler) + `WormStatusCutoverE2ETest` (boot/runtime
-  REVOKE→re-approve canlı görünürlük kanıtı).
+- **Operator CLI kabul testi:** `ModelGovernanceOperatorCliTest` gerçek PostgreSQL 16'da check-no-mutation,
+  writer-role assertion, append, idempotent replay, conflict ve secret-output guard'larını doğrular.
+- **Boot test-fixture karşılığı** (canlı-run DEĞİL): `WormGovernanceTestSeed` +
+  `WormStatusCutoverE2ETest` (boot/runtime REVOKE→re-approve canlı görünürlük kanıtı).

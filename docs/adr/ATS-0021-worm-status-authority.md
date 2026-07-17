@@ -52,12 +52,21 @@ WORM-backed registry bean `Reader` + catalog-resource'la kurulur (Reader Flyway'
 
 **Normal boot HİÇBİR initial-approval transition YAZMAZ (boot-seed YASAK).** 1e-b `ModelGovernanceAdminAppender` normal composition'da bean DEĞİLDİR (yalnız `Reader` wire edilir — least-privilege; app-boot runtime rolü SELECT-only `ats_app`). Gerçek deployment'ın ilk `UNINITIALIZED→APPROVED` transition'ı owner-gated ayrı CLI/workflow'da yazılır (§5 + runbook).
 
-### 5. Owner-gated initial-transition workflow (canlı-run bu slice dışı)
+### 5. Owner-gated initial-transition workflow
 
-İlk onay (`INITIAL_APPROVAL`) ve sonraki geçişler (`REVOKED_BY_OWNER`/`REAPPROVED`/…) `ModelGovernanceAdminAppender` + writer-rol credential (`ats_governance_writer`; Vault'tan DSN, plaintext WORM/log/argv'ye GİRMEZ) ile AYRI bir CLI/workflow'da append edilir. Bu slice runbook ([RB-model-governance-initial-transition](../runbooks/RB-model-governance-initial-transition.md)) + test-fixture (`WormGovernanceTestSeed`; Testcontainers superuser) ile yeterlidir; canlı owner-gated append deploy düzleminin işidir. Göstermelik/insecure boot-seed YOKTUR.
+İlk onay (`INITIAL_APPROVAL`) ve sonraki geçişler (`REVOKED_BY_OWNER`/`REAPPROVED`/…) ayrı
+`model-governance-transition` operator komutuyla yürür. Komut credential zarfını yalnız strict stdin JSON'dan
+alır; her bağlantıda admin-attribute taşımayan ayrı member login'den `ats_governance_writer` rolünü
+assume+assert eder; superuser/createdb/createrole/replication/bypassrls session'ını reddeder; check/append ve exact confirmation'ı
+ayırır; append/hash/CAS semantiğini `ModelGovernanceAdminAppender` + `PostgresModelGovernanceLedger` canonical
+yoluna devreder. Normal Spring composition komutu wire etmez ve boot-seed hâlâ yasaktır. Ayrıntı ve kanıt
+kontratı: [RB-model-governance-initial-transition](../runbooks/RB-model-governance-initial-transition.md).
 
 ## Sonuç
 
 - **Olumlu:** tek status-otorite (drift/çift-otorite yok); canlı revoke cache olmadan anında görünür (boot/runtime REVOKE E2E kanıtı); catalog immutable + kümülatif (audit-safe); ref-stabilitesi golden-pinli; strict parser eski catalog'u fail-closed reddeder; boot-seed yasağı least-privilege'i korur.
-- **Sınır (dürüst):** yalnız GLOBAL scope; `endpointRef↔baseUrl` gerçek karşılığı hâlâ deployment-authoritative (ATS-0020 §4); canlı owner-gated writer-cred + CLI arg-parsing deploy düzlemine ertelendi (runbook + test-fixture bu slice'ta yeterli); catalog↔WORM bütünlük taraması her resolve'da O(n) (WORM küçük — kabul; cache yasağıyla bilinçli tercih).
+- **Sınır (dürüst):** yalnız GLOBAL scope; `endpointRef↔baseUrl` gerçek karşılığı hâlâ deployment-authoritative
+  (ATS-0020 §4); CLI owner kararını üretmez, yalnız kanıtlanmış kararı writer-role ile icra eder; prod writer
+  credential/member lifecycle deploy düzlemindedir; catalog↔WORM bütünlük taraması her resolve'da O(n)
+  (WORM küçük — kabul; cache yasağıyla bilinçli tercih).
 - **Migration notu:** operatör `ats.ai.approvals.*` ref'leri DEĞİŞMEDİ (golden-pin); ama artık boot ÖNCESİ WORM'da ilgili kimlikler owner-gated `INITIAL_APPROVAL` ile APPROVED olmalı (aksi halde boot fail-closed düşer — beklenen davranış).
