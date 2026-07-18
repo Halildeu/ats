@@ -71,6 +71,16 @@ ats:
     approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
+  resume-import:
+    enabled: ${ATS_RESUME_IMPORT_ENABLED:true}
+    # Real CV/PII activation remains a named privacy/security owner gate.
+    synthetic-only: ${ATS_RESUME_IMPORT_SYNTHETIC_ONLY:true}
+    max-upload-bytes: ${ATS_RESUME_IMPORT_MAX_UPLOAD_BYTES:10485760}
+    max-pages: ${ATS_RESUME_IMPORT_MAX_PAGES:20}
+    max-concurrent-parses: ${ATS_RESUME_IMPORT_MAX_CONCURRENT_PARSES:2}
+    # Privacy contract: terminal/expired transient data is swept well inside the <=15m baseline.
+    purge-initial-delay: ${ATS_RESUME_IMPORT_PURGE_INITIAL_DELAY:PT30S}
+    purge-interval: ${ATS_RESUME_IMPORT_PURGE_INTERVAL:PT5M}
   retention:
     enabled: ${ATS_RETENTION_ENABLED:false}
     cron: ${ATS_RETENTION_CRON:}
