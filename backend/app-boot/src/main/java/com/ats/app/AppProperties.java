@@ -2,6 +2,7 @@ package com.ats.app;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * Fail-closed konfig: DB ve AI uçları için SESSİZ default YOK — eksik/boş değer
@@ -10,7 +11,50 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * parola log'a/hataya yazılmaz.
  */
 @ConfigurationProperties(prefix = "ats")
-public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+public record AppProperties(
+        Db db, Ai ai, Security security, Ingest ingest, Retention retention,
+        ResumeImport resumeImport) {
+
+    @ConstructorBinding
+    public AppProperties {
+        if (resumeImport == null) {
+            resumeImport = new ResumeImport(true, true, 10_485_760, 20, 2);
+        }
+    }
+
+    /** Source-compatible constructor for existing composition tests/callers. */
+    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+        this(db, ai, security, ingest, retention, null);
+    }
+
+    /** Candidate CV import remains synthetic-only until named privacy/security activation gates. */
+    public record ResumeImport(
+            boolean enabled,
+            boolean syntheticOnly,
+            int maxUploadBytes,
+            int maxPages,
+            int maxConcurrentParses) {
+        public ResumeImport {
+            if (maxUploadBytes <= 0) maxUploadBytes = 10_485_760;
+            if (maxUploadBytes > 10_485_760) {
+                throw new IllegalStateException(
+                        "ats.resume-import.max-upload-bytes <= 10 MiB olmalı");
+            }
+            if (maxPages <= 0) maxPages = 20;
+            if (maxPages > 50) {
+                throw new IllegalStateException("ats.resume-import.max-pages <= 50 olmalı");
+            }
+            if (maxConcurrentParses <= 0) maxConcurrentParses = 2;
+            if (maxConcurrentParses > 8) {
+                throw new IllegalStateException(
+                        "ats.resume-import.max-concurrent-parses <= 8 olmalı");
+            }
+            if (enabled && !syntheticOnly) {
+                throw new IllegalStateException(
+                        "Gerçek CV aktivasyonu bu source slice'ta kapalıdır; synthetic-only=true zorunlu");
+            }
+        }
+    }
 
     /**
      * Retention-purge zamanlayıcısı — DEFAULT KAPALI (ATS-0018: zamanlayıcı-tetikleyici

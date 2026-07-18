@@ -86,6 +86,13 @@
       <version>42.7.11</version>
       <scope>runtime</scope>
     </dependency>
+    <!-- Candidate CV import adapter: parser is isolated behind ResumeDocumentParser;
+         JavaScript/eval/external OCR/LLM or network egress is not used. -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>3.0.5</version>
+    </dependency>
 
     <!-- test: gerçek-PG boot smoke -->
     <dependency>

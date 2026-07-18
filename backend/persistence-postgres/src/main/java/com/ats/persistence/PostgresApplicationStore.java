@@ -138,8 +138,12 @@ public final class PostgresApplicationStore implements ApplicationStore {
                             SubmitState.REPLAYED, ((Outcome.Ok<CandidateApplication>) replay).value()));
                 }
 
+                ResumeBinding resumeBinding = resolveResumeBinding(c, job, command);
                 UUID applicationId = UUID.randomUUID();
-                insertApplication(c, job, applicationId, command);
+                insertApplication(c, job, applicationId, command, resumeBinding);
+                if (resumeBinding.draftId() != null) {
+                    consumeDraft(c, job, applicationId, resumeBinding, command.occurredAt());
+                }
                 insertEvent(c, job.tenantId(), applicationId, null,
                         ApplicationStatus.SUBMITTED, "candidate:self", command.occurredAt());
                 bindIdempotency(c, job, command.idempotencyKey(), applicationId);
@@ -152,6 +156,9 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 }
                 return Outcome.ok(new SubmitResult(
                         SubmitState.CREATED, ((Outcome.Ok<CandidateApplication>) created).value()));
+            } catch (ResumeBindingException ex) {
+                c.rollback();
+                return Outcome.fail(OutcomeCode.INVALID, ex.getMessage());
             } catch (SQLException ex) {
                 c.rollback();
                 return Pg.sqlFail(ex);
@@ -373,7 +380,12 @@ public final class PostgresApplicationStore implements ApplicationStore {
         }
     }
 
-    private void insertApplication(Connection c, JobPosting job, UUID appId, SubmitCommand command)
+    private void insertApplication(
+            Connection c,
+            JobPosting job,
+            UUID appId,
+            SubmitCommand command,
+            ResumeBinding resumeBinding)
             throws SQLException {
         var s = command.submission();
         String sql = """
@@ -381,9 +393,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
                     (tenant_id, application_id, public_ref, job_id, full_name, email, phone, city,
                      linkedin_url, portfolio_url, professional_summary, experience, education,
                      skills, note, status, version, candidate_access_digest, notice_version,
-                     notice_accepted_at, accuracy_confirmed_at, created_at, updated_at)
+                     notice_accepted_at, accuracy_confirmed_at, application_source,
+                     resume_import_id, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'SUBMITTED', 0,
-                        ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
@@ -396,9 +409,175 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setString(i++, command.candidateAccessDigest()); ps.setString(i++, s.noticeVersion());
             ps.setTimestamp(i++, timestamp(s.noticeAcceptedAt()));
             ps.setTimestamp(i++, timestamp(s.accuracyConfirmedAt()));
+            ps.setString(i++, resumeBinding.source());
+            ps.setString(i++, resumeBinding.importId());
             ps.setTimestamp(i++, timestamp(command.occurredAt()));
             ps.setTimestamp(i, timestamp(command.occurredAt()));
             ps.executeUpdate();
+        }
+    }
+
+    private ResumeBinding resolveResumeBinding(
+            Connection c, JobPosting job, SubmitCommand command)
+            throws SQLException, ResumeBindingException {
+        var submission = command.submission();
+        if (submission.resumeImportId() != null) {
+            String sql = """
+                    SELECT d.draft_id, d.version, d.expires_at, f.field_key, f.field_value
+                      FROM ats_candidate_draft d
+                      JOIN ats_resume_import i
+                        ON i.tenant_id=d.tenant_id AND i.import_id=d.import_id
+                      LEFT JOIN ats_candidate_draft_field f
+                        ON f.tenant_id=d.tenant_id AND f.draft_id=d.draft_id
+                     WHERE d.tenant_id=? AND d.job_id=? AND d.candidate_access_digest=?
+                       AND d.import_id=? AND d.version=? AND d.consumed_application_id IS NULL
+                       AND i.state='CONFIRMED'
+                     ORDER BY f.field_key
+                     FOR UPDATE OF d
+                    """;
+            UUID draftId = null;
+            boolean transferred = false;
+            Timestamp expiresAt = null;
+            try (PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setString(1, job.tenantId().value());
+                ps.setString(2, job.jobId());
+                ps.setString(3, command.candidateAccessDigest());
+                ps.setString(4, submission.resumeImportId());
+                ps.setInt(5, submission.resumeDraftVersion());
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        if (draftId == null) {
+                            draftId = rs.getObject("draft_id", UUID.class);
+                            expiresAt = rs.getTimestamp("expires_at");
+                        }
+                        String field = rs.getString("field_key");
+                        if (field != null && draftValueMatchesSubmission(
+                                field, rs.getString("field_value"), submission)) {
+                            transferred = true;
+                        }
+                    }
+                }
+            }
+            if (draftId == null || expiresAt == null
+                    || !expiresAt.toInstant().isAfter(Instant.parse(command.occurredAt()))) {
+                throw new ResumeBindingException(
+                        "onaylı CV taslağı bulunamadı, tüketilmiş veya süresi dolmuş");
+            }
+            return new ResumeBinding(
+                    transferred ? "PDF_CONFIRMED" : "MANUAL_AFTER_IMPORT",
+                    submission.resumeImportId(), draftId, submission.resumeDraftVersion());
+        }
+
+        String latestSql = """
+                SELECT import_id, state
+                  FROM ats_resume_import
+                 WHERE tenant_id=? AND job_id=? AND candidate_access_digest=?
+                 ORDER BY created_at DESC, import_id DESC
+                 LIMIT 1 FOR UPDATE
+                """;
+        String importId = null;
+        String state = null;
+        try (PreparedStatement ps = c.prepareStatement(latestSql)) {
+            ps.setString(1, job.tenantId().value());
+            ps.setString(2, job.jobId());
+            ps.setString(3, command.candidateAccessDigest());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    importId = rs.getString("import_id");
+                    state = rs.getString("state");
+                }
+            }
+        }
+        if (importId == null) return new ResumeBinding("MANUAL_ONLY", null, null, -1);
+
+        if ("ACTIVE".equals(state)) {
+            String cancelSql = """
+                    UPDATE ats_resume_import
+                       SET state='CANCELLED', version=version+1, document_digest=NULL,
+                           pending_document_digest=NULL, pending_upload_key=NULL,
+                           pending_until=NULL,
+                           terminal_at=?, purged_at=?, updated_at=?
+                     WHERE tenant_id=? AND import_id=? AND state='ACTIVE'
+                    """;
+            try (PreparedStatement ps = c.prepareStatement(cancelSql)) {
+                Timestamp now = timestamp(command.occurredAt());
+                ps.setTimestamp(1, now);
+                ps.setTimestamp(2, now);
+                ps.setTimestamp(3, now);
+                ps.setString(4, job.tenantId().value());
+                ps.setString(5, importId);
+                if (ps.executeUpdate() != 1) throw new SQLException("manual-submit cancel invariant", "23514");
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "DELETE FROM ats_resume_proposal WHERE tenant_id=? AND import_id=?")) {
+                ps.setString(1, job.tenantId().value());
+                ps.setString(2, importId);
+                ps.executeUpdate();
+            }
+        }
+        try (PreparedStatement ps = c.prepareStatement("""
+                DELETE FROM ats_candidate_draft
+                 WHERE tenant_id=? AND import_id=? AND consumed_application_id IS NULL
+                """)) {
+            ps.setString(1, job.tenantId().value());
+            ps.setString(2, importId);
+            ps.executeUpdate();
+        }
+        return new ResumeBinding("MANUAL_AFTER_IMPORT", importId, null, -1);
+    }
+
+    private static boolean draftValueMatchesSubmission(
+            String field, String draftValue, ApplicationIntakeService.Submission submission)
+            throws ResumeBindingException {
+        String submitted = switch (field) {
+            case "FULL_NAME" -> submission.fullName();
+            case "EMAIL" -> submission.email();
+            case "PHONE" -> submission.phone();
+            case "CITY" -> submission.city();
+            case "SUMMARY" -> submission.summary();
+            case "EXPERIENCE" -> submission.experience();
+            case "EDUCATION" -> submission.education();
+            case "SKILLS" -> String.join(", ", submission.skills());
+            case "LANGUAGES", "CERTIFICATIONS" -> null;
+            default -> throw new ResumeBindingException("CV taslağı desteklenmeyen alan içeriyor");
+        };
+        return submitted != null && normalizeComparable(submitted).equals(normalizeComparable(draftValue));
+    }
+
+    private static String normalizeComparable(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+    }
+
+    private static void consumeDraft(
+            Connection c,
+            JobPosting job,
+            UUID applicationId,
+            ResumeBinding binding,
+            String occurredAt) throws SQLException {
+        String sql = """
+                UPDATE ats_candidate_draft
+                   SET consumed_application_id=?, consumed_at=?, version=version+1
+                 WHERE tenant_id=? AND draft_id=? AND import_id=? AND version=?
+                   AND consumed_application_id IS NULL AND expires_at > ?
+                """;
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            Timestamp now = timestamp(occurredAt);
+            ps.setObject(1, applicationId);
+            ps.setTimestamp(2, now);
+            ps.setString(3, job.tenantId().value());
+            ps.setObject(4, binding.draftId());
+            ps.setString(5, binding.importId());
+            ps.setInt(6, binding.draftVersion());
+            ps.setTimestamp(7, now);
+            if (ps.executeUpdate() != 1) throw new SQLException("candidate draft consume CAS", "23514");
+        }
+    }
+
+    private record ResumeBinding(String source, String importId, UUID draftId, int draftVersion) {}
+
+    private static final class ResumeBindingException extends Exception {
+        ResumeBindingException(String message) {
+            super(message);
         }
     }
 
