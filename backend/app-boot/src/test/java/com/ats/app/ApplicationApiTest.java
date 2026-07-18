@@ -11,6 +11,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -668,6 +670,245 @@ class ApplicationApiTest {
                 "SELECT status FROM ats_interview WHERE interview_id = ?", interviewId));
         assertEquals(2, scalar("SELECT count(*) FROM ats_interview_schedule_revision"
                 + " WHERE interview_id = ?", secondInterviewId));
+    }
+
+    @Test
+    void completed_human_interview_offer_candidate_acceptance_and_hire_are_persistent()
+            throws Exception {
+        String acceptedAt = Instant.now().toString();
+        String candidateAccess = "J".repeat(43);
+        HttpHeaders submitHeaders = json();
+        submitHeaders.set("X-ATS-Idempotency-Key", "offer-hire-submit-key-001");
+        submitHeaders.set("X-ATS-Candidate-Access", candidateAccess);
+        ResponseEntity<String> submit = rest.exchange(
+                "/api/v1/jobs/urun-yoneticisi/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Teklif Adayı", acceptedAt), submitHeaders), String.class);
+        assertEquals(201, submit.getStatusCode().value(), submit.getBody());
+        String publicRef = objectMapper.readTree(submit.getBody()).path("publicRef").asText();
+
+        HttpHeaders manager = bearer(token(
+                TENANT, "ats.application.status.write", "offer-recruiter"));
+        manager.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(200, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
+                new HttpEntity<>("{\"expectedVersion\":0,\"toStatus\":\"UNDER_REVIEW\"}", manager),
+                String.class).getStatusCode().value());
+
+        Instant startsAt = Instant.now().plusSeconds(86_400);
+        String schedulePayload = objectMapper.writeValueAsString(Map.ofEntries(
+                Map.entry("type", "FINAL"),
+                Map.entry("startsAt", startsAt.toString()),
+                Map.entry("endsAt", startsAt.plusSeconds(3_600).toString()),
+                Map.entry("timeZone", "Europe/Istanbul"),
+                Map.entry("mode", "VIDEO"),
+                Map.entry("location", "https://meet.example.test/offer-hire"),
+                Map.entry("participants", List.of(Map.of(
+                        "actorRef", "offer-interviewer",
+                        "displayLabel", "Sentetik Karar Görüşmecisi",
+                        "role", "LEAD"))),
+                Map.entry("criteria", List.of(Map.of(
+                        "key", "delivery",
+                        "label", "Kanıtlı teslim",
+                        "question", "Uçtan uca tamamladığınız bir müşteri sonucunu anlatın.",
+                        "evidencePrompt", "İnsan görüşmeci ölçülebilir sonucu ve adayın katkısını yazmalı.")))));
+        manager.set("X-ATS-Idempotency-Key", "offer-hire-interview-create-001");
+        ResponseEntity<String> schedule = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews", HttpMethod.POST,
+                new HttpEntity<>(schedulePayload, manager), String.class);
+        assertEquals(201, schedule.getStatusCode().value(), schedule.getBody());
+        String interviewId = objectMapper.readTree(schedule.getBody()).path("interviewId").asText();
+
+        String terms = objectMapper.writeValueAsString(Map.ofEntries(
+                Map.entry("roleTitle", "Ürün Yöneticisi"),
+                Map.entry("startDate", LocalDate.now(ZoneOffset.UTC).plusDays(30).toString()),
+                Map.entry("employmentType", "Tam zamanlı"),
+                Map.entry("workMode", "HYBRID"),
+                Map.entry("location", "İstanbul"),
+                Map.entry("compensationAmount", new java.math.BigDecimal("125000.00")),
+                Map.entry("currency", "TRY"),
+                Map.entry("payPeriod", "MONTHLY"),
+                Map.entry("expiresAt", Instant.now().plusSeconds(14 * 86_400L).toString()),
+                Map.entry("termsSummary",
+                        "Sentetik acceptance testi için insan onaylı ATS teklif özeti.")));
+        manager.set("X-ATS-Idempotency-Key", "offer-hire-too-early-001");
+        ResponseEntity<String> beforeScorecard = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers", HttpMethod.POST,
+                new HttpEntity<>(terms, manager), String.class);
+        assertEquals(409, beforeScorecard.getStatusCode().value(), beforeScorecard.getBody());
+        assertEquals("INTERVIEW_NOT_COMPLETED",
+                objectMapper.readTree(beforeScorecard.getBody()).path("error").asText());
+
+        String scorecard = objectMapper.writeValueAsString(Map.ofEntries(
+                Map.entry("policyVersion", "structured-interview-v1"),
+                Map.entry("jobRelatednessConfirmed", true),
+                Map.entry("recommendation", "ADVANCE"),
+                Map.entry("ratings", List.of(Map.of(
+                        "criterionKey", "delivery",
+                        "rating", 4,
+                        "evidence", "Aday doğrulanabilir müşteri sonucunu kendi katkısıyla açıkladı."))),
+                Map.entry("summary", "İşle ilgili kriter insan tarafından kanıtla değerlendirildi.")));
+        HttpHeaders scorer = bearer(token(
+                TENANT, "ats.application.status.write", "offer-interviewer"));
+        scorer.setContentType(MediaType.APPLICATION_JSON);
+        scorer.set("X-ATS-Idempotency-Key", "offer-hire-scorecard-key-001");
+        ResponseEntity<String> scored = rest.exchange(
+                "/api/v1/interviews/" + interviewId + "/scorecards", HttpMethod.POST,
+                new HttpEntity<>(scorecard, scorer), String.class);
+        assertEquals(201, scored.getStatusCode().value(), scored.getBody());
+
+        manager.set("X-ATS-Idempotency-Key", "offer-hire-complete-key-001");
+        ResponseEntity<String> completed = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews/" + interviewId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"target\":\"COMPLETED\","
+                        + "\"reason\":\"İnsan scorecard değerlendirmesi tamamlandı\"}", manager),
+                String.class);
+        assertEquals(200, completed.getStatusCode().value(), completed.getBody());
+
+        manager.set("X-ATS-Idempotency-Key", "offer-hire-create-key-001");
+        ResponseEntity<String> create = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers", HttpMethod.POST,
+                new HttpEntity<>(terms, manager), String.class);
+        assertEquals(201, create.getStatusCode().value(), create.getBody());
+        JsonNode draft = objectMapper.readTree(create.getBody());
+        String offerId = draft.path("offerId").asText();
+        assertTrue(offerId.startsWith("off_"));
+        assertEquals("DRAFT", draft.path("status").asText());
+        assertEquals(1, draft.path("revisions").size());
+
+        HttpHeaders candidate = new HttpHeaders();
+        candidate.set("X-ATS-Candidate-Access", candidateAccess);
+        JsonNode hiddenDrafts = objectMapper.readTree(rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers", HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class).getBody());
+        assertEquals(0, hiddenDrafts.size(), "DRAFT teklif adaya görünmez");
+
+        manager.set("X-ATS-Idempotency-Key", "test-key-aaaaaaaaaaaaaa01");
+        ResponseEntity<String> prematureHire = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers/" + offerId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"target\":\"HIRED\","
+                        + "\"reason\":\"Aday kabulünden önce işe alım yapılamaz\"}", manager),
+                String.class);
+        assertEquals(409, prematureHire.getStatusCode().value(), prematureHire.getBody());
+
+        manager.set("X-ATS-Idempotency-Key", "test-key-aaaaaaaaaaaaaa02");
+        ResponseEntity<String> extended = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers/" + offerId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"target\":\"EXTENDED\","
+                        + "\"reason\":\"İnsan onaylı teklif adaya iletildi\"}", manager),
+                String.class);
+        assertEquals(200, extended.getStatusCode().value(), extended.getBody());
+        assertEquals("EXTENDED", objectMapper.readTree(extended.getBody()).path("status").asText());
+
+        HttpHeaders wrongCandidate = new HttpHeaders();
+        wrongCandidate.set("X-ATS-Candidate-Access", "K".repeat(43));
+        assertEquals(404, rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers", HttpMethod.GET,
+                new HttpEntity<>(wrongCandidate), String.class).getStatusCode().value());
+
+        ResponseEntity<String> candidateOffers = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers", HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class);
+        assertEquals(200, candidateOffers.getStatusCode().value(), candidateOffers.getBody());
+        JsonNode candidateOffer = objectMapper.readTree(candidateOffers.getBody()).get(0);
+        assertEquals("EXTENDED", candidateOffer.path("status").asText());
+        assertEquals("Ürün Yöneticisi", candidateOffer.path("roleTitle").asText());
+        assertTrue(candidateOffer.path("legalBoundary").asText().contains("e-imza değildir"));
+        assertFalse(candidateOffer.has("candidateName"));
+        assertFalse(candidateOffer.has("revisions"));
+        assertFalse(candidateOffer.has("actorRef"));
+        assertFalse(candidateOffers.getBody().contains("offer-recruiter"));
+
+        JsonNode pendingApplication = objectMapper.readTree(rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class).getBody());
+        assertEquals("OFFER_PENDING", pendingApplication.path("status").asText());
+        assertEquals("REVIEW_OFFER", pendingApplication.path("nextAction").asText());
+
+        HttpHeaders candidateCommand = new HttpHeaders();
+        candidateCommand.putAll(candidate);
+        candidateCommand.setContentType(MediaType.APPLICATION_JSON);
+        candidateCommand.set("X-ATS-Idempotency-Key", "offer-hire-candidate-accept-001");
+        ResponseEntity<String> missingAcknowledgement = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers/" + offerId
+                        + "/response",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":1,\"target\":\"ACCEPTED\","
+                        + "\"processAcknowledged\":false}", candidateCommand), String.class);
+        assertEquals(400, missingAcknowledgement.getStatusCode().value(),
+                missingAcknowledgement.getBody());
+
+        String acceptPayload = "{\"expectedVersion\":1,\"target\":\"ACCEPTED\","
+                + "\"processAcknowledged\":true}";
+        ResponseEntity<String> accepted = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers/" + offerId
+                        + "/response",
+                HttpMethod.POST, new HttpEntity<>(acceptPayload, candidateCommand), String.class);
+        assertEquals(200, accepted.getStatusCode().value(), accepted.getBody());
+        assertEquals("ACCEPTED", objectMapper.readTree(accepted.getBody()).path("status").asText());
+        assertFalse(accepted.getBody().contains("offer-recruiter"));
+        ResponseEntity<String> acceptedReplay = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers/" + offerId
+                        + "/response",
+                HttpMethod.POST, new HttpEntity<>(acceptPayload, candidateCommand), String.class);
+        assertEquals(200, acceptedReplay.getStatusCode().value(), acceptedReplay.getBody());
+        assertEquals("true", acceptedReplay.getHeaders().getFirst("X-ATS-Replay"));
+
+        JsonNode acceptedApplication = objectMapper.readTree(rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class).getBody());
+        assertEquals("OFFER_ACCEPTED", acceptedApplication.path("status").asText());
+        assertEquals("WAIT_FOR_HIRE_CONFIRMATION",
+                acceptedApplication.path("nextAction").asText());
+
+        manager.set("X-ATS-Idempotency-Key", "test-key-aaaaaaaaaaaaaa03");
+        ResponseEntity<String> hired = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers/" + offerId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":2,\"target\":\"HIRED\","
+                        + "\"reason\":\"İnsan işe alım kararı ve başlangıç hazırlığı doğrulandı\"}", manager),
+                String.class);
+        assertEquals(200, hired.getStatusCode().value(), hired.getBody());
+        assertEquals("HIRED", objectMapper.readTree(hired.getBody()).path("status").asText());
+        assertEquals(3, objectMapper.readTree(hired.getBody()).path("version").asInt());
+
+        JsonNode hiredApplication = objectMapper.readTree(rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class).getBody());
+        assertEquals("HIRED", hiredApplication.path("status").asText());
+        assertEquals("NONE", hiredApplication.path("nextAction").asText());
+        assertFalse(hiredApplication.path("withdrawalAllowed").asBoolean());
+        assertEquals(1, scalar("SELECT count(*) FROM ats_offer WHERE offer_id = ?", offerId));
+        assertEquals(4, scalar("SELECT count(*) FROM ats_offer_revision WHERE offer_id = ?", offerId));
+        assertEquals("HIRED", scalarString("SELECT status FROM ats_application WHERE public_ref = ?",
+                publicRef));
+
+        manager.set("X-ATS-Idempotency-Key", "offer-hire-create-key-001");
+        ResponseEntity<String> lateCreateReplay = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/offers", HttpMethod.POST,
+                new HttpEntity<>(terms, manager), String.class);
+        assertEquals(200, lateCreateReplay.getStatusCode().value(), lateCreateReplay.getBody());
+        assertEquals("true", lateCreateReplay.getHeaders().getFirst("X-ATS-Replay"));
+        assertEquals("DRAFT",
+                objectMapper.readTree(lateCreateReplay.getBody()).path("status").asText(),
+                "idempotent replay current HIRED durumunu değil exact ilk sonucu döndürür");
+        assertEquals(0, objectMapper.readTree(lateCreateReplay.getBody()).path("version").asInt());
+
+        ResponseEntity<String> lateAcceptReplay = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/offers/" + offerId
+                        + "/response",
+                HttpMethod.POST, new HttpEntity<>(acceptPayload, candidateCommand), String.class);
+        assertEquals(200, lateAcceptReplay.getStatusCode().value(), lateAcceptReplay.getBody());
+        assertEquals("true", lateAcceptReplay.getHeaders().getFirst("X-ATS-Replay"));
+        assertEquals("ACCEPTED",
+                objectMapper.readTree(lateAcceptReplay.getBody()).path("status").asText());
+        assertEquals(2, objectMapper.readTree(lateAcceptReplay.getBody()).path("version").asInt());
     }
 
     @Test

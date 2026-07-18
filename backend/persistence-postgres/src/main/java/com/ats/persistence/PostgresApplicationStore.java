@@ -423,8 +423,9 @@ public final class PostgresApplicationStore implements ApplicationStore {
                     c.rollback();
                     return Outcome.ok(new EvaluationResult(EvaluationState.NOT_FOUND, null));
                 }
-                if (application.status() == ApplicationStatus.REJECTED
-                        || application.status() == ApplicationStatus.WITHDRAWN) {
+                if (application.status() != ApplicationStatus.SUBMITTED
+                        && application.status() != ApplicationStatus.UNDER_REVIEW
+                        && application.status() != ApplicationStatus.INTERVIEW_PENDING) {
                     c.rollback();
                     return Outcome.ok(new EvaluationResult(
                             EvaluationState.APPLICATION_CLOSED, null));

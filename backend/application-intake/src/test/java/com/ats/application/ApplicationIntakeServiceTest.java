@@ -126,6 +126,18 @@ class ApplicationIntakeServiceTest {
                 ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.WITHDRAWN));
         assertFalse(ApplicationIntakeService.isAllowedTransition(
                 ApplicationStatus.REJECTED, ApplicationStatus.UNDER_REVIEW));
+        assertFalse(ApplicationIntakeService.isAllowedTransition(
+                ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.OFFER_PENDING),
+                "teklif aşaması yalnız offer domain transaction'ıyla ilerler");
+        assertFalse(ApplicationIntakeService.isAllowedTransition(
+                ApplicationStatus.OFFER_ACCEPTED, ApplicationStatus.HIRED),
+                "işe alım sonucu yalnız insan kontrollü offer domain komutuyla ilerler");
+        assertEquals("REVIEW_OFFER",
+                ApplicationIntakeService.candidateNextAction(ApplicationStatus.OFFER_PENDING));
+        assertEquals("WAIT_FOR_HIRE_CONFIRMATION",
+                ApplicationIntakeService.candidateNextAction(ApplicationStatus.OFFER_ACCEPTED));
+        assertEquals("NONE",
+                ApplicationIntakeService.candidateNextAction(ApplicationStatus.HIRED));
     }
 
     @Test

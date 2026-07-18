@@ -102,6 +102,10 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/candidate/applications/*/interviews").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/applications/*/offers").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/candidate/applications/*/offers/*/response").permitAll()
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/candidate/applications/*/withdraw").permitAll()
                         .requestMatchers(HttpMethod.GET,
@@ -131,6 +135,17 @@ class SecurityConfig {
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/recruiter/applications/*/interviews/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/recruiter/applications/*/offers",
+                                "/api/v1/recruiter/applications/*/offers/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/offers",
+                                "/api/v1/recruiter/applications/*/offers/*/transitions")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/recruiter/applications/*/offers/*")
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
                                 "/api/v1/recruiter/jobs/*")

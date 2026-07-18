@@ -60,6 +60,11 @@ public final class ApplicationIntakeService {
                     ApplicationStatus.WITHDRAWN),
             ApplicationStatus.INTERVIEW_PENDING,
             Set.of(ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.OFFER_PENDING, Set.of(),
+            ApplicationStatus.OFFER_ACCEPTED, Set.of(),
+            ApplicationStatus.OFFER_DECLINED, Set.of(),
+            ApplicationStatus.OFFER_WITHDRAWN, Set.of(),
+            ApplicationStatus.HIRED, Set.of(),
             ApplicationStatus.REJECTED, Set.of(),
             ApplicationStatus.WITHDRAWN, Set.of());
 
@@ -295,7 +300,9 @@ public final class ApplicationIntakeService {
         } catch (IllegalArgumentException ex) {
             return Outcome.fail(OutcomeCode.INVALID, "toStatus kapalı küme dışında");
         }
-        if (target == ApplicationStatus.SUBMITTED || target == ApplicationStatus.WITHDRAWN) {
+        if (target != ApplicationStatus.UNDER_REVIEW
+                && target != ApplicationStatus.INTERVIEW_PENDING
+                && target != ApplicationStatus.REJECTED) {
             return Outcome.ok(new TransitionResult(TransitionState.ILLEGAL_TRANSITION, null));
         }
         return store.transition(new TransitionCommand(
@@ -358,7 +365,9 @@ public final class ApplicationIntakeService {
         return switch (status) {
             case SUBMITTED, UNDER_REVIEW -> "WAIT_FOR_REVIEW";
             case INTERVIEW_PENDING -> "PREPARE_FOR_INTERVIEW";
-            case REJECTED, WITHDRAWN -> "NONE";
+            case OFFER_PENDING -> "REVIEW_OFFER";
+            case OFFER_ACCEPTED -> "WAIT_FOR_HIRE_CONFIRMATION";
+            case OFFER_DECLINED, OFFER_WITHDRAWN, HIRED, REJECTED, WITHDRAWN -> "NONE";
         };
     }
 

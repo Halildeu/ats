@@ -29,8 +29,12 @@ class RecruiterAuthorizationTest {
                 projection, RecruiterAuthorization.Permission.JOB_VIEW));
         assertTrue(RecruiterAuthorization.projectionAllows(
                 projection, RecruiterAuthorization.Permission.APPLICATION_VIEW));
+        assertTrue(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.OFFER_VIEW));
         assertFalse(RecruiterAuthorization.projectionAllows(
                 projection, RecruiterAuthorization.Permission.JOB_MANAGE));
+        assertFalse(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.OFFER_MANAGE));
     }
 
     @Test
@@ -55,6 +59,8 @@ class RecruiterAuthorizationTest {
                 """);
         assertTrue(RecruiterAuthorization.projectionAllows(
                 actionOnly, RecruiterAuthorization.Permission.APPLICATION_MANAGE));
+        assertTrue(RecruiterAuthorization.projectionAllows(
+                actionOnly, RecruiterAuthorization.Permission.OFFER_MANAGE));
         assertFalse(RecruiterAuthorization.projectionAllows(
                 actionOnly, RecruiterAuthorization.Permission.JOB_MANAGE));
     }
