@@ -199,6 +199,51 @@ class PostgresJobPostingStoreTest {
                 "rolling writer transition'ı audit zincirinde görünür");
     }
 
+    @Test
+    void rolling_writer_cannot_publish_without_career_site_or_resurrect_terminal_job()
+            throws Exception {
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published)
+                VALUES (?, ?, 'no-site-publish', 'No Site Publish', 'Legacy', 'Türkiye',
+                        'Uzaktan', 'Tam zamanlı',
+                        'Aktif kariyer sitesi olmayan tenant için yayın denemesi.',
+                        '[]'::jsonb, true)
+                """)) {
+            ps.setString(1, OTHER.value());
+            ps.setString(2, "job_" + "N".repeat(24));
+            assertThrows(SQLException.class, ps::executeUpdate);
+        }
+
+        String jobId = "job_" + "T".repeat(24);
+        jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "terminal-create-key-01", "7".repeat(64),
+                content("terminal-ilan", "Terminal İlan"), NOW)).asOptional().orElseThrow();
+        jobs.transition(new TransitionCommand(
+                TENANT, ACTOR, jobId, 0, JobPostingStatus.PUBLISHED,
+                "terminal-publish-key1", "8".repeat(64), NOW)).asOptional().orElseThrow();
+        jobs.transition(new TransitionCommand(
+                TENANT, ACTOR, jobId, 1, JobPostingStatus.CLOSED,
+                "terminal-close-key-01", "9".repeat(64), NOW)).asOptional().orElseThrow();
+        jobs.transition(new TransitionCommand(
+                TENANT, ACTOR, jobId, 2, JobPostingStatus.ARCHIVED,
+                "terminal-archive-key1", "a".repeat(64), NOW)).asOptional().orElseThrow();
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                UPDATE ats_job_posting SET published=true
+                 WHERE tenant_id=? AND job_id=?
+                """)) {
+            ps.setString(1, TENANT.value());
+            ps.setString(2, jobId);
+            assertThrows(SQLException.class, ps::executeUpdate);
+        }
+        var archived = jobs.find(TENANT, jobId).asOptional().orElseThrow();
+        assertEquals(JobPostingStatus.ARCHIVED, archived.status());
+        assertFalse(archived.applyEnabled());
+        assertEquals(3, archived.version());
+    }
+
     private static Content content(String slug, String title) {
         return new Content(
                 slug, title, "Platform", "İstanbul", "Hibrit", "Tam zamanlı",

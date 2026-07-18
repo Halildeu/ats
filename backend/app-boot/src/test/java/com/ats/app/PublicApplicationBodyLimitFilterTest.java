@@ -23,4 +23,28 @@ class PublicApplicationBodyLimitFilterTest {
 
         assertEquals(413, response.getStatus());
     }
+
+    @Test
+    void recruiter_create_is_bounded_before_deserialization() throws Exception {
+        assertOversizedJsonRejected("POST", "/api/v1/recruiter/jobs");
+    }
+
+    @Test
+    void recruiter_update_and_transition_are_bounded_before_deserialization() throws Exception {
+        assertOversizedJsonRejected("PUT", "/api/v1/recruiter/jobs/job_123");
+        assertOversizedJsonRejected(
+                "POST", "/api/v1/recruiter/jobs/job_123/transitions");
+    }
+
+    private static void assertOversizedJsonRejected(String method, String uri) throws Exception {
+        var request = new MockHttpServletRequest(method, uri);
+        request.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        request.setContent(new byte[(int) PublicApplicationBodyLimitFilter.MAX_BYTES + 1]);
+        var response = new MockHttpServletResponse();
+
+        new PublicApplicationBodyLimitFilter().doFilter(
+                request, response, new MockFilterChain());
+
+        assertEquals(413, response.getStatus());
+    }
 }

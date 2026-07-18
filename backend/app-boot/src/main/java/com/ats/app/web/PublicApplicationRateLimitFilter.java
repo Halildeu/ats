@@ -21,6 +21,7 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
 
     private static final String SUBMISSION_PATH =
             "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/applications";
+    private static final String SUBMISSION_BUCKET = "public-application-submit";
     private final PublicApplicationRateLimiter limiter;
 
     PublicApplicationRateLimitFilter(PublicApplicationRateLimiter limiter) {
@@ -36,8 +37,10 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain chain) throws ServletException, IOException {
-        String uri = request.getRequestURI();
-        if (!limiter.allow(request.getRemoteAddr(), uri)) {
+        // The default /jobs alias and canonical /careers/{handle}/jobs route
+        // reach the same intake surface. Use one per-IP bucket so aliases and
+        // attacker-controlled path segments cannot multiply bucket count.
+        if (!limiter.allow(request.getRemoteAddr(), SUBMISSION_BUCKET)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setHeader("Retry-After", "600");
             response.setHeader("Cache-Control", CacheControl.noStore().getHeaderValue());

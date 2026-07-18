@@ -36,18 +36,23 @@ class PublicApplicationRateLimitFilterTest {
     }
 
     @Test
-    void canonical_career_submission_is_rate_limited() throws Exception {
+    void alias_and_canonical_routes_share_one_bounded_bucket() throws Exception {
         var limiter = new PublicApplicationRateLimiter(
                 Clock.fixed(Instant.parse("2026-07-16T12:00:00Z"), ZoneOffset.UTC));
         var filter = new PublicApplicationRateLimitFilter(limiter);
-        String uri = "/api/v1/careers/acik/jobs/product-designer/applications";
 
-        for (int i = 0; i < PublicApplicationRateLimiter.LIMIT; i++) {
-            filter.doFilter(request(uri), new MockHttpServletResponse(), new MockFilterChain());
+        for (int i = 0; i < PublicApplicationRateLimiter.LIMIT - 1; i++) {
+            filter.doFilter(request("/api/v1/jobs/product-designer/applications"),
+                    new MockHttpServletResponse(), new MockFilterChain());
         }
+        var canonicalAllowed = new MockHttpServletResponse();
+        filter.doFilter(request("/api/v1/careers/acik/jobs/product-designer/applications"),
+                canonicalAllowed, new MockFilterChain());
+        assertEquals(200, canonicalAllowed.getStatus());
 
         var denied = new MockHttpServletResponse();
-        filter.doFilter(request(uri), denied, new MockFilterChain());
+        filter.doFilter(request("/api/v1/careers/another/jobs/another/applications"),
+                denied, new MockFilterChain());
         assertEquals(429, denied.getStatus());
     }
 

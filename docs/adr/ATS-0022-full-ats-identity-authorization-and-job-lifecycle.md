@@ -54,13 +54,13 @@ PAUSED --------------------> CLOSED
 - `PAUSED` ve `CLOSED` ilan yeni başvuruyu fail-closed reddeder; daha önceki başvurular recruiter havuzunda kalır.
 - `ARCHIVED` terminaldir. Yayınlanmış ilan hard-delete edilmez.
 - İçerik güncelleme ve durum geçişi `expectedVersion` ile optimistic CAS kullanır.
-- Ağ retry'si için create/update/transition komutları tenant-kapsamlı idempotency key + request digest taşır. CAS, idempotency'nin yerine geçmez.
+- Ağ retry'si için create/update/transition komutları tenant-kapsamlı idempotency key + request digest taşır. CAS, idempotency'nin yerine geçmez. Üç komut tipi aynı tenant-geneli idempotency namespace'ini paylaşır; istemci her yeni mantıksal komut için yeni key üretir ve yalnız aynı komutun retry'sinde aynı key'i tekrar kullanır.
 - Her başarılı create/update/transition, aynı DB transaction'ında append-only `ats_job_posting_event` kaydı üretir. Event PII veya serbest metin içermez; actor ref, sürüm, önceki/yeni durum, komut tipi ve digest içerir.
 
 ## Karar 5 — Plain JDBC ve güvenli migration
 
 - ATS-0018 gereği JPA/Hibernate/Spring Data eklenmez; persistence plain JDBC'dir.
-- `V7` additive ve rolling-compatible'dır: mevcut `published` kolonundan `status` backfill edilir; uygulama geçiş boyunca `published == (status == PUBLISHED)` invariantını dual-write eder.
+- `V7` additive ve rolling-compatible'dır: mevcut `published` kolonundan `status` backfill edilir; uygulama geçiş boyunca `published == (status == PUBLISHED)` invariantını dual-write eder. Legacy bridge, eski pod yazısında dahi `CLOSED/ARCHIVED` ilanı yeniden yayınlayamaz ve aktif career-site olmadan `PUBLISHED` üretemez; ihlal transaction'ı check-violation ile fail-closed keser.
 - Public okumalar `status/apply_enabled` otoritesine geçtikten ve rollback penceresi kanıtlandıktan sonra ayrı bir ileri migration eski `published` kolonunu kaldırabilir. Trigger veya gecelik reconcile ile iki kalıcı truth tutulmaz.
 - `ats_app` ilan için yalnız gerekli `SELECT/INSERT/UPDATE`, event/idempotency için gerekli dar yetkileri alır; ilan hard-delete yetkisi verilmez.
 
@@ -83,9 +83,9 @@ Mutasyonlar `X-ATS-Idempotency-Key` zorunlu başlığını kullanır. Güncellem
 
 ## Absorbe edilen ve reddedilen ikinci görüşler
 
-2026-07-17 exact-head incelemesinde gerçek headless MiniMax M3 (`minimax/MiniMax-M3`) `REVISE` verdi. Direct Claude CLI çağrısı authentication gate'inde (`Not logged in`) kaldı ve model çıktısı üretmedi; bu nedenle Claude görüşü veya bağımsız onay olarak sayılmadı. Cursor kanalındaki limit/boş sonuçlar da review kabul edilmedi.
+2026-07-18 canonical inceleme sırasının ilk turunda doğrudan Anthropic CLI ile exact `claude-opus-4-8`, content-addressed ve secret-taramalı exact-head kapsamına `REVISE` verdi. Eski pod'un `published=true` yazısıyla terminal ilanı yeniden yayınlayabilmesi veya aktif kariyer sitesi olmadan yayın oluşturabilmesi P1 olarak; public yol alias'larının ayrı rate-limit bucket'ları, recruiter mutasyonlarında pre-deserialization body limiti eksikliği ve tenant-geneli idempotency namespace'inin açık belgelenmemesi P2 olarak raporlandı. Bulgular aynı dilime absorbe edildi; yeni exact head için Claude Opus 4.8 -> MiniMax M3 -> Codex 5.6 SOL yeniden incelemesi tamamlanmadan bu dal merge-ready sayılmaz.
 
-Absorbe edilenler: platform kimlik otoritesini koruma, product-native admin UI, plain-JDBC CAS, create idempotency'sini CAS'tan ayırma, append-only lifecycle event, seed'siz ilan oluşturma, pause/resume/close ve mevcut başvuruları koruma; ayrıca platform PDP eksikliğinde legacy role'a sessiz düşüşü kaldırma, canonical kariyer handle'ını gerçekten tenant'a bağlama ve role-separation negatiflerini genişletme.
+Absorbe edilenler: platform kimlik otoritesini koruma, product-native admin UI, plain-JDBC CAS, create idempotency'sini CAS'tan ayırma, append-only lifecycle event, seed'siz ilan oluşturma, pause/resume/close ve mevcut başvuruları koruma; ayrıca platform PDP eksikliğinde legacy role'a sessiz düşüşü kaldırma, canonical kariyer handle'ını gerçekten tenant'a bağlama, role-separation negatiflerini genişletme, legacy rolling-deploy köprüsünü terminal durum ve aktif kariyer sitesi invariantlarıyla fail-closed kılma, public alias'ları tek rate-limit bucket'ında birleştirme ve recruiter mutasyonlarına gövde limiti uygulama.
 
 Reddedilenler: JPA `@Version`, zaten var olan slug unique constraint'ini yeniden ekleme, Keycloak admin konsolunu müşteri UX'i sayma, ATS'nin Keycloak Admin REST ile ikinci rol/davet otoritesi kurması, her istekte JWT introspection, Flyway down migration, hukuki dayanak olmadan sabit yedi-yıl retention ve `published+status` için kalıcı çift-truth/trigger/reconcile.
 

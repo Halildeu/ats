@@ -59,6 +59,14 @@ BEGIN
         END IF;
         NEW.published := NEW.status = 'PUBLISHED';
         NEW.apply_enabled := NEW.status = 'PUBLISHED';
+        IF NEW.status = 'PUBLISHED' AND NOT EXISTS (
+            SELECT 1 FROM ats_career_site
+             WHERE tenant_id = NEW.tenant_id AND active
+        ) THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '23514',
+                MESSAGE = 'active career site required before publishing';
+        END IF;
         RETURN NEW;
     END IF;
 
@@ -99,6 +107,29 @@ BEGIN
         END IF;
         NEW.published := NEW.status = 'PUBLISHED';
         NEW.apply_enabled := NEW.status = 'PUBLISHED';
+    END IF;
+
+    -- Rolling writers may still mutate the compatibility `published` column,
+    -- but they must not bypass the canonical terminal-state or public-result
+    -- invariants. A failed compatibility write aborts atomically; it never
+    -- resurrects candidate intake or creates a non-routable PUBLISHED row.
+    IF OLD.status = 'ARCHIVED' AND NEW.status <> 'ARCHIVED' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'archived job posting is terminal';
+    END IF;
+    IF OLD.status = 'CLOSED' AND NEW.status NOT IN ('CLOSED', 'ARCHIVED') THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'closed job posting may only be archived';
+    END IF;
+    IF NEW.status = 'PUBLISHED' AND NOT EXISTS (
+        SELECT 1 FROM ats_career_site
+         WHERE tenant_id = NEW.tenant_id AND active
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'active career site required before publishing';
     END IF;
     RETURN NEW;
 END;

@@ -64,15 +64,25 @@ class ApplicationApiTest {
 
     @Test
     void public_submit_candidate_tracking_and_tenant_recruiter_flow_is_persistent() throws Exception {
-        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO ats_job_posting
-                    (tenant_id, job_id, slug, title, team, location, mode,
-                     employment_type, summary, highlights, published)
-                VALUES ('other-tenant', 'other-job', 'urun-yoneticisi', 'SIZMAMALI',
-                        'Other', 'Other', 'Other', 'Other', 'Other', '[]'::jsonb, true)
-                ON CONFLICT DO NOTHING
-                """)) {
-            ps.executeUpdate();
+        try (Connection c = ds.getConnection();
+             PreparedStatement site = c.prepareStatement("""
+                     INSERT INTO ats_career_site
+                         (tenant_id, public_handle, display_name, active, created_by, updated_by,
+                          created_at, updated_at)
+                     VALUES ('other-tenant', 'other-careers', 'Other Careers', true,
+                             'test', 'test', now(), now())
+                     ON CONFLICT (tenant_id) DO NOTHING
+                     """);
+             PreparedStatement job = c.prepareStatement("""
+                     INSERT INTO ats_job_posting
+                         (tenant_id, job_id, slug, title, team, location, mode,
+                          employment_type, summary, highlights, published)
+                     VALUES ('other-tenant', 'other-job', 'urun-yoneticisi', 'SIZMAMALI',
+                             'Other', 'Other', 'Other', 'Other', 'Other', '[]'::jsonb, true)
+                     ON CONFLICT DO NOTHING
+                     """)) {
+            site.executeUpdate();
+            job.executeUpdate();
         }
         ResponseEntity<String> jobs = rest.getForEntity("/api/v1/jobs", String.class);
         assertEquals(200, jobs.getStatusCode().value());
