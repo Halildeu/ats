@@ -1,6 +1,9 @@
 package com.ats.application;
 
 import com.ats.application.ApplicationStore.ApplicationPage;
+import com.ats.application.ApplicationStore.EvaluationCommand;
+import com.ats.application.ApplicationStore.EvaluationResult;
+import com.ats.application.ApplicationStore.RecruiterApplicationDetail;
 import com.ats.application.ApplicationStore.CandidateStatusView;
 import com.ats.application.ApplicationStore.SubmitCommand;
 import com.ats.application.ApplicationStore.SubmitResult;
@@ -8,6 +11,8 @@ import com.ats.application.ApplicationStore.SubmitState;
 import com.ats.application.ApplicationStore.TransitionCommand;
 import com.ats.application.ApplicationStore.TransitionResult;
 import com.ats.application.ApplicationStore.TransitionState;
+import com.ats.application.ApplicationEvaluation.Criterion;
+import com.ats.application.ApplicationEvaluation.Recommendation;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.TenantId;
 import com.ats.kernel.Outcome;
@@ -35,18 +40,28 @@ import java.util.regex.Pattern;
  * veya ATS write-back içermez. Bütün tenant çözümü store'daki yayınlanmış ilandan gelir.
  */
 public final class ApplicationIntakeService {
+    public static final String EVALUATION_POLICY_VERSION = "structured-evaluation-v1";
 
     public static final String NOTICE_VERSION = "kvkk-application-v1";
     private static final Pattern IDEMPOTENCY = Pattern.compile("[A-Za-z0-9._:-]{16,128}");
     private static final Pattern PUBLIC_REF = Pattern.compile("app_[A-Za-z0-9_-]{24}");
     private static final Pattern CANDIDATE_ACCESS = Pattern.compile("[A-Za-z0-9_-]{43}");
+    private static final Pattern EVALUATION_ID = Pattern.compile("eval_[A-Za-z0-9_-]{24}");
+    private static final Pattern CRITERION_KEY = Pattern.compile("[a-z][a-z0-9_-]{1,63}");
     private static final Pattern RESUME_IMPORT_ID = Pattern.compile("ri_[A-Za-z0-9_-]{24}");
     private static final Pattern PUBLIC_HANDLE = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+){0,7}");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED = Map.of(
-            ApplicationStatus.SUBMITTED, Set.of(ApplicationStatus.UNDER_REVIEW),
-            ApplicationStatus.UNDER_REVIEW, Set.of(ApplicationStatus.INTERVIEW_PENDING),
-            ApplicationStatus.INTERVIEW_PENDING, Set.of());
+            ApplicationStatus.SUBMITTED,
+            Set.of(ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED,
+                    ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.UNDER_REVIEW,
+            Set.of(ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.REJECTED,
+                    ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.INTERVIEW_PENDING,
+            Set.of(ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN),
+            ApplicationStatus.REJECTED, Set.of(),
+            ApplicationStatus.WITHDRAWN, Set.of());
 
     public record Submission(
             String fullName,
@@ -99,6 +114,18 @@ public final class ApplicationIntakeService {
             int version,
             String submittedAt,
             boolean replayed) {}
+
+    public record EvaluationSubmission(
+            String policyVersion,
+            Boolean jobRelatednessConfirmed,
+            Recommendation recommendation,
+            List<Criterion> criteria,
+            String summary,
+            String predecessorEvaluationId) {
+        public EvaluationSubmission {
+            criteria = criteria == null ? List.of() : List.copyOf(criteria);
+        }
+    }
 
     private final ApplicationStore store;
     private final TenantId publicTenantId;
@@ -248,6 +275,14 @@ public final class ApplicationIntakeService {
                 tenantId, blankToNull(jobSlug), parsed, page, size);
     }
 
+    public Outcome<RecruiterApplicationDetail> recruiterApplication(
+            TenantId tenantId, String publicRef) {
+        if (tenantId == null || publicRef == null || !PUBLIC_REF.matcher(publicRef).matches()) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "başvuru bulunamadı");
+        }
+        return store.findRecruiterApplication(tenantId, publicRef);
+    }
+
     public Outcome<TransitionResult> transition(
             TenantId tenantId, ActorId actorId, String publicRef, int expectedVersion, String toStatus) {
         if (tenantId == null || actorId == null || actorId.value() == null || actorId.value().isBlank()
@@ -260,15 +295,116 @@ public final class ApplicationIntakeService {
         } catch (IllegalArgumentException ex) {
             return Outcome.fail(OutcomeCode.INVALID, "toStatus kapalı küme dışında");
         }
-        if (target == ApplicationStatus.SUBMITTED) {
+        if (target == ApplicationStatus.SUBMITTED || target == ApplicationStatus.WITHDRAWN) {
             return Outcome.ok(new TransitionResult(TransitionState.ILLEGAL_TRANSITION, null));
         }
         return store.transition(new TransitionCommand(
                 tenantId, actorId, publicRef, expectedVersion, target, clock.instant().toString()));
     }
 
+    public Outcome<TransitionResult> withdraw(
+            String publicRef, String candidateAccessToken) {
+        if (publicRef == null || !PUBLIC_REF.matcher(publicRef).matches()
+                || candidateAccessToken == null
+                || !CANDIDATE_ACCESS.matcher(candidateAccessToken).matches()) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "başvuru bulunamadı");
+        }
+        return store.withdrawCandidate(
+                publicRef, sha256Hex(candidateAccessToken), clock.instant().toString());
+    }
+
+    public Outcome<EvaluationResult> submitEvaluation(
+            TenantId tenantId,
+            ActorId actorId,
+            String publicRef,
+            String idempotencyKey,
+            EvaluationSubmission raw) {
+        if (tenantId == null || actorId == null || actorId.value() == null
+                || actorId.value().isBlank() || actorId.value().length() > 200
+                || publicRef == null || !PUBLIC_REF.matcher(publicRef).matches()) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "başvuru bulunamadı");
+        }
+        if (idempotencyKey == null || !IDEMPOTENCY.matcher(idempotencyKey).matches()) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "X-ATS-Idempotency-Key 16..128 güvenli karakter olmalı");
+        }
+        Outcome<EvaluationSubmission> checked = normalizeEvaluation(raw);
+        if (checked instanceof Outcome.Fail<EvaluationSubmission> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        EvaluationSubmission value = ((Outcome.Ok<EvaluationSubmission>) checked).value();
+        String evaluationId = "eval_" + randomUrlToken(18);
+        return store.submitEvaluation(new EvaluationCommand(
+                tenantId,
+                actorId,
+                publicRef,
+                evaluationId,
+                idempotencyKey,
+                evaluationDigest(publicRef, actorId.value(), value),
+                value.policyVersion(),
+                value.jobRelatednessConfirmed(),
+                value.recommendation(),
+                value.criteria(),
+                value.summary(),
+                value.predecessorEvaluationId(),
+                clock.instant().toString()));
+    }
+
     public static boolean isAllowedTransition(ApplicationStatus from, ApplicationStatus to) {
         return from != null && to != null && ALLOWED.getOrDefault(from, Set.of()).contains(to);
+    }
+
+    public static String candidateNextAction(ApplicationStatus status) {
+        return switch (status) {
+            case SUBMITTED, UNDER_REVIEW -> "WAIT_FOR_REVIEW";
+            case INTERVIEW_PENDING -> "PREPARE_FOR_INTERVIEW";
+            case REJECTED, WITHDRAWN -> "NONE";
+        };
+    }
+
+    private Outcome<EvaluationSubmission> normalizeEvaluation(EvaluationSubmission raw) {
+        if (raw == null || raw.recommendation() == null) {
+            return Outcome.fail(OutcomeCode.INVALID, "recommendation zorunlu");
+        }
+        if (!EVALUATION_POLICY_VERSION.equals(trim(raw.policyVersion()))
+                || !Boolean.TRUE.equals(raw.jobRelatednessConfirmed())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "güncel yapılandırılmış değerlendirme politikası ve iş-ilişkisi onayı zorunlu");
+        }
+        if (raw.criteria() == null || raw.criteria().isEmpty() || raw.criteria().size() > 12) {
+            return Outcome.fail(OutcomeCode.INVALID, "criteria 1..12 öğe olmalı");
+        }
+        List<Criterion> criteria = new ArrayList<>();
+        Set<String> keys = new java.util.HashSet<>();
+        for (Criterion criterion : raw.criteria()) {
+            if (criterion == null) {
+                return Outcome.fail(OutcomeCode.INVALID, "criterion boş olamaz");
+            }
+            String key = trim(criterion.key());
+            String label = trim(criterion.label());
+            String evidence = trim(criterion.evidence());
+            if (key == null || !CRITERION_KEY.matcher(key).matches() || !keys.add(key)) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "criterion key benzersiz ve güvenli formatta olmalı");
+            }
+            if (!between(label, 2, 120) || criterion.rating() < 1 || criterion.rating() > 4
+                    || !between(evidence, 10, 2000)) {
+                return Outcome.fail(OutcomeCode.INVALID,
+                        "criterion label 2..120, rating 1..4, evidence 10..2000 olmalı");
+            }
+            criteria.add(new Criterion(key, label, criterion.rating(), evidence));
+        }
+        String summary = trim(raw.summary());
+        if (!between(summary, 10, 4000)) {
+            return Outcome.fail(OutcomeCode.INVALID, "summary 10..4000 karakter olmalı");
+        }
+        String predecessor = trimToNull(raw.predecessorEvaluationId());
+        if (predecessor != null && !EVALUATION_ID.matcher(predecessor).matches()) {
+            return Outcome.fail(OutcomeCode.INVALID, "predecessorEvaluationId geçersiz");
+        }
+        return Outcome.ok(new EvaluationSubmission(
+                EVALUATION_POLICY_VERSION, true,
+                raw.recommendation(), criteria, summary, predecessor));
     }
 
     private Outcome<Submission> normalizeAndValidate(Submission raw) {
@@ -376,6 +512,31 @@ public final class ApplicationIntakeService {
                 String.join("\u001f", s.skills()), nullToEmpty(s.note()), s.noticeVersion(),
                 s.noticeAcceptedAt(), s.accuracyConfirmedAt(), nullToEmpty(s.resumeImportId()),
                 s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()));
+        MessageDigest digest = sha256();
+        for (String part : parts) {
+            byte[] bytes = part.getBytes(StandardCharsets.UTF_8);
+            digest.update(ByteBuffer.allocate(4).putInt(bytes.length).array());
+            digest.update(bytes);
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private static String evaluationDigest(
+            String publicRef, String actorRef, EvaluationSubmission submission) {
+        List<String> parts = new ArrayList<>();
+        parts.add(publicRef);
+        parts.add(actorRef);
+        parts.add(submission.policyVersion());
+        parts.add(Boolean.toString(submission.jobRelatednessConfirmed()));
+        parts.add(submission.recommendation().name());
+        parts.add(submission.summary());
+        parts.add(nullToEmpty(submission.predecessorEvaluationId()));
+        for (Criterion criterion : submission.criteria()) {
+            parts.add(criterion.key());
+            parts.add(criterion.label());
+            parts.add(Integer.toString(criterion.rating()));
+            parts.add(criterion.evidence());
+        }
         MessageDigest digest = sha256();
         for (String part : parts) {
             byte[] bytes = part.getBytes(StandardCharsets.UTF_8);

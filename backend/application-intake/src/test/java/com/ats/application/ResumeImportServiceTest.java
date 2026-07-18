@@ -145,7 +145,18 @@ class ResumeImportServiceTest {
                 TenantId tenantId, String slug, ApplicationStatus status, int page, int size) {
             return Outcome.ok(new ApplicationPage(List.of(), page, size, 0));
         }
+        @Override public Outcome<RecruiterApplicationDetail> findRecruiterApplication(
+                TenantId tenantId, String publicRef) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "unused");
+        }
         @Override public Outcome<TransitionResult> transition(TransitionCommand command) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "unused");
+        }
+        @Override public Outcome<TransitionResult> withdrawCandidate(
+                String publicRef, String candidateAccessDigest, String occurredAt) {
+            return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "unused");
+        }
+        @Override public Outcome<EvaluationResult> submitEvaluation(EvaluationCommand command) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "unused");
         }
     }

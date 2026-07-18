@@ -100,7 +100,10 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/careers/*/jobs/*/resume-imports").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/candidate/resume-imports/*").permitAll()
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/candidate/applications/*/withdraw").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/resume-imports/*").permitAll()
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/candidate/resume-imports/*/document",
                                 "/api/v1/candidate/resume-imports/*/fields/*").permitAll()
@@ -108,9 +111,13 @@ class SecurityConfig {
                                 "/api/v1/candidate/resume-imports/*/document/replace",
                                 "/api/v1/candidate/resume-imports/*/confirm",
                                 "/api/v1/candidate/resume-imports/*/terminate").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications",
+                                "/api/v1/recruiter/applications/*")
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/applications/*/status")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/evaluations")
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
                                 "/api/v1/recruiter/jobs/*")
