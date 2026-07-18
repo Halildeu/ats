@@ -35,6 +35,8 @@ import com.ats.ingest.ObjectStorePort;
 import com.ats.interview.InterviewStore;
 import com.ats.interview.InterviewWorkspaceService;
 import com.ats.kernel.Outcome;
+import com.ats.offer.OfferStore;
+import com.ats.offer.OfferWorkspaceService;
 import com.ats.ops.OperationalEventSink;
 import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
@@ -48,6 +50,7 @@ import com.ats.persistence.PostgresApplicationStore;
 import com.ats.persistence.PostgresResumeImportStore;
 import com.ats.persistence.PostgresJobPostingStore;
 import com.ats.persistence.PostgresInterviewStore;
+import com.ats.persistence.PostgresOfferStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
@@ -230,6 +233,16 @@ class WiringConfig {
     @Bean
     InterviewWorkspaceService interviewWorkspaceService(InterviewStore store) {
         return new InterviewWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    OfferStore offerStore(DataSource ds, Flyway flyway) {
+        return new PostgresOfferStore(ds);
+    }
+
+    @Bean
+    OfferWorkspaceService offerWorkspaceService(OfferStore store) {
+        return new OfferWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
     }
 
     // --- ingest ---

@@ -9,6 +9,11 @@ public enum ApplicationStatus {
     SUBMITTED,
     UNDER_REVIEW,
     INTERVIEW_PENDING,
+    OFFER_PENDING,
+    OFFER_ACCEPTED,
+    OFFER_DECLINED,
+    OFFER_WITHDRAWN,
+    HIRED,
     REJECTED,
     WITHDRAWN
 }
