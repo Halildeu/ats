@@ -92,13 +92,25 @@ class SecurityConfig {
                         // yüzeyi public; tenant request'ten değil server-side ilandan çözülür.
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/resume-imports").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/careers/*/jobs",
                                 "/api/v1/careers/*/jobs/*").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/careers/*/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/careers/*/jobs/*/resume-imports").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/candidate/applications/*/withdraw").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/resume-imports/*").permitAll()
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/candidate/resume-imports/*/document",
+                                "/api/v1/candidate/resume-imports/*/fields/*").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/candidate/resume-imports/*/document/replace",
+                                "/api/v1/candidate/resume-imports/*/confirm",
+                                "/api/v1/candidate/resume-imports/*/terminate").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications",
                                 "/api/v1/recruiter/applications/*")
                             .access(tenantAuthenticated)

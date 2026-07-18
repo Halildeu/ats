@@ -141,7 +141,9 @@ class ApplicationApiController {
                     allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
             String noticeVersion,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String noticeAcceptedAt,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String accuracyConfirmedAt) {}
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String accuracyConfirmedAt,
+            @Schema(pattern = "^ri_[A-Za-z0-9_-]{24}$") String resumeImportId,
+            @Schema(minimum = "0") Integer resumeDraftVersion) {}
 
     @Schema(name = "ApplicationReceiptResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -174,7 +176,8 @@ class ApplicationApiController {
         Submission submission = body == null ? null : new Submission(
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
-                body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt());
+                body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
+                body.resumeImportId(), body.resumeDraftVersion());
         return submit(service.submit(
                 jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -202,7 +205,8 @@ class ApplicationApiController {
         Submission submission = body == null ? null : new Submission(
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
-                body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt());
+                body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
+                body.resumeImportId(), body.resumeDraftVersion());
         return submit(service.submit(
                 publicHandle, jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
