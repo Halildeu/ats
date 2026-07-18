@@ -8,6 +8,8 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -23,13 +25,24 @@ final class PublicApplicationRateLimiter {
     static final Duration WINDOW = Duration.ofMinutes(10);
     private final Map<String, Bucket> buckets = new HashMap<>();
     private final Clock clock;
+    private final int limit;
 
-    PublicApplicationRateLimiter() {
-        this(Clock.systemUTC());
+    @Autowired
+    PublicApplicationRateLimiter(
+            @Value("${ats.application.rate-limit.limit:10}") int limit) {
+        this(Clock.systemUTC(), limit);
     }
 
     PublicApplicationRateLimiter(Clock clock) {
+        this(clock, LIMIT);
+    }
+
+    PublicApplicationRateLimiter(Clock clock, int limit) {
+        if (limit < 1 || limit > 10_000) {
+            throw new IllegalArgumentException("rate limit 1..10000 olmalı");
+        }
         this.clock = clock;
+        this.limit = limit;
     }
 
     synchronized boolean allow(String remoteAddress, String jobSlug) {
@@ -44,7 +57,7 @@ final class PublicApplicationRateLimiter {
                 ? new Bucket(now, 1)
                 : new Bucket(current.startedAt(), current.count() + 1);
         buckets.put(key, result);
-        return result.count() <= LIMIT;
+        return result.count() <= limit;
     }
 
     private static String sha256(String value) {

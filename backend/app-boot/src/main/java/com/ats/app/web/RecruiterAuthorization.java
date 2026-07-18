@@ -30,7 +30,10 @@ final class RecruiterAuthorization {
         JOB_MANAGE,
         JOB_PUBLISH,
         APPLICATION_VIEW,
-        APPLICATION_MANAGE
+        APPLICATION_MANAGE,
+        INTERVIEW_VIEW,
+        INTERVIEW_MANAGE,
+        SCORECARD_WRITE
     }
 
     private final RestClient client;
@@ -123,13 +126,14 @@ final class RecruiterAuthorization {
         String moduleGrant = textual(modules.path("ATS"));
         if ("DENY".equals(moduleGrant)) return false;
 
-        if (permission == Permission.JOB_VIEW || permission == Permission.APPLICATION_VIEW) {
+        if (permission == Permission.JOB_VIEW || permission == Permission.APPLICATION_VIEW
+                || permission == Permission.INTERVIEW_VIEW) {
             return Set.of("VIEW", "MANAGE", "ALLOW").contains(moduleGrant);
         }
 
         String actionKey = switch (permission) {
             case JOB_MANAGE, JOB_PUBLISH -> "ATS_JOB_MANAGE";
-            case APPLICATION_MANAGE -> "ATS_APPLICATION_MANAGE";
+            case APPLICATION_MANAGE, INTERVIEW_MANAGE, SCORECARD_WRITE -> "ATS_APPLICATION_MANAGE";
             default -> "";
         };
         String actionGrant = textual(actions.path(actionKey));
@@ -147,8 +151,9 @@ final class RecruiterAuthorization {
                     || names.contains("JOB_PUBLISH");
             case JOB_MANAGE -> names.contains("JOB_WRITE");
             case JOB_PUBLISH -> names.contains("JOB_PUBLISH");
-            case APPLICATION_VIEW -> names.contains("APPLICATION_READ");
-            case APPLICATION_MANAGE -> names.contains("APPLICATION_STATUS_WRITE");
+            case APPLICATION_VIEW, INTERVIEW_VIEW -> names.contains("APPLICATION_READ");
+            case APPLICATION_MANAGE, INTERVIEW_MANAGE, SCORECARD_WRITE ->
+                    names.contains("APPLICATION_STATUS_WRITE");
         };
     }
 

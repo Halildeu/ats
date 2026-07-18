@@ -100,6 +100,8 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/careers/*/jobs/*/resume-imports").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/applications/*/interviews").permitAll()
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/v1/candidate/applications/*/withdraw").permitAll()
                         .requestMatchers(HttpMethod.GET,
@@ -119,6 +121,17 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/recruiter/applications/*/evaluations")
                             .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/recruiter/applications/*/interviews",
+                                "/api/v1/recruiter/applications/*/interviews/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/interviews",
+                                "/api/v1/recruiter/applications/*/interviews/*/transitions")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/recruiter/applications/*/interviews/*")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
                                 "/api/v1/recruiter/jobs/*")
                             .access(tenantAuthenticated)
@@ -130,6 +143,10 @@ class SecurityConfig {
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/workspace")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/scorecards")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
                             .hasAuthority("RECORDING_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/transcribe")

@@ -310,6 +310,13 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 }
                 insertEvent(c, command.tenantId(), UUID.fromString(current.applicationId()),
                         current.status(), command.toStatus(), command.actorId().value(), command.occurredAt());
+                if (command.toStatus() == ApplicationStatus.REJECTED
+                        || command.toStatus() == ApplicationStatus.WITHDRAWN) {
+                    cancelScheduledInterviews(c, command.tenantId(),
+                            UUID.fromString(current.applicationId()), command.actorId().value(),
+                            command.occurredAt(), "Başvuru " + command.toStatus().name()
+                                    + " durumuna geçti");
+                }
                 c.commit();
                 Outcome<CandidateApplication> updated = findByApplicationId(
                         command.tenantId(), current.applicationId());
@@ -357,6 +364,9 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 updateStatus(c, current, ApplicationStatus.WITHDRAWN, occurredAt);
                 insertEvent(c, current.tenantId(), UUID.fromString(current.applicationId()),
                         current.status(), ApplicationStatus.WITHDRAWN, "candidate:self", occurredAt);
+                cancelScheduledInterviews(c, current.tenantId(),
+                        UUID.fromString(current.applicationId()), "candidate:self", occurredAt,
+                        "Aday başvurusunu geri çekti");
                 c.commit();
                 Outcome<CandidateApplication> updated = findByApplicationId(
                         current.tenantId(), current.applicationId());
@@ -474,6 +484,35 @@ public final class PostgresApplicationStore implements ApplicationStore {
             if (ps.executeUpdate() != 1) {
                 throw new SQLException("application transition row-lock invariant", "23514");
             }
+        }
+    }
+
+    private static void cancelScheduledInterviews(
+            Connection c, TenantId tenantId, UUID applicationId, String actorRef,
+            String occurredAt, String reason) throws SQLException {
+        String sql = """
+                WITH cancelled AS (
+                    UPDATE ats_interview
+                       SET status='CANCELLED', version=version+1, updated_at=?
+                     WHERE tenant_id=? AND application_id=? AND status='SCHEDULED'
+                     RETURNING tenant_id, interview_id, version, starts_at, ends_at,
+                               time_zone, mode, location
+                )
+                INSERT INTO ats_interview_schedule_revision
+                    (tenant_id, interview_id, version, starts_at, ends_at, time_zone,
+                     mode, location, status, reason, actor_ref, occurred_at)
+                SELECT tenant_id, interview_id, version, starts_at, ends_at, time_zone,
+                       mode, location, 'CANCELLED', ?, ?, ?
+                  FROM cancelled
+                """;
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setTimestamp(1, timestamp(occurredAt));
+            ps.setString(2, tenantId.value());
+            ps.setObject(3, applicationId);
+            ps.setString(4, reason);
+            ps.setString(5, actorRef);
+            ps.setTimestamp(6, timestamp(occurredAt));
+            ps.executeUpdate();
         }
     }
 
