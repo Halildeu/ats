@@ -29,6 +29,8 @@ import com.ats.ingest.IngestService;
 import com.ats.ingest.LocalPatternScanAdapter;
 import com.ats.ingest.MalwareScanPort;
 import com.ats.ingest.ObjectStorePort;
+import com.ats.interview.InterviewStore;
+import com.ats.interview.InterviewWorkspaceService;
 import com.ats.ops.OperationalEventSink;
 import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
@@ -40,6 +42,7 @@ import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
 import com.ats.persistence.PostgresApplicationStore;
 import com.ats.persistence.PostgresJobPostingStore;
+import com.ats.persistence.PostgresInterviewStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
@@ -176,6 +179,16 @@ class WiringConfig {
     @Bean
     JobPostingService jobPostingService(JobPostingStore store) {
         return new JobPostingService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    InterviewStore interviewStore(DataSource ds, Flyway flyway) {
+        return new PostgresInterviewStore(ds);
+    }
+
+    @Bean
+    InterviewWorkspaceService interviewWorkspaceService(InterviewStore store) {
+        return new InterviewWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
     }
 
     // --- ingest ---

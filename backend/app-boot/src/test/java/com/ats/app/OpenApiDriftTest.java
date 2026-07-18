@@ -339,6 +339,77 @@ class OpenApiDriftTest {
                         .path("properties").path("toStatus").path("enum")));
     }
 
+    @org.junit.jupiter.api.Test
+    void interview_contract_is_strict_candidate_safe_and_human_controlled() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode paths = snap.path("paths");
+        com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
+
+        com.fasterxml.jackson.databind.JsonNode create = paths
+                .path("/api/v1/recruiter/applications/{publicRef}/interviews").path("post");
+        com.fasterxml.jackson.databind.JsonNode reschedule = paths
+                .path("/api/v1/recruiter/applications/{publicRef}/interviews/{interviewId}")
+                .path("put");
+        com.fasterxml.jackson.databind.JsonNode transition = paths
+                .path("/api/v1/recruiter/applications/{publicRef}/interviews/{interviewId}/transitions")
+                .path("post");
+        com.fasterxml.jackson.databind.JsonNode scorecard = paths
+                .path("/api/v1/interviews/{interviewId}/scorecards").path("post");
+        for (com.fasterxml.jackson.databind.JsonNode operation
+                : java.util.List.of(create, reschedule, transition, scorecard)) {
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    hasRequiredParameter(operation, "X-ATS-Idempotency-Key"), operation.toString());
+            org.junit.jupiter.api.Assertions.assertTrue(operation.path("responses").has("409"),
+                    operation.toString());
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(create.path("responses").has("201"));
+        org.junit.jupiter.api.Assertions.assertTrue(scorecard.path("responses").has("201"));
+        org.junit.jupiter.api.Assertions.assertTrue(create.path("responses").path("201")
+                .path("content").path("*/*").path("schema").path("$ref").asText()
+                .endsWith("/InterviewWorkspaceResponse"));
+        org.junit.jupiter.api.Assertions.assertTrue(scorecard.path("responses").path("201")
+                .path("content").path("*/*").path("schema").path("$ref").asText()
+                .endsWith("/InterviewScorecardResponse"));
+
+        com.fasterxml.jackson.databind.JsonNode candidate = paths
+                .path("/api/v1/candidate/applications/{publicRef}/interviews").path("get");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                hasRequiredParameter(candidate, "X-ATS-Candidate-Access"));
+        com.fasterxml.jackson.databind.JsonNode candidateProperties = schemas
+                .path("CandidateInterviewResponse").path("properties");
+        for (String internal : java.util.List.of(
+                "participants", "criteria", "scorecards", "candidateName", "actorRef", "reason")) {
+            org.junit.jupiter.api.Assertions.assertFalse(candidateProperties.has(internal), internal);
+        }
+
+        for (String strict : java.util.List.of(
+                "InterviewCreateRequest", "InterviewRescheduleRequest",
+                "InterviewTransitionRequest", "InterviewScorecardRequest",
+                "InterviewWorkspaceResponse", "InterviewScorecardResponse",
+                "CandidateInterviewResponse")) {
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    schemas.path(strict).path("additionalProperties").asBoolean(true), strict);
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(
+                textValues(schemas.path("InterviewCreateRequest").path("required"))
+                        .containsAll(java.util.Set.of("participants", "criteria")));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                textValues(schemas.path("InterviewScorecardRequest").path("required"))
+                        .contains("ratings"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of("COMPLETED", "CANCELLED"),
+                textValues(schemas.path("InterviewTransitionRequest")
+                        .path("properties").path("target").path("enum")));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of("structured-interview-v1"),
+                textValues(schemas.path("InterviewScorecardRequest")
+                        .path("properties").path("policyVersion").path("enum")));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                schemas.path("TransitionBody").path("properties").has("caseKey"),
+                "interview DTO review TransitionBody'yi gölgelememeli");
+    }
+
     private static boolean hasRequiredParameter(
             com.fasterxml.jackson.databind.JsonNode operation, String name) {
         return java.util.stream.StreamSupport.stream(
