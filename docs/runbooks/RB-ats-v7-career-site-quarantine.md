@@ -25,6 +25,15 @@ Beklenen durum `status='PAUSED'`, `published=false`, `apply_enabled=false` olmal
 4. Recruiter, ürün arayüzünde karantinadaki ilanı kontrol eder ve `PAUSED -> PUBLISHED` geçişini yapar. Doğrudan SQL ile status/published alanı değiştirilmez.
 5. Canonical `/careers/{publicHandle}/jobs/{slug}` yolu, aday başvuru sonucu ve recruiter havuzu test ortamında doğrulanır.
 
+## Site deactivation / handle rotation
+
+`active=false` hem canonical kariyer yolunu hem geriye-uyumlu `/jobs` alias'ını ve yeni başvuru kabulünü fail-closed gizler. Bu nedenle canlı siteyi doğrudan kapatıp sonra handle hazırlama sırası kullanılmaz.
+
+1. Yeni handle/değişiklik ayrı, doğrulanmış bir değişiklik olarak hazırlanır; mevcut active mapping ve ilanlar önceden envanterlenir.
+2. Deactivation öncesi bakım/iletişim kararı ve rollback sahibi kaydedilir.
+3. Değişiklikten hemen sonra canonical katalog, legacy alias, başvuru ve recruiter havuzu birlikte doğrulanır.
+4. Doğrulama başarısızsa eski mapping yeniden active edilir; ilan status'u SQL ile zorla değiştirilmez.
+
 Örnek provision kalıbı; değerler operator tarafından doğrulanmadan çalıştırılmaz:
 
 ```sql

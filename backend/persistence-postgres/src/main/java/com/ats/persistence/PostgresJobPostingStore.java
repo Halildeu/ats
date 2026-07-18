@@ -266,6 +266,11 @@ public final class PostgresJobPostingStore implements JobPostingStore {
             if (ps.executeUpdate() == 1) return null;
         }
 
+        // PostgreSQL resolves an uncommitted unique-key/speculative-insert
+        // conflict before ON CONFLICT DO NOTHING returns zero. The winning
+        // command also binds its response snapshot before committing the same
+        // transaction, so the SELECT below cannot observe a legitimate
+        // half-completed row; NULL here is durable corruption and fails closed.
         String select = """
                 SELECT request_digest, job_id, response_version,
                        response_snapshot ->> 'tenantId' AS snapshot_tenant_id,

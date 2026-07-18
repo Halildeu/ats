@@ -205,6 +205,31 @@ class PostgresJobPostingStoreTest {
                 "rolling writer transition'ı audit zincirinde görünür");
 
         try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                UPDATE ats_job_posting SET location=?
+                 WHERE tenant_id=? AND job_id=?
+                """)) {
+            ps.setString(2, TENANT.value());
+            ps.setString(3, legacy.jobId());
+            ps.setString(1, "Ankara");
+            assertEquals(1, ps.executeUpdate());
+            ps.setString(1, "İzmir");
+            assertEquals(1, ps.executeUpdate());
+        }
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                SELECT count(DISTINCT request_digest)
+                  FROM ats_job_posting_event
+                 WHERE tenant_id=? AND job_id=? AND event_type='UPDATED'
+                """)) {
+            ps.setString(1, TENANT.value());
+            ps.setString(2, legacy.jobId());
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(2, rs.getLong(1),
+                        "legacy içerik değişiklikleri forensic digest'te ayırt edilir");
+            }
+        }
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
                 INSERT INTO ats_job_posting
                     (tenant_id, job_id, slug, title, team, location, mode,
                      employment_type, summary, highlights, published)
@@ -267,6 +292,30 @@ class PostgresJobPostingStoreTest {
             ps.setString(1, OTHER.value());
             ps.setString(2, "job_" + "N".repeat(24));
             assertThrows(SQLException.class, ps::executeUpdate);
+        }
+
+        String directStatusJob = "job_" + "S".repeat(24);
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published)
+                VALUES (?, ?, 'no-site-direct-status', 'No Site Direct Status', 'Legacy',
+                        'Türkiye', 'Uzaktan', 'Tam zamanlı',
+                        'Doğrudan status değişikliği defense-in-depth testi.',
+                        '[]'::jsonb, false)
+                """)) {
+            ps.setString(1, OTHER.value());
+            ps.setString(2, directStatusJob);
+            assertEquals(1, ps.executeUpdate());
+        }
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                UPDATE ats_job_posting SET status='PUBLISHED'
+                 WHERE tenant_id=? AND job_id=?
+                """)) {
+            ps.setString(1, OTHER.value());
+            ps.setString(2, directStatusJob);
+            assertThrows(SQLException.class, ps::executeUpdate,
+                    "direct canonical status write da active career-site olmadan fail-closed kalır");
         }
 
         String jobId = "job_" + "T".repeat(24);

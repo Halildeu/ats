@@ -255,7 +255,9 @@ BEGIN
         || NEW.version::text), 1, 24);
     generated_digest := encode(sha256(convert_to(
         concat_ws('|', TG_OP, NEW.tenant_id, NEW.job_id, NEW.status,
-                  NEW.version::text, NEW.slug, NEW.title), 'UTF8')), 'hex');
+                  NEW.version::text, NEW.slug, NEW.title, NEW.team, NEW.location,
+                  NEW.mode, NEW.employment_type, NEW.summary, NEW.highlights::text,
+                  NEW.application_fields::text, NEW.notice_version), 'UTF8')), 'hex');
 
     INSERT INTO ats_job_posting_event
         (tenant_id, job_id, event_type, from_status, to_status, resulting_version,

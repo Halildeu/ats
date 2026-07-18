@@ -101,6 +101,11 @@ class RestApiSecurityTest {
                 new HttpEntity<>("{\"subjectRef\":\"s\",\"state\":\"GRANTED\"}", jsonOnly()), String.class);
         assertEquals(401, noToken.getStatusCode().value());
 
+        ResponseEntity<String> recruiterNoToken = rest.getForEntity(
+                "/api/v1/recruiter/jobs", String.class);
+        assertEquals(401, recruiterNoToken.getStatusCode().value(),
+                "tenantAuthenticated auth-manager token'sız istekte 500 üretmez");
+
         ResponseEntity<String> health = rest.getForEntity("/healthz", String.class);
         assertEquals(200, health.getStatusCode().value());
     }
