@@ -97,9 +97,15 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/careers/*/jobs/*/applications").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications")
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/candidate/applications/*/withdraw").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications",
+                                "/api/v1/recruiter/applications/*")
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/applications/*/status")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/evaluations")
                             .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
                                 "/api/v1/recruiter/jobs/*")

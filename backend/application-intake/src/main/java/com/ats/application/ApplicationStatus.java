@@ -1,11 +1,14 @@
 package com.ats.application;
 
 /**
- * İlk müşteri-dikey diliminin insan kontrollü, kapalı durum kümesi.
- * Ret/teklif/otomatik karar bilerek bu kümede değildir.
+ * İnsan kontrollü, kapalı başvuru durum kümesi. Mülakat ve teklif durumları
+ * kendi domain servisleri gelmeden bu genel application-status ucundan
+ * üretilemez; otomatik karar hiçbir durumda yoktur.
  */
 public enum ApplicationStatus {
     SUBMITTED,
     UNDER_REVIEW,
-    INTERVIEW_PENDING
+    INTERVIEW_PENDING,
+    REJECTED,
+    WITHDRAWN
 }

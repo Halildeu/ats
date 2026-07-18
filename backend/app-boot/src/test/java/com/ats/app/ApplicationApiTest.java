@@ -137,7 +137,15 @@ class ApplicationApiTest {
         assertEquals(200, inbox.getStatusCode().value(), inbox.getBody());
         JsonNode inboxBody = objectMapper.readTree(inbox.getBody());
         assertEquals(1, inboxBody.path("total").asInt());
-        assertEquals("Deniz Sentetik", inboxBody.path("items").get(0).path("fullName").asText());
+        JsonNode summaryItem = inboxBody.path("items").get(0);
+        assertEquals("Deniz Sentetik", summaryItem.path("fullName").asText());
+        assertFalse(summaryItem.has("phone"));
+        assertFalse(summaryItem.has("linkedIn"));
+        assertFalse(summaryItem.has("portfolio"));
+        assertFalse(summaryItem.has("summary"));
+        assertFalse(summaryItem.has("experience"));
+        assertFalse(summaryItem.has("education"));
+        assertFalse(summaryItem.has("note"), "inbox projection gereksiz PII taşımamalı");
 
         String otherTenant = token("other-tenant", "ats.application.read", "other-recruiter");
         JsonNode otherInbox = objectMapper.readTree(rest.exchange(
@@ -290,6 +298,167 @@ class ApplicationApiTest {
         assertEquals(201, accepted.getStatusCode().value(), accepted.getBody());
         assertEquals(1, scalar("SELECT count(*) FROM ats_application WHERE job_id = ?",
                 "restricted-fields-job"));
+    }
+
+    @Test
+    void recruiter_detail_immutable_human_evaluation_history_and_candidate_withdrawal_are_real()
+            throws Exception {
+        String acceptedAt = Instant.now().toString();
+        HttpHeaders submitHeaders = json();
+        submitHeaders.set("X-ATS-Idempotency-Key", "pipeline-submit-key-001");
+        submitHeaders.set("X-ATS-Candidate-Access", "E".repeat(43));
+        ResponseEntity<String> submit = rest.exchange(
+                "/api/v1/jobs/senior-frontend-developer/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Pipeline Adayı", acceptedAt), submitHeaders), String.class);
+        assertEquals(201, submit.getStatusCode().value(), submit.getBody());
+        String publicRef = objectMapper.readTree(submit.getBody()).path("publicRef").asText();
+
+        HttpHeaders reader = bearer(token(TENANT, "ats.application.read", "pipeline-reader"));
+        ResponseEntity<String> detail = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(reader), String.class);
+        assertEquals(200, detail.getStatusCode().value(), detail.getBody());
+        JsonNode detailBody = objectMapper.readTree(detail.getBody());
+        assertEquals("Pipeline Adayı", detailBody.path("application").path("fullName").asText());
+        assertEquals(1, detailBody.path("history").size());
+        assertEquals("candidate:self", detailBody.path("history").get(0).path("actorRef").asText());
+        assertEquals(0, detailBody.path("evaluations").size());
+        assertEquals("no-store", detail.getHeaders().getCacheControl());
+
+        assertEquals(404, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(bearer(token("other-tenant", "ats.application.read", "other"))),
+                String.class).getStatusCode().value(), "cross-tenant detail existence sızdırmaz");
+
+        String evaluationPayload = objectMapper.writeValueAsString(Map.of(
+                "policyVersion", "structured-evaluation-v1",
+                "jobRelatednessConfirmed", true,
+                "recommendation", "ADVANCE",
+                "criteria", List.of(Map.of(
+                        "key", "role_clarity",
+                        "label", "Rol netliği",
+                        "rating", 4,
+                        "evidence", "Aday sentetik ürün örneğinde kullanıcı sonucunu açıkça anlattı.")),
+                "summary", "İnsan değerlendirmesi tamamlandı; otomatik aşama değişikliği yapılmayacak."));
+        HttpHeaders evaluator = bearer(token(
+                TENANT, "ats.application.status.write", "pipeline-evaluator"));
+        evaluator.setContentType(MediaType.APPLICATION_JSON);
+        evaluator.set("X-ATS-Idempotency-Key", "pipeline-evaluation-key-001");
+        ResponseEntity<String> evaluated = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(evaluationPayload, evaluator), String.class);
+        assertEquals(201, evaluated.getStatusCode().value(), evaluated.getBody());
+        JsonNode evaluation = objectMapper.readTree(evaluated.getBody());
+        String evaluationId = evaluation.path("evaluationId").asText();
+        assertTrue(evaluationId.startsWith("eval_"));
+        assertEquals(1, evaluation.path("revision").asInt());
+        assertEquals("structured-evaluation-v1", evaluation.path("policyVersion").asText());
+        assertTrue(evaluation.path("jobRelatednessConfirmed").asBoolean());
+
+        var unconfirmedBody = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(evaluationPayload);
+        unconfirmedBody.put("jobRelatednessConfirmed", false);
+        HttpHeaders unconfirmedHeaders = bearer(token(
+                TENANT, "ats.application.status.write", "pipeline-evaluator"));
+        unconfirmedHeaders.setContentType(MediaType.APPLICATION_JSON);
+        unconfirmedHeaders.set("X-ATS-Idempotency-Key", "pipeline-evaluation-unconfirmed");
+        assertEquals(400, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(unconfirmedBody.toString(), unconfirmedHeaders), String.class)
+                .getStatusCode().value());
+
+        ResponseEntity<String> replay = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(evaluationPayload, evaluator), String.class);
+        assertEquals(200, replay.getStatusCode().value(), replay.getBody());
+        assertEquals("true", replay.getHeaders().getFirst("X-ATS-Replay"));
+        assertEquals(evaluationId, objectMapper.readTree(replay.getBody()).path("evaluationId").asText());
+
+        String conflictingPayload = evaluationPayload.replace("ADVANCE", "HOLD");
+        assertEquals(409, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(conflictingPayload, evaluator), String.class)
+                .getStatusCode().value());
+
+        HttpHeaders secondRevisionHeaders = bearer(token(
+                TENANT, "ats.application.status.write", "pipeline-evaluator"));
+        secondRevisionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        secondRevisionHeaders.set("X-ATS-Idempotency-Key", "pipeline-evaluation-key-002");
+        ResponseEntity<String> missingPredecessor = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(evaluationPayload, secondRevisionHeaders), String.class);
+        assertEquals(409, missingPredecessor.getStatusCode().value());
+        assertEquals("PREDECESSOR_CONFLICT",
+                objectMapper.readTree(missingPredecessor.getBody()).path("error").asText());
+
+        var secondBody = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(evaluationPayload);
+        secondBody.put("predecessorEvaluationId", evaluationId);
+        ResponseEntity<String> secondRevision = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/evaluations", HttpMethod.POST,
+                new HttpEntity<>(secondBody.toString(), secondRevisionHeaders), String.class);
+        assertEquals(201, secondRevision.getStatusCode().value(), secondRevision.getBody());
+        assertEquals(2, objectMapper.readTree(secondRevision.getBody()).path("revision").asInt());
+
+        JsonNode afterEvaluation = objectMapper.readTree(rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(reader), String.class).getBody());
+        assertEquals("SUBMITTED", afterEvaluation.path("application").path("status").asText(),
+                "scorecard otomatik stage değiştirmez");
+        assertEquals(2, afterEvaluation.path("evaluations").size());
+
+        HttpHeaders transitionHeaders = bearer(token(
+                TENANT, "ats.application.status.write", "pipeline-evaluator"));
+        transitionHeaders.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(200, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
+                new HttpEntity<>("{\"expectedVersion\":0,\"toStatus\":\"UNDER_REVIEW\"}",
+                        transitionHeaders), String.class).getStatusCode().value());
+        assertEquals(200, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
+                new HttpEntity<>("{\"expectedVersion\":1,\"toStatus\":\"REJECTED\"}",
+                        transitionHeaders), String.class).getStatusCode().value());
+
+        HttpHeaders candidate = new HttpHeaders();
+        candidate.set("X-ATS-Candidate-Access", "E".repeat(43));
+        ResponseEntity<String> candidateStatus = rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(candidate), String.class);
+        JsonNode candidateBody = objectMapper.readTree(candidateStatus.getBody());
+        assertEquals("REJECTED", candidateBody.path("status").asText());
+        assertEquals("NONE", candidateBody.path("nextAction").asText());
+        assertFalse(candidateBody.path("withdrawalAllowed").asBoolean());
+        assertEquals(3, candidateBody.path("history").size());
+        assertFalse(candidateBody.has("evaluations"));
+        assertFalse(candidateStatus.getBody().contains("pipeline-evaluator"));
+        assertEquals(409, rest.exchange(
+                "/api/v1/candidate/applications/" + publicRef + "/withdraw", HttpMethod.PUT,
+                new HttpEntity<>(candidate), String.class).getStatusCode().value());
+
+        HttpHeaders withdrawSubmit = json();
+        withdrawSubmit.set("X-ATS-Idempotency-Key", "pipeline-withdraw-submit-01");
+        withdrawSubmit.set("X-ATS-Candidate-Access", "F".repeat(43));
+        ResponseEntity<String> withdrawReceipt = rest.exchange(
+                "/api/v1/jobs/senior-frontend-developer/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Geri Çeken Aday", acceptedAt), withdrawSubmit), String.class);
+        String withdrawRef = objectMapper.readTree(withdrawReceipt.getBody()).path("publicRef").asText();
+        HttpHeaders withdrawCandidate = new HttpHeaders();
+        withdrawCandidate.set("X-ATS-Candidate-Access", "F".repeat(43));
+        ResponseEntity<String> withdrawn = rest.exchange(
+                "/api/v1/candidate/applications/" + withdrawRef + "/withdraw", HttpMethod.PUT,
+                new HttpEntity<>(withdrawCandidate), String.class);
+        assertEquals(200, withdrawn.getStatusCode().value(), withdrawn.getBody());
+        assertEquals("WITHDRAWN", objectMapper.readTree(withdrawn.getBody()).path("status").asText());
+        ResponseEntity<String> withdrawnReplay = rest.exchange(
+                "/api/v1/candidate/applications/" + withdrawRef + "/withdraw", HttpMethod.PUT,
+                new HttpEntity<>(withdrawCandidate), String.class);
+        assertEquals(200, withdrawnReplay.getStatusCode().value());
+        assertEquals("true", withdrawnReplay.getHeaders().getFirst("X-ATS-Replay"));
+
+        assertEquals(2, scalar(
+                "SELECT count(*) FROM ats_application_evaluation WHERE application_id ="
+                        + " (SELECT application_id FROM ats_application WHERE public_ref = ?)",
+                publicRef));
     }
 
     @Test

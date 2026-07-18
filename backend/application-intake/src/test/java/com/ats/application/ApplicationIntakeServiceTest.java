@@ -7,6 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ApplicationStore.ApplicationPage;
 import com.ats.application.ApplicationStore.CandidateStatusView;
+import com.ats.application.ApplicationStore.EvaluationCommand;
+import com.ats.application.ApplicationStore.EvaluationResult;
+import com.ats.application.ApplicationStore.EvaluationState;
+import com.ats.application.ApplicationStore.RecruiterApplicationDetail;
 import com.ats.application.ApplicationStore.SubmitCommand;
 import com.ats.application.ApplicationStore.SubmitResult;
 import com.ats.application.ApplicationStore.SubmitState;
@@ -14,6 +18,7 @@ import com.ats.application.ApplicationStore.TransitionCommand;
 import com.ats.application.ApplicationStore.TransitionResult;
 import com.ats.application.ApplicationStore.TransitionState;
 import com.ats.kernel.Ids.TenantId;
+import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
 import java.security.SecureRandom;
@@ -115,6 +120,75 @@ class ApplicationIntakeServiceTest {
                 ApplicationStatus.UNDER_REVIEW, ApplicationStatus.INTERVIEW_PENDING));
         assertFalse(ApplicationIntakeService.isAllowedTransition(
                 ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.SUBMITTED));
+        assertTrue(ApplicationIntakeService.isAllowedTransition(
+                ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED));
+        assertTrue(ApplicationIntakeService.isAllowedTransition(
+                ApplicationStatus.INTERVIEW_PENDING, ApplicationStatus.WITHDRAWN));
+        assertFalse(ApplicationIntakeService.isAllowedTransition(
+                ApplicationStatus.REJECTED, ApplicationStatus.UNDER_REVIEW));
+    }
+
+    @Test
+    void structured_human_evaluation_is_normalized_but_never_advances_status() {
+        CapturingStore store = new CapturingStore();
+        var submission = new ApplicationIntakeService.EvaluationSubmission(
+                ApplicationIntakeService.EVALUATION_POLICY_VERSION, true,
+                ApplicationEvaluation.Recommendation.ADVANCE,
+                List.of(new ApplicationEvaluation.Criterion(
+                        "role_clarity", " Rol netliği ", 4,
+                        " Aday ürün problemi ve kullanıcı sonucunu somut örnekle açıkladı. ")),
+                " İnsan değerlendirmesi tamamlandı; aşama ayrı bir eylemle değiştirilecek. ",
+                null);
+
+        Outcome<EvaluationResult> out = service(store).submitEvaluation(
+                new TenantId("test-tenant"), new ActorId("recruiter-1"),
+                "app_abcdefghijklmnopqrstuvwx", "eval-idem-key-1234", submission);
+
+        assertTrue(out.isOk());
+        assertNotNull(store.evaluationCommand);
+        assertEquals("Rol netliği", store.evaluationCommand.criteria().getFirst().label());
+        assertEquals(4, store.evaluationCommand.criteria().getFirst().rating());
+        assertEquals(64, store.evaluationCommand.requestDigest().length());
+        assertEquals(ApplicationIntakeService.EVALUATION_POLICY_VERSION,
+                store.evaluationCommand.policyVersion());
+        assertTrue(store.evaluationCommand.jobRelatednessConfirmed());
+        assertTrue(store.evaluationCommand.evaluationId().startsWith("eval_"));
+        assertEquals(null, store.transitionCommand,
+                "evaluation submit otomatik application transition üretmemeli");
+    }
+
+    @Test
+    void evaluation_rejects_duplicate_criteria_and_candidate_withdraw_is_credential_bound() {
+        CapturingStore store = new CapturingStore();
+        var duplicate = new ApplicationIntakeService.EvaluationSubmission(
+                ApplicationIntakeService.EVALUATION_POLICY_VERSION, true,
+                ApplicationEvaluation.Recommendation.HOLD,
+                List.of(
+                        new ApplicationEvaluation.Criterion(
+                                "communication", "İletişim", 2, "İş örneği yeterince açık değildi."),
+                        new ApplicationEvaluation.Criterion(
+                                "communication", "İletişim", 3, "İkinci kanıt aynı anahtarı kullanıyor.")),
+                "İnsan değerlendirmesi özeti yeterli uzunluktadır.", null);
+        assertFalse(service(store).submitEvaluation(
+                new TenantId("test-tenant"), new ActorId("recruiter-1"),
+                "app_abcdefghijklmnopqrstuvwx", "eval-idem-key-1234", duplicate).isOk());
+
+        var unconfirmed = new ApplicationIntakeService.EvaluationSubmission(
+                ApplicationIntakeService.EVALUATION_POLICY_VERSION, false,
+                ApplicationEvaluation.Recommendation.HOLD,
+                List.of(new ApplicationEvaluation.Criterion(
+                        "communication", "İletişim", 3,
+                        "Değerlendirme yalnız işle ilgili kanıt içermelidir.")),
+                "İş ilişkisi onayı olmadan değerlendirme kaydedilemez.", null);
+        assertFalse(service(store).submitEvaluation(
+                new TenantId("test-tenant"), new ActorId("recruiter-1"),
+                "app_abcdefghijklmnopqrstuvwx", "eval-idem-key-5678", unconfirmed).isOk());
+
+        service(store).withdraw("app_abcdefghijklmnopqrstuvwx", CANDIDATE_ACCESS);
+        assertEquals("app_abcdefghijklmnopqrstuvwx", store.withdrawPublicRef);
+        assertNotNull(store.withdrawDigest);
+        assertEquals(64, store.withdrawDigest.length());
+        assertFalse(store.withdrawDigest.equals(CANDIDATE_ACCESS));
     }
 
     @Test
@@ -144,6 +218,10 @@ class ApplicationIntakeServiceTest {
 
     private static final class CapturingStore implements ApplicationStore {
         SubmitCommand command;
+        TransitionCommand transitionCommand;
+        EvaluationCommand evaluationCommand;
+        String withdrawPublicRef;
+        String withdrawDigest;
         SubmitState submitState = SubmitState.CREATED;
 
         @Override public Outcome<List<JobPosting>> listPublishedJobs(TenantId publicTenantId) {
@@ -177,8 +255,28 @@ class ApplicationIntakeServiceTest {
                 TenantId tenantId, String jobSlug, ApplicationStatus status, int page, int size) {
             return Outcome.ok(new ApplicationPage(List.of(), page, size, 0));
         }
+        @Override public Outcome<RecruiterApplicationDetail> findRecruiterApplication(
+                TenantId tenantId, String publicRef) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "yok");
+        }
         @Override public Outcome<TransitionResult> transition(TransitionCommand command) {
+            transitionCommand = command;
             return Outcome.ok(new TransitionResult(TransitionState.NOT_FOUND, null));
+        }
+        @Override public Outcome<TransitionResult> withdrawCandidate(
+                String publicRef, String candidateAccessDigest, String occurredAt) {
+            withdrawPublicRef = publicRef;
+            withdrawDigest = candidateAccessDigest;
+            return Outcome.ok(new TransitionResult(TransitionState.NOT_FOUND, null));
+        }
+        @Override public Outcome<EvaluationResult> submitEvaluation(EvaluationCommand command) {
+            evaluationCommand = command;
+            ApplicationEvaluation value = new ApplicationEvaluation(
+                    command.tenantId(), command.evaluationId(), command.publicRef(),
+                    command.actorId().value(), command.policyVersion(),
+                    command.jobRelatednessConfirmed(), command.recommendation(), command.criteria(),
+                    command.summary(), command.predecessorEvaluationId(), 1, command.occurredAt());
+            return Outcome.ok(new EvaluationResult(EvaluationState.CREATED, value));
         }
     }
 }
