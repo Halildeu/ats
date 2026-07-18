@@ -171,6 +171,28 @@ VALUES
     ('00000000-0000-0000-0000-000000000001', 'acik', 'Açık Kariyer', true,
      'migration:v7', 'migration:v7', now(), now());
 
+-- Do not silently carry a pre-V7 public job into a non-routable canonical
+-- PUBLISHED state. The migration intentionally fails closed so an operator
+-- must create/verify the tenant's durable public handle before retrying V7;
+-- inventing a public URL from tenant data would make routing and ownership
+-- ambiguous.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM ats_job_posting AS j
+          LEFT JOIN ats_career_site AS s
+            ON s.tenant_id = j.tenant_id AND s.active
+         WHERE j.status = 'PUBLISHED'
+           AND s.tenant_id IS NULL
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '23514',
+            MESSAGE = 'pre-V7 published job requires an active career site';
+    END IF;
+END;
+$$;
+
 CREATE TABLE ats_job_posting_event (
     event_id         BIGSERIAL   PRIMARY KEY,
     tenant_id        TEXT        NOT NULL,

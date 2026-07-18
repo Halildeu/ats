@@ -26,6 +26,7 @@ Full ATS'nin ilk gerçek müşterisi olan tenant yöneticisi, ayrı bir teknik k
   - `ATS_INTERVIEW_MANAGE`
   - `ATS_OFFER_MANAGE`
   - `ATS_RETENTION_EXECUTE`
+- Kanonik platform modelinde `ATS_JOB_MANAGE`, ilan içeriği ile yayın/pause/close yaşam döngüsünü birlikte yönetir; ayrı `ATS_JOB_PUBLISH` platform aksiyonu kurulmaz. Legacy test/rolling client-role ayrımı yalnız geçişte least-privilege negatiflerini korur ve ikinci kalıcı yetki otoritesi değildir.
 - `ATS:VIEW`, işe alım havuzunu salt-okur; `ATS:MANAGE` yönetim işlemlerini açar. Yıkıcı retention/silme işlemi yalnız `ATS_RETENTION_EXECUTE` ile yapılır; genel `MANAGE` bunu örtük vermez.
 - Platform shell görünürlüğü yalnız UX kapısıdır. ATS API her korumalı istekte aynı bearer kimliği için platform authorization projection/decision sonucunu doğrular. Karar servisi yoksa veya cevap bozuksa erişim fail-closed reddedilir; frontend görünürlüğü API yetkisi sayılmaz.
 - Geçiş dönemindeki `resource_access.ats-api.roles` scope-rolları yalnız açıkça `ATS_ALLOW_LEGACY_AUTHZ=true` verilen test/rolling-deploy profilinde kullanılabilir. Varsayılan ve production davranışı `false`/fail-closed'dur; yeni müşteri atamalarının otoritesi platform izin yazarıdır ve iki ayrı kalıcı rol kaynağı kurulmaz.
@@ -61,6 +62,7 @@ PAUSED --------------------> CLOSED
 
 - ATS-0018 gereği JPA/Hibernate/Spring Data eklenmez; persistence plain JDBC'dir.
 - `V7` additive ve rolling-compatible'dır: mevcut `published` kolonundan `status` backfill edilir; uygulama geçiş boyunca `published == (status == PUBLISHED)` invariantını dual-write eder. Legacy bridge, eski pod yazısında dahi `CLOSED/ARCHIVED` ilanı yeniden yayınlayamaz ve aktif career-site olmadan `PUBLISHED` üretemez; ihlal transaction'ı check-violation ile fail-closed keser.
+- V7 öncesinden gelen `published=true` satırın tenant'ında doğrulanmış aktif kariyer sitesi yoksa migration sentetik handle üretmez veya non-routable `PUBLISHED` satırı bırakmaz; fail-closed durur ve operatorün tenant handle'ını doğrulamasını ister.
 - Public okumalar `status/apply_enabled` otoritesine geçtikten ve rollback penceresi kanıtlandıktan sonra ayrı bir ileri migration eski `published` kolonunu kaldırabilir. Trigger veya gecelik reconcile ile iki kalıcı truth tutulmaz.
 - `ats_app` ilan için yalnız gerekli `SELECT/INSERT/UPDATE`, event/idempotency için gerekli dar yetkileri alır; ilan hard-delete yetkisi verilmez.
 
@@ -83,7 +85,7 @@ Mutasyonlar `X-ATS-Idempotency-Key` zorunlu başlığını kullanır. Güncellem
 
 ## Absorbe edilen ve reddedilen ikinci görüşler
 
-2026-07-18 canonical inceleme sırasının ilk turunda doğrudan Anthropic CLI ile exact `claude-opus-4-8`, content-addressed ve secret-taramalı exact-head kapsamına `REVISE` verdi. Eski pod'un `published=true` yazısıyla terminal ilanı yeniden yayınlayabilmesi veya aktif kariyer sitesi olmadan yayın oluşturabilmesi P1 olarak; public yol alias'larının ayrı rate-limit bucket'ları, recruiter mutasyonlarında pre-deserialization body limiti eksikliği ve tenant-geneli idempotency namespace'inin açık belgelenmemesi P2 olarak raporlandı. Bulgular aynı dilime absorbe edildi; yeni exact head için Claude Opus 4.8 -> MiniMax M3 -> Codex 5.6 SOL yeniden incelemesi tamamlanmadan bu dal merge-ready sayılmaz.
+2026-07-18 canonical inceleme sırasının ilk turunda doğrudan Anthropic CLI ile exact `claude-opus-4-8`, content-addressed ve secret-taramalı exact-head kapsamına `REVISE` verdi. Eski pod'un `published=true` yazısıyla terminal ilanı yeniden yayınlayabilmesi veya aktif kariyer sitesi olmadan yayın oluşturabilmesi P1 olarak; public yol alias'larının ayrı rate-limit bucket'ları, recruiter mutasyonlarında pre-deserialization body limiti eksikliği ve tenant-geneli idempotency namespace'inin açık belgelenmemesi P2 olarak raporlandı. Sonraki exact-head Claude turu P0/P1 olmadan `AGREE` verdi; kalan P2 migration backfill, replay timestamp biçimi ve kanonik job-manage/publish yetki semantiği de absorbe edildi. Bu değişiklikler yeni head ürettiği için Claude Opus 4.8 -> MiniMax M3 -> Codex 5.6 SOL incelemesi aynı yeni kapsam üzerinde yeniden tamamlanmadan dal merge-ready sayılmaz.
 
 Absorbe edilenler: platform kimlik otoritesini koruma, product-native admin UI, plain-JDBC CAS, create idempotency'sini CAS'tan ayırma, append-only lifecycle event, seed'siz ilan oluşturma, pause/resume/close ve mevcut başvuruları koruma; ayrıca platform PDP eksikliğinde legacy role'a sessiz düşüşü kaldırma, canonical kariyer handle'ını gerçekten tenant'a bağlama, role-separation negatiflerini genişletme, legacy rolling-deploy köprüsünü terminal durum ve aktif kariyer sitesi invariantlarıyla fail-closed kılma, public alias'ları tek rate-limit bucket'ında birleştirme ve recruiter mutasyonlarına gövde limiti uygulama.
 

@@ -41,6 +41,15 @@ class RecruiterAuthorizationTest {
         assertTrue(RecruiterAuthorization.projectionAllows(
                 moduleManage, RecruiterAuthorization.Permission.JOB_PUBLISH));
 
+        var canonicalJobManage = JSON.readTree("""
+                {"modules":{"ATS":"VIEW"},"actions":{"ATS_JOB_MANAGE":"ALLOW"}}
+                """);
+        assertTrue(RecruiterAuthorization.projectionAllows(
+                canonicalJobManage, RecruiterAuthorization.Permission.JOB_MANAGE));
+        assertTrue(RecruiterAuthorization.projectionAllows(
+                canonicalJobManage, RecruiterAuthorization.Permission.JOB_PUBLISH),
+                "canonical platform grant içerik ve yayın yaşam döngüsünü birlikte yönetir");
+
         var actionOnly = JSON.readTree("""
                 {"modules":{"ATS":"VIEW"},"actions":{"ATS_APPLICATION_MANAGE":"ALLOW"}}
                 """);

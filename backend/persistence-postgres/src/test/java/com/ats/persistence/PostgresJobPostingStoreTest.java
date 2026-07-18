@@ -82,6 +82,8 @@ class PostgresJobPostingStoreTest {
 
         var replayed = jobs.create(create).asOptional().orElseThrow();
         assertEquals(MutationState.REPLAYED, replayed.state());
+        assertEquals(created.job(), replayed.job(),
+                "idempotent create replay exact original response'u döndürür");
         assertEquals(1, eventCount(TENANT, jobId), "replay yeni event üretmez");
 
         CreateCommand conflictingRetry = new CreateCommand(
@@ -130,6 +132,8 @@ class PostgresJobPostingStoreTest {
 
         var lateUpdateReplay = jobs.update(update).asOptional().orElseThrow();
         assertEquals(MutationState.REPLAYED, lateUpdateReplay.state());
+        assertEquals(updated.job(), lateUpdateReplay.job(),
+                "idempotent update replay timestamp formatı dahil exact response döndürür");
         assertEquals(JobPostingStatus.DRAFT, lateUpdateReplay.job().status());
         assertEquals(1, lateUpdateReplay.job().version(),
                 "update retry sonraki transition'ları response'a sızdırmaz");
@@ -138,6 +142,8 @@ class PostgresJobPostingStoreTest {
                 TENANT, ACTOR, jobId, 1, JobPostingStatus.PUBLISHED,
                 "job-publish-pg-key1", "e".repeat(64), NOW)).asOptional().orElseThrow();
         assertEquals(MutationState.REPLAYED, latePublishReplay.state());
+        assertEquals(published.job(), latePublishReplay.job(),
+                "idempotent transition replay timestamp formatı dahil exact response döndürür");
         assertEquals(JobPostingStatus.PUBLISHED, latePublishReplay.job().status());
         assertEquals(2, latePublishReplay.job().version());
 
@@ -242,6 +248,45 @@ class PostgresJobPostingStoreTest {
         assertEquals(JobPostingStatus.ARCHIVED, archived.status());
         assertFalse(archived.applyEnabled());
         assertEquals(3, archived.version());
+    }
+
+    @Test
+    void v7_migration_fails_closed_for_preexisting_published_tenant_without_career_site()
+            throws Exception {
+        String schema = "job_migration_" + Long.toUnsignedString(System.nanoTime());
+        PGSimpleDataSource bootstrap = new PGSimpleDataSource();
+        bootstrap.setUrl(PG.getJdbcUrl());
+        bootstrap.setUser(PG.getUsername());
+        bootstrap.setPassword(PG.getPassword());
+        try (var c = bootstrap.getConnection(); var st = c.createStatement()) {
+            st.execute("CREATE SCHEMA " + schema);
+        }
+
+        PGSimpleDataSource migrationDs = new PGSimpleDataSource();
+        migrationDs.setUrl(PG.getJdbcUrl());
+        migrationDs.setUser(PG.getUsername());
+        migrationDs.setPassword(PG.getPassword());
+        migrationDs.setCurrentSchema(schema);
+        Flyway.configure().dataSource(migrationDs)
+                .schemas(schema).defaultSchema(schema).target("6").load().migrate();
+
+        try (var c = migrationDs.getConnection(); var ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published)
+                VALUES ('pre-v7-other-tenant', 'pre-v7-public-job', 'pre-v7-public',
+                        'Pre V7 Public', 'Legacy', 'Türkiye', 'Uzaktan', 'Tam zamanlı',
+                        'Kariyer sitesi projectionı olmayan eski yayın.', '[]'::jsonb, true)
+                """)) {
+            assertEquals(1, ps.executeUpdate());
+        }
+
+        var migration = Flyway.configure().dataSource(migrationDs)
+                .schemas(schema).defaultSchema(schema).load();
+        var failure = assertThrows(org.flywaydb.core.api.FlywayException.class,
+                migration::migrate);
+        assertTrue(failure.getMessage().contains("pre-V7 published job requires an active career site"),
+                "migration eksik public routing verisini sessizce kabul etmez");
     }
 
     private static Content content(String slug, String title) {

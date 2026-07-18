@@ -451,7 +451,8 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                     rs.getString("snapshot_notice_version"),
                     JobPostingStatus.valueOf(rs.getString("snapshot_status")),
                     rs.getBoolean("snapshot_apply_enabled"), rs.getInt("snapshot_version"),
-                    rs.getString("snapshot_created_at"), rs.getString("snapshot_updated_at"));
+                    normalizedInstant(rs, "snapshot_created_at"),
+                    normalizedInstant(rs, "snapshot_updated_at"));
         } catch (IllegalArgumentException ex) {
             throw new SQLException("idempotency snapshot bozuk", "23514", ex);
         }
@@ -493,6 +494,14 @@ public final class PostgresJobPostingStore implements JobPostingStore {
     private static Timestamp timestamp(String iso) { return Timestamp.from(Instant.parse(iso)); }
     private static String iso(ResultSet rs, String column) throws SQLException {
         return rs.getTimestamp(column).toInstant().toString();
+    }
+
+    private static String normalizedInstant(ResultSet rs, String column) throws SQLException {
+        try {
+            return Instant.parse(rs.getString(column)).toString();
+        } catch (IllegalArgumentException ex) {
+            throw new SQLException("idempotency snapshot timestamp bozuk", "23514", ex);
+        }
     }
 
     private record Replay(
