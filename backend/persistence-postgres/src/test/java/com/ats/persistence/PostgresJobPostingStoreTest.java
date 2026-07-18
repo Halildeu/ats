@@ -11,12 +11,18 @@ import com.ats.application.JobPostingStore;
 import com.ats.application.JobPostingStore.Content;
 import com.ats.application.JobPostingStore.CreateCommand;
 import com.ats.application.JobPostingStore.MutationState;
+import com.ats.application.JobPostingStore.MutationResult;
 import com.ats.application.JobPostingStore.TransitionCommand;
 import com.ats.application.JobPostingStore.UpdateCommand;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.TenantId;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -148,6 +154,66 @@ class PostgresJobPostingStoreTest {
         assertEquals(2, latePublishReplay.job().version());
 
         assertFalse(jobs.find(OTHER, jobId).isOk(), "cross-tenant varlık sızdırmaz");
+    }
+
+    @Test
+    void concurrent_same_idempotency_request_waits_for_committed_snapshot() throws Exception {
+        String jobId = "job_" + "R".repeat(24);
+        CreateCommand command = new CreateCommand(
+                TENANT, ACTOR, jobId, "concurrent-create-key1", "0".repeat(64),
+                content("concurrent-idempotency", "Concurrent Idempotency"), NOW);
+
+        try (var c = ds.getConnection(); var st = c.createStatement()) {
+            st.execute("DROP TRIGGER IF EXISTS ats_test_delay_job_insert ON ats_job_posting");
+            st.execute("DROP FUNCTION IF EXISTS ats_test_delay_job_insert()");
+            st.execute("""
+                    CREATE FUNCTION ats_test_delay_job_insert() RETURNS trigger
+                    LANGUAGE plpgsql AS $$
+                    BEGIN
+                      IF NEW.job_id = 'job_RRRRRRRRRRRRRRRRRRRRRRRR' THEN
+                        PERFORM pg_sleep(0.75);
+                      END IF;
+                      RETURN NEW;
+                    END $$
+                    """);
+            st.execute("""
+                    CREATE TRIGGER ats_test_delay_job_insert
+                    BEFORE INSERT ON ats_job_posting
+                    FOR EACH ROW EXECUTE FUNCTION ats_test_delay_job_insert()
+                    """);
+        }
+
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<MutationResult> request = () -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("concurrent request start timeout");
+                }
+                return jobs.create(command).asOptional().orElseThrow();
+            };
+            var first = executor.submit(request);
+            var second = executor.submit(request);
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+
+            MutationResult firstResult = first.get(10, TimeUnit.SECONDS);
+            MutationResult secondResult = second.get(10, TimeUnit.SECONDS);
+            assertEquals(Set.of(MutationState.CREATED, MutationState.REPLAYED),
+                    Set.of(firstResult.state(), secondResult.state()),
+                    "aynı idempotency yarışı 5xx değil create + replay üretir");
+            assertEquals(firstResult.job(), secondResult.job(),
+                    "kaybeden request yalnız commit edilmiş exact snapshot'ı görür");
+            assertEquals(1, eventCount(TENANT, jobId), "yarış tek audit event üretir");
+        } finally {
+            executor.shutdownNow();
+            try (var c = ds.getConnection(); var st = c.createStatement()) {
+                st.execute("DROP TRIGGER IF EXISTS ats_test_delay_job_insert ON ats_job_posting");
+                st.execute("DROP FUNCTION IF EXISTS ats_test_delay_job_insert()");
+            }
+        }
     }
 
     @Test
