@@ -138,6 +138,16 @@ class ApplicationIntakeServiceTest {
                 ApplicationIntakeService.candidateNextAction(ApplicationStatus.OFFER_ACCEPTED));
         assertEquals("NONE",
                 ApplicationIntakeService.candidateNextAction(ApplicationStatus.HIRED));
+        assertTrue(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.SUBMITTED));
+        assertTrue(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.UNDER_REVIEW));
+        assertTrue(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.INTERVIEW_PENDING));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.OFFER_PENDING));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.OFFER_ACCEPTED));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.OFFER_DECLINED));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.OFFER_WITHDRAWN));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.HIRED));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.REJECTED));
+        assertFalse(ApplicationIntakeService.candidateWithdrawalAllowed(ApplicationStatus.WITHDRAWN));
     }
 
     @Test

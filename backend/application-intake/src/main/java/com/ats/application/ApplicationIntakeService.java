@@ -371,6 +371,10 @@ public final class ApplicationIntakeService {
         };
     }
 
+    public static boolean candidateWithdrawalAllowed(ApplicationStatus status) {
+        return isAllowedTransition(status, ApplicationStatus.WITHDRAWN);
+    }
+
     private Outcome<EvaluationSubmission> normalizeEvaluation(EvaluationSubmission raw) {
         if (raw == null || raw.recommendation() == null) {
             return Outcome.fail(OutcomeCode.INVALID, "recommendation zorunlu");

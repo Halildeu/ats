@@ -205,7 +205,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
                         rs.getString("public_ref"), rs.getString("slug"), rs.getString("title"),
                         status, rs.getInt("version"), iso(rs, "created_at"), iso(rs, "updated_at"),
                         history, ApplicationIntakeService.candidateNextAction(status),
-                        status != ApplicationStatus.REJECTED && status != ApplicationStatus.WITHDRAWN));
+                        ApplicationIntakeService.candidateWithdrawalAllowed(status)));
             }
         } catch (IllegalArgumentException ex) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "status değeri bozuk (fail-closed)");
