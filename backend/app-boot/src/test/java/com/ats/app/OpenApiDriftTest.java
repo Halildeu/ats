@@ -481,6 +481,33 @@ class OpenApiDriftTest {
         org.junit.jupiter.api.Assertions.assertEquals(0,
                 schemas.path("OfferTransitionRequest").path("properties")
                         .path("expectedVersion").path("minimum").asInt(-1));
+
+        java.util.Set<String> applicationStatuses = java.util.Set.of(
+                "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                "REJECTED", "WITHDRAWN");
+        for (String responseName : java.util.List.of(
+                "CandidateApplicationStatusResponse",
+                "CandidateApplicationTimelineEventResponse",
+                "RecruiterApplicationResponse",
+                "RecruiterApplicationSummaryResponse")) {
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    applicationStatuses,
+                    textValues(schemas.path(responseName).path("properties")
+                            .path("status").path("enum")),
+                    responseName);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of(
+                        "WAIT_FOR_REVIEW", "PREPARE_FOR_INTERVIEW", "REVIEW_OFFER",
+                        "WAIT_FOR_HIRE_CONFIRMATION", "NONE"),
+                textValues(schemas.path("CandidateApplicationStatusResponse")
+                        .path("properties").path("nextAction").path("enum")));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.Set.of("UNDER_REVIEW", "INTERVIEW_PENDING", "REJECTED"),
+                textValues(schemas.path("RecruiterApplicationStatusRequest")
+                        .path("properties").path("toStatus").path("enum")),
+                "genel status ucu teklif/işe-alım durumlarını üretememeli");
     }
 
     private static boolean hasRequiredParameter(

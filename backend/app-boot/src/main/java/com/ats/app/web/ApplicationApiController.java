@@ -248,7 +248,9 @@ class ApplicationApiController {
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record CandidateTimelineDto(
             @Schema(allowableValues = {
-                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "REJECTED", "WITHDRAWN"})
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
             String status,
             String occurredAt) {}
 
@@ -259,13 +261,17 @@ class ApplicationApiController {
             String jobSlug,
             String jobTitle,
             @Schema(allowableValues = {
-                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "REJECTED", "WITHDRAWN"})
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
             String status,
             int version,
             String createdAt,
             String updatedAt,
             List<CandidateTimelineDto> history,
-            @Schema(allowableValues = {"WAIT_FOR_REVIEW", "PREPARE_FOR_INTERVIEW", "NONE"})
+            @Schema(allowableValues = {
+                    "WAIT_FOR_REVIEW", "PREPARE_FOR_INTERVIEW", "REVIEW_OFFER",
+                    "WAIT_FOR_HIRE_CONFIRMATION", "NONE"})
             String nextAction,
             boolean withdrawalAllowed) {}
 
@@ -307,7 +313,9 @@ class ApplicationApiController {
             String phone, String city, String linkedIn, String portfolio, String summary,
             String experience, String education, List<String> skills, String note,
             @Schema(allowableValues = {
-                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "REJECTED", "WITHDRAWN"})
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
             String status, int version, String createdAt, String updatedAt) {}
 
     @Schema(name = "RecruiterApplicationSummaryResponse",
@@ -316,7 +324,9 @@ class ApplicationApiController {
             String publicRef, String jobSlug, String jobTitle, String fullName, String email,
             String city, List<String> skills,
             @Schema(allowableValues = {
-                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "REJECTED", "WITHDRAWN"})
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
             String status, int version,
             String createdAt, String updatedAt) {}
 
