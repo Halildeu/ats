@@ -4,6 +4,9 @@ import com.ats.application.ApplicationIntakeService;
 import com.ats.application.ApplicationStore;
 import com.ats.application.JobPostingService;
 import com.ats.application.JobPostingStore;
+import com.ats.application.ResumeDocumentParser;
+import com.ats.application.ResumeImportService;
+import com.ats.application.ResumeImportStore;
 import com.ats.consent.ConsentGate;
 import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
@@ -31,6 +34,7 @@ import com.ats.ingest.MalwareScanPort;
 import com.ats.ingest.ObjectStorePort;
 import com.ats.interview.InterviewStore;
 import com.ats.interview.InterviewWorkspaceService;
+import com.ats.kernel.Outcome;
 import com.ats.ops.OperationalEventSink;
 import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
@@ -41,6 +45,7 @@ import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
 import com.ats.persistence.PostgresApplicationStore;
+import com.ats.persistence.PostgresResumeImportStore;
 import com.ats.persistence.PostgresJobPostingStore;
 import com.ats.persistence.PostgresInterviewStore;
 import com.ats.persistence.PostgresConsentStore;
@@ -169,6 +174,42 @@ class WiringConfig {
         return new ApplicationIntakeService(
                 store, new com.ats.kernel.Ids.TenantId(publicTenantId),
                 Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    ResumeImportStore resumeImportStore(DataSource ds, Flyway flyway) {
+        return new PostgresResumeImportStore(ds);
+    }
+
+    @Bean
+    ResumeDocumentParser resumeDocumentParser() {
+        return new PdfBoxResumeDocumentParser();
+    }
+
+    @Bean(destroyMethod = "close")
+    ResumeImportService resumeImportService(
+            ResumeImportStore store,
+            ApplicationStore applicationStore,
+            ResumeDocumentParser parser,
+            MalwareScanPort scanner,
+            AppProperties props,
+            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+        AppProperties.ResumeImport cfg = props.resumeImport();
+        ResumeImportService.DocumentScanner documentScanner = bytes -> {
+            Outcome<com.ats.ingest.MalwareScanPort.ScanResult> result = scanner.scan(bytes);
+            if (result instanceof Outcome.Fail<com.ats.ingest.MalwareScanPort.ScanResult> fail) {
+                return Outcome.fail(fail.code(), fail.reason());
+            }
+            return Outcome.ok(((Outcome.Ok<com.ats.ingest.MalwareScanPort.ScanResult>) result).value()
+                    == com.ats.ingest.MalwareScanPort.ScanResult.CLEAN
+                    ? ResumeImportService.ScanDecision.CLEAN
+                    : ResumeImportService.ScanDecision.REJECTED);
+        };
+        return new ResumeImportService(
+                store, applicationStore, parser, documentScanner,
+                new com.ats.kernel.Ids.TenantId(publicTenantId), Clock.systemUTC(),
+                new SecureRandom(), cfg.maxUploadBytes(), cfg.maxPages(),
+                cfg.syntheticOnly(), cfg.maxConcurrentParses());
     }
 
     @Bean

@@ -48,6 +48,7 @@ public final class ApplicationIntakeService {
     private static final Pattern CANDIDATE_ACCESS = Pattern.compile("[A-Za-z0-9_-]{43}");
     private static final Pattern EVALUATION_ID = Pattern.compile("eval_[A-Za-z0-9_-]{24}");
     private static final Pattern CRITERION_KEY = Pattern.compile("[a-z][a-z0-9_-]{1,63}");
+    private static final Pattern RESUME_IMPORT_ID = Pattern.compile("ri_[A-Za-z0-9_-]{24}");
     private static final Pattern PUBLIC_HANDLE = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+){0,7}");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED = Map.of(
@@ -76,10 +77,33 @@ public final class ApplicationIntakeService {
             String note,
             String noticeVersion,
             String noticeAcceptedAt,
-            String accuracyConfirmedAt) {
+            String accuracyConfirmedAt,
+            String resumeImportId,
+            Integer resumeDraftVersion) {
 
         public Submission {
             skills = skills == null ? List.of() : List.copyOf(skills);
+        }
+
+        /** Source-compatible manual-only submission constructor. */
+        public Submission(
+                String fullName,
+                String email,
+                String phone,
+                String city,
+                String linkedIn,
+                String portfolio,
+                String summary,
+                String experience,
+                String education,
+                List<String> skills,
+                String note,
+                String noticeVersion,
+                String noticeAcceptedAt,
+                String accuracyConfirmedAt) {
+            this(fullName, email, phone, city, linkedIn, portfolio, summary, experience,
+                    education, skills, note, noticeVersion, noticeAcceptedAt,
+                    accuracyConfirmedAt, null, null);
         }
     }
 
@@ -392,7 +416,8 @@ public final class ApplicationIntakeService {
                 trimToNull(raw.linkedIn()), trimToNull(raw.portfolio()), trim(raw.summary()),
                 trim(raw.experience()), trim(raw.education()), normalizeSkills(raw.skills()),
                 trimToNull(raw.note()), trim(raw.noticeVersion()), trim(raw.noticeAcceptedAt()),
-                trim(raw.accuracyConfirmedAt()));
+                trim(raw.accuracyConfirmedAt()), trimToNull(raw.resumeImportId()),
+                raw.resumeDraftVersion());
         if (!between(value.fullName(), 2, 160)) return invalid("fullName 2..160 karakter olmalı");
         if (!between(value.email(), 3, 254) || !EMAIL.matcher(value.email()).matches())
             return invalid("email geçersiz");
@@ -433,6 +458,15 @@ public final class ApplicationIntakeService {
             }
         } catch (DateTimeParseException ex) {
             return invalid("accuracyConfirmedAt ISO-8601 olmalı");
+        }
+        boolean hasResumeImport = value.resumeImportId() != null;
+        boolean hasDraftVersion = value.resumeDraftVersion() != null;
+        if (hasResumeImport != hasDraftVersion) {
+            return invalid("resumeImportId ve resumeDraftVersion birlikte verilmelidir");
+        }
+        if (hasResumeImport && (!RESUME_IMPORT_ID.matcher(value.resumeImportId()).matches()
+                || value.resumeDraftVersion() < 0)) {
+            return invalid("CV taslak bağlama bilgisi geçersiz");
         }
         return Outcome.ok(value);
     }
@@ -476,7 +510,8 @@ public final class ApplicationIntakeService {
                 jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(), nullToEmpty(s.linkedIn()),
                 nullToEmpty(s.portfolio()), s.summary(), s.experience(), s.education(),
                 String.join("\u001f", s.skills()), nullToEmpty(s.note()), s.noticeVersion(),
-                s.noticeAcceptedAt(), s.accuracyConfirmedAt());
+                s.noticeAcceptedAt(), s.accuracyConfirmedAt(), nullToEmpty(s.resumeImportId()),
+                s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()));
         MessageDigest digest = sha256();
         for (String part : parts) {
             byte[] bytes = part.getBytes(StandardCharsets.UTF_8);
