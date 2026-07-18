@@ -21,20 +21,38 @@ class PublicApplicationRateLimitFilterTest {
 
         for (int i = 0; i < PublicApplicationRateLimiter.LIMIT; i++) {
             var response = new MockHttpServletResponse();
-            filter.doFilter(request(), response, new MockFilterChain());
+            filter.doFilter(request("/api/v1/jobs/product-designer/applications"),
+                    response, new MockFilterChain());
             assertEquals(200, response.getStatus());
         }
 
         var denied = new MockHttpServletResponse();
-        filter.doFilter(request(), denied, new MockFilterChain());
+        filter.doFilter(request("/api/v1/jobs/product-designer/applications"),
+                denied, new MockFilterChain());
         assertEquals(429, denied.getStatus());
         assertEquals("600", denied.getHeader("Retry-After"));
         assertEquals("no-store", denied.getHeader("Cache-Control"));
         assertTrue(denied.getContentAsString().contains("RATE_LIMITED"));
     }
 
-    private static MockHttpServletRequest request() {
-        var request = new MockHttpServletRequest("POST", "/api/v1/jobs/product-designer/applications");
+    @Test
+    void canonical_career_submission_is_rate_limited() throws Exception {
+        var limiter = new PublicApplicationRateLimiter(
+                Clock.fixed(Instant.parse("2026-07-16T12:00:00Z"), ZoneOffset.UTC));
+        var filter = new PublicApplicationRateLimitFilter(limiter);
+        String uri = "/api/v1/careers/acik/jobs/product-designer/applications";
+
+        for (int i = 0; i < PublicApplicationRateLimiter.LIMIT; i++) {
+            filter.doFilter(request(uri), new MockHttpServletResponse(), new MockFilterChain());
+        }
+
+        var denied = new MockHttpServletResponse();
+        filter.doFilter(request(uri), denied, new MockFilterChain());
+        assertEquals(429, denied.getStatus());
+    }
+
+    private static MockHttpServletRequest request(String uri) {
+        var request = new MockHttpServletRequest("POST", uri);
         request.setRemoteAddr("203.0.113.10");
         return request;
     }

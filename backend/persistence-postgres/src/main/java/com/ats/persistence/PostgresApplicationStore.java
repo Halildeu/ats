@@ -110,6 +110,11 @@ public final class PostgresApplicationStore implements ApplicationStore {
                     return Outcome.fail(OutcomeCode.INVALID,
                             "ilan aydınlatma sürümü değişti; formu yenileyin");
                 }
+                if (!configuredFieldsAccept(job, command)) {
+                    c.rollback();
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "ilan başvuru alanları değişti; formu yenileyin");
+                }
 
                 boolean reserved = reserveIdempotency(c, job, command);
                 if (!reserved) {
@@ -327,6 +332,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setTimestamp(5, timestamp(command.occurredAt()));
             return ps.executeUpdate() == 1;
         }
+    }
+
+    private static boolean configuredFieldsAccept(JobPosting job, SubmitCommand command) {
+        var fields = job.applicationFields();
+        var submission = command.submission();
+        return (fields.contains("linkedIn") || submission.linkedIn() == null)
+                && (fields.contains("portfolio") || submission.portfolio() == null)
+                && (fields.contains("note") || submission.note() == null);
     }
 
     private ExistingIdempotency readIdempotency(Connection c, JobPosting job, String key) throws SQLException {

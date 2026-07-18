@@ -21,11 +21,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 final class PublicApplicationBodyLimitFilter extends OncePerRequestFilter {
 
     static final long MAX_BYTES = 65_536L;
+    private static final String SUBMISSION_PATH =
+            "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/applications";
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !"POST".equals(request.getMethod())
-                || !request.getRequestURI().matches("/api/v1/jobs/[^/]+/applications");
+                || !request.getRequestURI().matches(SUBMISSION_PATH);
     }
 
     @Override

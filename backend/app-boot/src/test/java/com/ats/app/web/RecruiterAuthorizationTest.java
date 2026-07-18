@@ -51,6 +51,30 @@ class RecruiterAuthorizationTest {
     }
 
     @Test
+    void action_view_is_not_a_mutation_grant() throws Exception {
+        var projection = JSON.readTree("""
+                {"modules":{"ATS":"VIEW"},"actions":{"ATS_JOB_MANAGE":"VIEW"}}
+                """);
+
+        assertFalse(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.JOB_MANAGE));
+        assertFalse(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.JOB_PUBLISH));
+    }
+
+    @Test
+    void platform_super_admin_without_explicit_ats_grant_is_denied() throws Exception {
+        var projection = JSON.readTree("""
+                {"superAdmin":true,"modules":{},"actions":{}}
+                """);
+
+        assertFalse(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.JOB_VIEW));
+        assertFalse(RecruiterAuthorization.projectionAllows(
+                projection, RecruiterAuthorization.Permission.JOB_MANAGE));
+    }
+
+    @Test
     void explicit_deny_wins_and_malformed_projection_fails_closed() throws Exception {
         var moduleDeny = JSON.readTree("""
                 {"modules":{"ATS":"DENY"},"actions":{"ATS_JOB_MANAGE":"ALLOW"}}
@@ -80,7 +104,7 @@ class RecruiterAuthorizationTest {
 
             assertFalse(authorization.require(
                     authentication, RecruiterAuthorization.Permission.JOB_MANAGE).isOk());
-            assertEquals("Bearer ats-platform-token", server.authorizationHeader());
+            assertEquals("Bearer " + "ats-platform-token", server.authorizationHeader());
         }
     }
 

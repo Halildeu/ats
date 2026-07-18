@@ -234,6 +234,52 @@ class ApplicationApiTest {
         String oversized = "{\"fullName\":\"" + "a".repeat(70_000) + "\"}";
         assertEquals(413, rest.exchange("/api/v1/jobs/senior-frontend-developer/applications", HttpMethod.POST,
                 new HttpEntity<>(oversized, huge), String.class).getStatusCode().value());
+        huge.set("X-ATS-Idempotency-Key", "idem-" + UUID.randomUUID());
+        assertEquals(413, rest.exchange(
+                "/api/v1/careers/acik/jobs/senior-frontend-developer/applications",
+                HttpMethod.POST, new HttpEntity<>(oversized, huge), String.class)
+                .getStatusCode().value(), "canonical kariyer yolu aynı body limitini uygular");
+    }
+
+    @Test
+    void canonical_submit_rejects_optional_fields_disabled_by_the_locked_job() throws Exception {
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published, application_fields)
+                VALUES (?, 'restricted-fields-job', 'restricted-fields', 'Kısıtlı Form İlanı',
+                        'Ürün', 'Türkiye', 'Uzaktan', 'Tam zamanlı',
+                        'Yalnız zorunlu aday alanlarını isteyen sentetik ilan.', '[]'::jsonb, true,
+                        '["fullName","email","phone","city","summary","experience","education","skills"]'::jsonb)
+                ON CONFLICT DO NOTHING
+                """)) {
+            ps.setString(1, TENANT);
+            ps.executeUpdate();
+        }
+
+        String acceptedAt = Instant.now().toString();
+        HttpHeaders rejectedHeaders = json();
+        rejectedHeaders.set("X-ATS-Idempotency-Key", "restricted-fields-rejected-01");
+        rejectedHeaders.set("X-ATS-Candidate-Access", "R".repeat(43));
+        ResponseEntity<String> rejected = rest.exchange(
+                "/api/v1/careers/acik/jobs/restricted-fields/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Alan İhlali", acceptedAt), rejectedHeaders), String.class);
+        assertEquals(400, rejected.getStatusCode().value(), rejected.getBody());
+        assertEquals(0, scalar("SELECT count(*) FROM ats_application WHERE job_id = ?",
+                "restricted-fields-job"));
+
+        var allowedBody = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(payload("İzinli Alan", acceptedAt));
+        allowedBody.remove(List.of("linkedIn", "portfolio", "note"));
+        HttpHeaders acceptedHeaders = json();
+        acceptedHeaders.set("X-ATS-Idempotency-Key", "restricted-fields-accepted-01");
+        acceptedHeaders.set("X-ATS-Candidate-Access", "S".repeat(43));
+        ResponseEntity<String> accepted = rest.exchange(
+                "/api/v1/careers/acik/jobs/restricted-fields/applications", HttpMethod.POST,
+                new HttpEntity<>(allowedBody.toString(), acceptedHeaders), String.class);
+        assertEquals(201, accepted.getStatusCode().value(), accepted.getBody());
+        assertEquals(1, scalar("SELECT count(*) FROM ats_application WHERE job_id = ?",
+                "restricted-fields-job"));
     }
 
     @Test
@@ -254,6 +300,13 @@ class ApplicationApiTest {
         HttpHeaders createHeaders = bearer(token(TENANT, "ats.job.write", "job-recruiter"));
         createHeaders.setContentType(MediaType.APPLICATION_JSON);
         createHeaders.set("X-ATS-Idempotency-Key", "api-job-create-key-001");
+
+        HttpHeaders missingIdempotency = bearer(token(TENANT, "ats.job.write", "job-recruiter"));
+        missingIdempotency.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(400, rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.POST,
+                new HttpEntity<>(draftPayload, missingIdempotency), String.class)
+                .getStatusCode().value(), "zorunlu idempotency başlığı runtime'da da doğrulanır");
 
         HttpHeaders publishOnlyCreate = bearer(token(
                 TENANT, "ats.job.publish", "publish-only-recruiter"));

@@ -258,6 +258,7 @@ CREATE INDEX ats_job_command_idempotency_created_idx
     ON ats_job_command_idempotency (tenant_id, created_at);
 
 GRANT SELECT, INSERT, UPDATE ON ats_job_posting TO ats_app;
+REVOKE DELETE ON ats_job_posting FROM ats_app;
 GRANT SELECT ON ats_career_site TO ats_app;
 GRANT INSERT, SELECT ON ats_job_posting_event TO ats_app;
 GRANT INSERT, SELECT, UPDATE ON ats_job_command_idempotency TO ats_app;

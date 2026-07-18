@@ -109,9 +109,6 @@ final class RecruiterAuthorization {
 
     static boolean projectionAllows(JsonNode root, Permission permission) {
         if (root == null || !root.isObject()) return false;
-        if (root.path("superAdmin").isBoolean() && root.path("superAdmin").booleanValue()) {
-            return true;
-        }
         JsonNode modules = root.path("modules");
         JsonNode actions = root.path("actions");
         String moduleGrant = textual(modules.path("ATS"));
@@ -128,7 +125,7 @@ final class RecruiterAuthorization {
         };
         String actionGrant = textual(actions.path(actionKey));
         if ("DENY".equals(actionGrant)) return false;
-        return Set.of("VIEW", "MANAGE", "ALLOW").contains(actionGrant)
+        return "ALLOW".equals(actionGrant)
                 || "MANAGE".equals(moduleGrant);
     }
 
