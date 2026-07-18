@@ -60,6 +60,7 @@ class JobPostingApiController {
             String employmentType,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 20, maxLength = 8000)
             String summary,
+            @ArraySchema(maxItems = 20, schema = @Schema(maxLength = 160))
             List<String> highlights,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @ArraySchema(schema = @Schema(allowableValues = {
@@ -89,6 +90,7 @@ class JobPostingApiController {
             String employmentType,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 20, maxLength = 8000)
             String summary,
+            @ArraySchema(maxItems = 20, schema = @Schema(maxLength = 160))
             List<String> highlights,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             @ArraySchema(schema = @Schema(allowableValues = {

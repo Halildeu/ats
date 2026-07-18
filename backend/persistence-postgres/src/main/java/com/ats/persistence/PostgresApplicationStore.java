@@ -31,13 +31,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
     @Override
     public Outcome<List<JobPosting>> listPublishedJobs(TenantId publicTenantId) {
         String sql = """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text,
-                       application_fields::text, notice_version, status,
-                       apply_enabled, version, created_at, updated_at
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND status = 'PUBLISHED' AND apply_enabled = true
-                 ORDER BY updated_at DESC, slug
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.status = 'PUBLISHED' AND j.apply_enabled = true
+                 ORDER BY j.updated_at DESC, j.slug
                 """;
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());
@@ -54,13 +55,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
     @Override
     public Outcome<JobPosting> findPublishedJob(TenantId publicTenantId, String slug) {
         String sql = """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text,
-                       application_fields::text, notice_version, status,
-                       apply_enabled, version, created_at, updated_at
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND slug = ?
-                   AND status = 'PUBLISHED' AND apply_enabled = true
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.slug = ?
+                   AND j.status = 'PUBLISHED' AND j.apply_enabled = true
                 """;
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());
@@ -296,14 +298,15 @@ public final class PostgresApplicationStore implements ApplicationStore {
                    AND j.slug = ? AND j.status = 'PUBLISHED' AND j.apply_enabled = true
                  FOR SHARE OF j
                 """ : """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text,
-                       application_fields::text, notice_version, status,
-                       apply_enabled, version, created_at, updated_at
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND slug = ?
-                   AND status = 'PUBLISHED' AND apply_enabled = true
-                 FOR SHARE
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.slug = ?
+                   AND j.status = 'PUBLISHED' AND j.apply_enabled = true
+                 FOR SHARE OF j
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());

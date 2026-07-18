@@ -172,26 +172,23 @@ VALUES
      'migration:v7', 'migration:v7', now(), now());
 
 -- Do not silently carry a pre-V7 public job into a non-routable canonical
--- PUBLISHED state. The migration intentionally fails closed so an operator
--- must create/verify the tenant's durable public handle before retrying V7;
--- inventing a public URL from tenant data would make routing and ownership
--- ambiguous.
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-          FROM ats_job_posting AS j
-          LEFT JOIN ats_career_site AS s
-            ON s.tenant_id = j.tenant_id AND s.active
-         WHERE j.status = 'PUBLISHED'
-           AND s.tenant_id IS NULL
-    ) THEN
-        RAISE EXCEPTION USING
-            ERRCODE = '23514',
-            MESSAGE = 'pre-V7 published job requires an active career site';
-    END IF;
-END;
-$$;
+-- PUBLISHED state, and do not stop the whole deployment with no durable way
+-- to provision the new table. Quarantine only the affected rows as PAUSED;
+-- an operator verifies a public handle, inserts the career-site mapping, then
+-- the recruiter resumes the job through the normal audited state machine.
+UPDATE ats_job_posting AS j
+   SET status = 'PAUSED',
+       published = false,
+       apply_enabled = false,
+       version = version + 1,
+       updated_by = 'migration:v7:unroutable-published',
+       updated_at = now()
+ WHERE j.status = 'PUBLISHED'
+   AND NOT EXISTS (
+       SELECT 1
+         FROM ats_career_site AS s
+        WHERE s.tenant_id = j.tenant_id AND s.active
+   );
 
 CREATE TABLE ats_job_posting_event (
     event_id         BIGSERIAL   PRIMARY KEY,

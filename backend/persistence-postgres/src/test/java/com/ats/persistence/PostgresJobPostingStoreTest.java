@@ -203,6 +203,53 @@ class PostgresJobPostingStoreTest {
         assertEquals(1, paused.version(), "legacy mutation V7 CAS version'ını ilerletir");
         assertEquals(2, eventCount(TENANT, legacy.jobId()),
                 "rolling writer transition'ı audit zincirinde görünür");
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published)
+                VALUES (?, ?, 'legacy-draft-no-site', 'Legacy Draft No Site', 'Legacy',
+                        'Türkiye', 'Uzaktan', 'Tam zamanlı',
+                        'Kariyer sitesi olmadan eski pod tarafından hazırlanan taslak.',
+                        '[]'::jsonb, false)
+                """)) {
+            ps.setString(1, OTHER.value());
+            ps.setString(2, "job_" + "D".repeat(24));
+            assertEquals(1, ps.executeUpdate(),
+                    "legacy pod kariyer sitesi hazır değilken DRAFT oluşturabilir");
+        }
+        assertEquals(JobPostingStatus.DRAFT,
+                jobs.find(OTHER, "job_" + "D".repeat(24)).asOptional().orElseThrow().status());
+    }
+
+    @Test
+    void inactive_career_site_hides_legacy_alias_catalog_and_job_detail() throws Exception {
+        String jobId = "job_" + "I".repeat(24);
+        String slug = "inactive-career-site-job";
+        jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "inactive-create-key01", "b".repeat(64),
+                content(slug, "Inactive Career Site Job"), NOW)).asOptional().orElseThrow();
+        jobs.transition(new TransitionCommand(
+                TENANT, ACTOR, jobId, 0, JobPostingStatus.PUBLISHED,
+                "inactive-publish-key1", "c".repeat(64), NOW)).asOptional().orElseThrow();
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement(
+                "UPDATE ats_career_site SET active=false WHERE tenant_id=?")) {
+            ps.setString(1, TENANT.value());
+            assertEquals(1, ps.executeUpdate());
+        }
+        try {
+            assertTrue(applications.listPublishedJobs(TENANT).asOptional().orElseThrow().isEmpty(),
+                    "inactive kariyer sitesi legacy alias katalogunu fail-closed gizler");
+            assertFalse(applications.findPublishedJob(TENANT, slug).isOk(),
+                    "inactive kariyer sitesi legacy alias detayını fail-closed gizler");
+        } finally {
+            try (var c = ds.getConnection(); var ps = c.prepareStatement(
+                    "UPDATE ats_career_site SET active=true WHERE tenant_id=?")) {
+                ps.setString(1, TENANT.value());
+                ps.executeUpdate();
+            }
+        }
     }
 
     @Test
@@ -251,7 +298,7 @@ class PostgresJobPostingStoreTest {
     }
 
     @Test
-    void v7_migration_fails_closed_for_preexisting_published_tenant_without_career_site()
+    void v7_migration_quarantines_preexisting_published_tenant_without_career_site()
             throws Exception {
         String schema = "job_migration_" + Long.toUnsignedString(System.nanoTime());
         PGSimpleDataSource bootstrap = new PGSimpleDataSource();
@@ -283,10 +330,19 @@ class PostgresJobPostingStoreTest {
 
         var migration = Flyway.configure().dataSource(migrationDs)
                 .schemas(schema).defaultSchema(schema).load();
-        var failure = assertThrows(org.flywaydb.core.api.FlywayException.class,
-                migration::migrate);
-        assertTrue(failure.getMessage().contains("pre-V7 published job requires an active career site"),
-                "migration eksik public routing verisini sessizce kabul etmez");
+        migration.migrate();
+        try (var c = migrationDs.getConnection(); var ps = c.prepareStatement("""
+                SELECT status, published, apply_enabled, version, updated_by
+                  FROM ats_job_posting
+                 WHERE tenant_id='pre-v7-other-tenant' AND job_id='pre-v7-public-job'
+                """); var rs = ps.executeQuery()) {
+            assertTrue(rs.next());
+            assertEquals("PAUSED", rs.getString("status"));
+            assertFalse(rs.getBoolean("published"));
+            assertFalse(rs.getBoolean("apply_enabled"));
+            assertEquals(1, rs.getInt("version"));
+            assertEquals("migration:v7:unroutable-published", rs.getString("updated_by"));
+        }
     }
 
     private static Content content(String slug, String title) {

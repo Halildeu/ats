@@ -57,6 +57,20 @@ class JobPostingServiceTest {
     }
 
     @Test
+    void generated_slug_collapses_repeated_whitespace_and_punctuation() {
+        CapturingStore store = new CapturingStore();
+        JobDraft original = draft(null);
+        JobDraft noisyTitle = new JobDraft(
+                null, "  Senior   Product -- Manager  ", original.team(), original.location(),
+                original.mode(), original.employmentType(), original.summary(),
+                original.highlights(), original.applicationFields(), original.noticeVersion());
+
+        assertTrue(service(store).create(TENANT, ACTOR, IDEM, noisyTitle).isOk());
+        assertTrue(store.create.content().slug()
+                .matches("senior-product-manager-[0-9a-f]{8}"));
+    }
+
+    @Test
     void update_requires_explicit_slug_and_expected_version() {
         var missingSlug = service(new CapturingStore()).update(
                 TENANT, ACTOR, "job_" + "A".repeat(24), 0, "job-update-key-1234", draft(null));

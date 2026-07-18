@@ -62,7 +62,7 @@ PAUSED --------------------> CLOSED
 
 - ATS-0018 gereği JPA/Hibernate/Spring Data eklenmez; persistence plain JDBC'dir.
 - `V7` additive ve rolling-compatible'dır: mevcut `published` kolonundan `status` backfill edilir; uygulama geçiş boyunca `published == (status == PUBLISHED)` invariantını dual-write eder. Legacy bridge, eski pod yazısında dahi `CLOSED/ARCHIVED` ilanı yeniden yayınlayamaz ve aktif career-site olmadan `PUBLISHED` üretemez; ihlal transaction'ı check-violation ile fail-closed keser.
-- V7 öncesinden gelen `published=true` satırın tenant'ında doğrulanmış aktif kariyer sitesi yoksa migration sentetik handle üretmez veya non-routable `PUBLISHED` satırı bırakmaz; fail-closed durur ve operatorün tenant handle'ını doğrulamasını ister.
+- V7 öncesinden gelen `published=true` satırın tenant'ında doğrulanmış aktif kariyer sitesi yoksa migration sentetik handle üretmez veya non-routable `PUBLISHED` satırı bırakmaz; yalnız etkilenen ilanı `PAUSED` durumuna karantinaya alır. Operator doğrulanmış tenant handle'ını provision eder, ardından recruiter ilanı normal auditli geçişle yeniden yayınlar; diğer tenant'ların deployment'ı bloke olmaz. Operasyon: [RB-ATS-V7 career-site quarantine](../runbooks/RB-ats-v7-career-site-quarantine.md).
 - Public okumalar `status/apply_enabled` otoritesine geçtikten ve rollback penceresi kanıtlandıktan sonra ayrı bir ileri migration eski `published` kolonunu kaldırabilir. Trigger veya gecelik reconcile ile iki kalıcı truth tutulmaz.
 - `ats_app` ilan için yalnız gerekli `SELECT/INSERT/UPDATE`, event/idempotency için gerekli dar yetkileri alır; ilan hard-delete yetkisi verilmez.
 

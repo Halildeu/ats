@@ -142,6 +142,9 @@ class RecruiterAuthorizationTest {
         assertThrows(IllegalStateException.class,
                 () -> new RecruiterAuthorization(
                         "https://permission.internal#authz", Duration.ofSeconds(1), false));
+        assertThrows(IllegalStateException.class,
+                () -> new RecruiterAuthorization(
+                        "https://user@permission.internal", Duration.ofSeconds(1), false));
     }
 
     @Test
@@ -167,6 +170,21 @@ class RecruiterAuthorizationTest {
         assertFalse(authorization.require(
                 authentication("legacy-token", "JOB_WRITE"),
                 RecruiterAuthorization.Permission.JOB_PUBLISH).isOk());
+    }
+
+    @Test
+    void configured_platform_projection_remains_authoritative_when_legacy_compat_is_enabled()
+            throws Exception {
+        try (ProjectionServer server = new ProjectionServer(
+                "{\"modules\":{\"ATS\":\"DENY\"},\"actions\":{}}")) {
+            var authorization = new RecruiterAuthorization(
+                    server.baseUrl(), Duration.ofSeconds(1), true);
+
+            assertFalse(authorization.require(
+                    authentication("legacy-token", "JOB_WRITE"),
+                    RecruiterAuthorization.Permission.JOB_MANAGE).isOk(),
+                    "configured platform DENY legacy compatibility rolünün üstündedir");
+        }
     }
 
     private static JwtAuthenticationToken authentication(String token, String... authorities) {

@@ -172,6 +172,8 @@ class OpenApiDriftTest {
                     operation.toString());
             org.junit.jupiter.api.Assertions.assertTrue(operation.path("responses").has("503"),
                     operation.toString());
+            org.junit.jupiter.api.Assertions.assertTrue(operation.path("responses").path("200")
+                    .path("headers").has("X-ATS-Replay"), operation.toString());
         }
 
         com.fasterxml.jackson.databind.JsonNode response = snap.path("components").path("schemas")
@@ -197,6 +199,11 @@ class OpenApiDriftTest {
             org.junit.jupiter.api.Assertions.assertEquals(
                     java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
                     textValues(request.path("properties").path("noticeVersion").path("enum")));
+            org.junit.jupiter.api.Assertions.assertEquals(20,
+                    request.path("properties").path("highlights").path("maxItems").asInt(-1));
+            org.junit.jupiter.api.Assertions.assertEquals(160,
+                    request.path("properties").path("highlights").path("items")
+                            .path("maxLength").asInt(-1));
         }
 
         com.fasterxml.jackson.databind.JsonNode reviewTransition = snap.path("components")
@@ -225,6 +232,8 @@ class OpenApiDriftTest {
                 hasRequiredParameter(submit, "X-ATS-Candidate-Access"), submit.toString());
         org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("201"));
         org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("200"));
+        org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").path("200")
+                .path("headers").has("X-ATS-Replay"), submit.toString());
         org.junit.jupiter.api.Assertions.assertTrue(submit.path("responses").has("404"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 submit.path("requestBody").path("content").path("application/json")

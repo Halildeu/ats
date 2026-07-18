@@ -70,7 +70,16 @@ final class RecruiterAuthorization {
                 .build();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(bounded);
-        String origin = value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+        // Feed RestClient a canonical origin reconstructed from the already
+        // validated URI components. This avoids asking two URI parsers to
+        // interpret the original operator-provided string independently.
+        String origin;
+        try {
+            origin = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(),
+                    null, null, null).toASCIIString();
+        } catch (java.net.URISyntaxException ex) {
+            throw new IllegalStateException("ats.authorization.platform-base-url geçersiz", ex);
+        }
         client = RestClient.builder().baseUrl(origin).requestFactory(factory).build();
     }
 
