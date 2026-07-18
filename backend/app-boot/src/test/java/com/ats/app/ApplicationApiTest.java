@@ -52,6 +52,7 @@ class ApplicationApiTest {
         registry.add("ats.security.jwks-uri", JWT::jwksUri);
         registry.add("ats.security.issuer", () -> JwtTestSupport.ISSUER);
         registry.add("ats.security.audience", () -> JwtTestSupport.AUDIENCE);
+        registry.add("ats.authorization.allow-legacy-authorities", () -> "true");
         AiGovernanceTestSupport.registerHttpJson(registry);
     }
 
@@ -63,20 +64,37 @@ class ApplicationApiTest {
 
     @Test
     void public_submit_candidate_tracking_and_tenant_recruiter_flow_is_persistent() throws Exception {
-        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement("""
-                INSERT INTO ats_job_posting
-                    (tenant_id, job_id, slug, title, team, location, mode,
-                     employment_type, summary, highlights, published)
-                VALUES ('other-tenant', 'other-job', 'urun-yoneticisi', 'SIZMAMALI',
-                        'Other', 'Other', 'Other', 'Other', 'Other', '[]'::jsonb, true)
-                ON CONFLICT DO NOTHING
-                """)) {
-            ps.executeUpdate();
+        try (Connection c = ds.getConnection();
+             PreparedStatement site = c.prepareStatement("""
+                     INSERT INTO ats_career_site
+                         (tenant_id, public_handle, display_name, active, created_by, updated_by,
+                          created_at, updated_at)
+                     VALUES ('other-tenant', 'other-careers', 'Other Careers', true,
+                             'test', 'test', now(), now())
+                     ON CONFLICT (tenant_id) DO NOTHING
+                     """);
+             PreparedStatement job = c.prepareStatement("""
+                     INSERT INTO ats_job_posting
+                         (tenant_id, job_id, slug, title, team, location, mode,
+                          employment_type, summary, highlights, published)
+                     VALUES ('other-tenant', 'other-job', 'urun-yoneticisi', 'SIZMAMALI',
+                             'Other', 'Other', 'Other', 'Other', 'Other', '[]'::jsonb, true)
+                     ON CONFLICT DO NOTHING
+                     """)) {
+            site.executeUpdate();
+            job.executeUpdate();
         }
         ResponseEntity<String> jobs = rest.getForEntity("/api/v1/jobs", String.class);
         assertEquals(200, jobs.getStatusCode().value());
         assertEquals(3, objectMapper.readTree(jobs.getBody()).size());
         assertFalse(jobs.getBody().contains("SIZMAMALI"), "public katalog tenant disina sizmaz");
+        ResponseEntity<String> canonicalJobs = rest.getForEntity(
+                "/api/v1/careers/acik/jobs", String.class);
+        assertEquals(200, canonicalJobs.getStatusCode().value());
+        assertEquals(objectMapper.readTree(jobs.getBody()),
+                objectMapper.readTree(canonicalJobs.getBody()));
+        assertEquals(404, rest.getForEntity(
+                "/api/v1/careers/bilinmeyen/jobs", String.class).getStatusCode().value());
 
         String acceptedAt = Instant.now().toString();
         String payload = payload("Deniz Sentetik", acceptedAt);
@@ -86,7 +104,7 @@ class ApplicationApiTest {
         submitHeaders.set("X-ATS-Idempotency-Key", idempotency);
         submitHeaders.set("X-ATS-Candidate-Access", submittedAccessToken);
         ResponseEntity<String> submit = rest.exchange(
-                "/api/v1/jobs/urun-yoneticisi/applications", HttpMethod.POST,
+                "/api/v1/careers/acik/jobs/urun-yoneticisi/applications", HttpMethod.POST,
                 new HttpEntity<>(payload, submitHeaders), String.class);
         assertEquals(201, submit.getStatusCode().value(), submit.getBody());
         JsonNode receipt = objectMapper.readTree(submit.getBody());
@@ -130,6 +148,11 @@ class ApplicationApiTest {
         String writeToken = token(TENANT, "ats.application.status.write", "recruiter-write");
         HttpHeaders statusHeaders = bearer(writeToken);
         statusHeaders.setContentType(MediaType.APPLICATION_JSON);
+        ResponseEntity<String> missingVersion = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
+                new HttpEntity<>("{\"toStatus\":\"UNDER_REVIEW\"}", statusHeaders),
+                String.class);
+        assertEquals(400, missingVersion.getStatusCode().value(), missingVersion.getBody());
         ResponseEntity<String> transitioned = rest.exchange(
                 "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
                 new HttpEntity<>("{\"expectedVersion\":0,\"toStatus\":\"UNDER_REVIEW\"}", statusHeaders),
@@ -221,6 +244,168 @@ class ApplicationApiTest {
         String oversized = "{\"fullName\":\"" + "a".repeat(70_000) + "\"}";
         assertEquals(413, rest.exchange("/api/v1/jobs/senior-frontend-developer/applications", HttpMethod.POST,
                 new HttpEntity<>(oversized, huge), String.class).getStatusCode().value());
+        huge.set("X-ATS-Idempotency-Key", "idem-" + UUID.randomUUID());
+        assertEquals(413, rest.exchange(
+                "/api/v1/careers/acik/jobs/senior-frontend-developer/applications",
+                HttpMethod.POST, new HttpEntity<>(oversized, huge), String.class)
+                .getStatusCode().value(), "canonical kariyer yolu aynı body limitini uygular");
+    }
+
+    @Test
+    void canonical_submit_rejects_optional_fields_disabled_by_the_locked_job() throws Exception {
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement("""
+                INSERT INTO ats_job_posting
+                    (tenant_id, job_id, slug, title, team, location, mode,
+                     employment_type, summary, highlights, published, application_fields)
+                VALUES (?, 'restricted-fields-job', 'restricted-fields', 'Kısıtlı Form İlanı',
+                        'Ürün', 'Türkiye', 'Uzaktan', 'Tam zamanlı',
+                        'Yalnız zorunlu aday alanlarını isteyen sentetik ilan.', '[]'::jsonb, true,
+                        '["fullName","email","phone","city","summary","experience","education","skills"]'::jsonb)
+                ON CONFLICT DO NOTHING
+                """)) {
+            ps.setString(1, TENANT);
+            ps.executeUpdate();
+        }
+
+        String acceptedAt = Instant.now().toString();
+        HttpHeaders rejectedHeaders = json();
+        rejectedHeaders.set("X-ATS-Idempotency-Key", "restricted-fields-rejected-01");
+        rejectedHeaders.set("X-ATS-Candidate-Access", "R".repeat(43));
+        ResponseEntity<String> rejected = rest.exchange(
+                "/api/v1/careers/acik/jobs/restricted-fields/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Alan İhlali", acceptedAt), rejectedHeaders), String.class);
+        assertEquals(400, rejected.getStatusCode().value(), rejected.getBody());
+        assertEquals(0, scalar("SELECT count(*) FROM ats_application WHERE job_id = ?",
+                "restricted-fields-job"));
+
+        var allowedBody = (com.fasterxml.jackson.databind.node.ObjectNode)
+                objectMapper.readTree(payload("İzinli Alan", acceptedAt));
+        allowedBody.remove(List.of("linkedIn", "portfolio", "note"));
+        HttpHeaders acceptedHeaders = json();
+        acceptedHeaders.set("X-ATS-Idempotency-Key", "restricted-fields-accepted-01");
+        acceptedHeaders.set("X-ATS-Candidate-Access", "S".repeat(43));
+        ResponseEntity<String> accepted = rest.exchange(
+                "/api/v1/careers/acik/jobs/restricted-fields/applications", HttpMethod.POST,
+                new HttpEntity<>(allowedBody.toString(), acceptedHeaders), String.class);
+        assertEquals(201, accepted.getStatusCode().value(), accepted.getBody());
+        assertEquals(1, scalar("SELECT count(*) FROM ats_application WHERE job_id = ?",
+                "restricted-fields-job"));
+    }
+
+    @Test
+    void recruiter_can_create_publish_and_pause_a_real_job_without_exposing_drafts() throws Exception {
+        String draftPayload = new ObjectMapper().writeValueAsString(Map.ofEntries(
+                Map.entry("title", "Müşteri Başarı Uzmanı"),
+                Map.entry("team", "Müşteri Deneyimi"),
+                Map.entry("location", "Türkiye"),
+                Map.entry("mode", "Uzaktan"),
+                Map.entry("employmentType", "Tam zamanlı"),
+                Map.entry("summary", "Müşterilerin üründen ölçülebilir değer üretmesini destekleyin."),
+                Map.entry("highlights", List.of("Müşteri keşfi", "Ürün geri bildirimi")),
+                Map.entry("applicationFields", List.of(
+                        "fullName", "email", "phone", "city", "linkedIn", "portfolio",
+                        "summary", "experience", "education", "skills", "note")),
+                Map.entry("noticeVersion", "kvkk-application-v1")));
+
+        HttpHeaders createHeaders = bearer(token(TENANT, "ats.job.write", "job-recruiter"));
+        createHeaders.setContentType(MediaType.APPLICATION_JSON);
+        createHeaders.set("X-ATS-Idempotency-Key", "api-job-create-key-001");
+
+        HttpHeaders missingIdempotency = bearer(token(TENANT, "ats.job.write", "job-recruiter"));
+        missingIdempotency.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(400, rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.POST,
+                new HttpEntity<>(draftPayload, missingIdempotency), String.class)
+                .getStatusCode().value(), "zorunlu idempotency başlığı runtime'da da doğrulanır");
+
+        HttpHeaders publishOnlyCreate = bearer(token(
+                TENANT, "ats.job.publish", "publish-only-recruiter"));
+        publishOnlyCreate.setContentType(MediaType.APPLICATION_JSON);
+        publishOnlyCreate.set("X-ATS-Idempotency-Key", "api-job-publish-only-01");
+        assertEquals(403, rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.POST,
+                new HttpEntity<>(draftPayload, publishOnlyCreate), String.class)
+                .getStatusCode().value(), "JOB_PUBLISH taslak yazma yetkisi değildir");
+
+        assertEquals(403, rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.GET,
+                new HttpEntity<>(bearer(token(
+                        TENANT, "ats.application.read", "application-reader"))), String.class)
+                .getStatusCode().value(), "APPLICATION_READ ilan yüzeyine erişmez");
+
+        ResponseEntity<String> create = rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.POST,
+                new HttpEntity<>(draftPayload, createHeaders), String.class);
+        assertEquals(201, create.getStatusCode().value(), create.getBody());
+        JsonNode draft = objectMapper.readTree(create.getBody());
+        String jobId = draft.path("jobId").asText();
+        String slug = draft.path("slug").asText();
+        assertTrue(jobId.startsWith("job_"));
+        assertEquals("DRAFT", draft.path("status").asText());
+        assertFalse(draft.path("applyEnabled").asBoolean());
+        assertEquals("kvkk-application-v1", draft.path("noticeVersion").asText());
+        assertTrue(draft.path("applicationFields").isArray());
+        assertEquals(404, rest.getForEntity("/api/v1/jobs/" + slug, String.class)
+                .getStatusCode().value(), "taslak public kariyer yüzeyine çıkmaz");
+
+        HttpHeaders publishHeaders = bearer(token(TENANT, "ats.job.publish", "job-publisher"));
+        publishHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+        HttpHeaders writeOnlyTransition = bearer(token(
+                TENANT, "ats.job.write", "write-only-recruiter"));
+        writeOnlyTransition.setContentType(MediaType.APPLICATION_JSON);
+        writeOnlyTransition.set("X-ATS-Idempotency-Key", "api-job-write-only-001");
+        assertEquals(403, rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"targetStatus\":\"PUBLISHED\"}",
+                        writeOnlyTransition), String.class).getStatusCode().value(),
+                "JOB_WRITE yayınlama yetkisi değildir");
+        HttpHeaders missingVersionHeaders = new HttpHeaders();
+        missingVersionHeaders.putAll(publishHeaders);
+        missingVersionHeaders.set("X-ATS-Idempotency-Key", "api-job-missing-version-01");
+        ResponseEntity<String> missingVersion = rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"targetStatus\":\"PUBLISHED\"}", missingVersionHeaders),
+                String.class);
+        assertEquals(400, missingVersion.getStatusCode().value(), missingVersion.getBody());
+        assertEquals("INVALID",
+                objectMapper.readTree(missingVersion.getBody()).path("error").asText());
+
+        publishHeaders.set("X-ATS-Idempotency-Key", "api-job-publish-key-01");
+        ResponseEntity<String> publish = rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"targetStatus\":\"PUBLISHED\"}",
+                        publishHeaders), String.class);
+        assertEquals(200, publish.getStatusCode().value(), publish.getBody());
+        assertEquals("PUBLISHED", objectMapper.readTree(publish.getBody()).path("status").asText());
+        assertEquals("acik", objectMapper.readTree(publish.getBody()).path("publicHandle").asText());
+        assertEquals(200, rest.getForEntity("/api/v1/jobs/" + slug, String.class)
+                .getStatusCode().value());
+        assertEquals(200, rest.getForEntity(
+                "/api/v1/careers/acik/jobs/" + slug, String.class).getStatusCode().value());
+
+        HttpHeaders pauseHeaders = bearer(token(TENANT, "ats.job.publish", "job-publisher"));
+        pauseHeaders.setContentType(MediaType.APPLICATION_JSON);
+        pauseHeaders.set("X-ATS-Idempotency-Key", "api-job-pause-key-001");
+        ResponseEntity<String> pause = rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":1,\"targetStatus\":\"PAUSED\"}",
+                        pauseHeaders), String.class);
+        assertEquals(200, pause.getStatusCode().value(), pause.getBody());
+        assertEquals("PAUSED", objectMapper.readTree(pause.getBody()).path("status").asText());
+        assertEquals(404, rest.getForEntity("/api/v1/jobs/" + slug, String.class)
+                .getStatusCode().value(), "duraklatılan ilan başvuru kabul etmez");
+
+        ResponseEntity<String> latePublishReplay = rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"targetStatus\":\"PUBLISHED\"}",
+                        publishHeaders), String.class);
+        assertEquals(200, latePublishReplay.getStatusCode().value());
+        assertEquals("true", latePublishReplay.getHeaders().getFirst("X-ATS-Replay"));
+        JsonNode replayBody = objectMapper.readTree(latePublishReplay.getBody());
+        assertEquals("PUBLISHED", replayBody.path("status").asText());
+        assertEquals(1, replayBody.path("version").asInt(),
+                "idempotent retry exact publish response'unu döndürür");
     }
 
     private static String payload(String name, String acceptedAt) throws Exception {

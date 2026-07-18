@@ -13,19 +13,32 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * JSON deserialize edilmeden önce public application body sınırı. Chunked/
- * belirsiz uzunluk reddedilir; proxy ve uygulama aynı 64 KiB kontratını taşır.
+ * JSON deserialize edilmeden önce public application ve recruiter job mutation
+ * body sınırı. Chunked/belirsiz uzunluk reddedilir; proxy ve uygulama aynı
+ * 64 KiB kontratını taşır.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 final class PublicApplicationBodyLimitFilter extends OncePerRequestFilter {
 
     static final long MAX_BYTES = 65_536L;
+    private static final String SUBMISSION_PATH =
+            "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/applications";
+    private static final String RECRUITER_CREATE_PATH = "/api/v1/recruiter/jobs";
+    private static final String RECRUITER_UPDATE_PATH = "/api/v1/recruiter/jobs/[^/]+";
+    private static final String RECRUITER_TRANSITION_PATH =
+            "/api/v1/recruiter/jobs/[^/]+/transitions";
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod())
-                || !request.getRequestURI().matches("/api/v1/jobs/[^/]+/applications");
+        String method = request.getMethod();
+        String uri = request.getRequestURI();
+        boolean boundedPost = "POST".equals(method)
+                && (uri.matches(SUBMISSION_PATH)
+                        || uri.matches(RECRUITER_CREATE_PATH)
+                        || uri.matches(RECRUITER_TRANSITION_PATH));
+        boolean boundedPut = "PUT".equals(method) && uri.matches(RECRUITER_UPDATE_PATH);
+        return !boundedPost && !boundedPut;
     }
 
     @Override

@@ -40,6 +40,7 @@ public final class ApplicationIntakeService {
     private static final Pattern IDEMPOTENCY = Pattern.compile("[A-Za-z0-9._:-]{16,128}");
     private static final Pattern PUBLIC_REF = Pattern.compile("app_[A-Za-z0-9_-]{24}");
     private static final Pattern CANDIDATE_ACCESS = Pattern.compile("[A-Za-z0-9_-]{43}");
+    private static final Pattern PUBLIC_HANDLE = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+){0,7}");
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> ALLOWED = Map.of(
             ApplicationStatus.SUBMITTED, Set.of(ApplicationStatus.UNDER_REVIEW),
@@ -96,6 +97,14 @@ public final class ApplicationIntakeService {
         return store.listPublishedJobs(publicTenantId);
     }
 
+    public Outcome<List<JobPosting>> listPublishedJobs(String publicHandle) {
+        Outcome<TenantId> tenant = resolvePublicTenant(publicHandle);
+        if (tenant instanceof Outcome.Fail<TenantId> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        return store.listPublishedJobs(((Outcome.Ok<TenantId>) tenant).value());
+    }
+
     public Outcome<JobPosting> findPublishedJob(String slug) {
         if (!validSlug(slug)) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan bulunamadı");
@@ -103,8 +112,37 @@ public final class ApplicationIntakeService {
         return store.findPublishedJob(publicTenantId, slug);
     }
 
+    public Outcome<JobPosting> findPublishedJob(String publicHandle, String slug) {
+        if (!validSlug(slug)) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan bulunamadı");
+        }
+        Outcome<TenantId> tenant = resolvePublicTenant(publicHandle);
+        if (tenant instanceof Outcome.Fail<TenantId> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        return store.findPublishedJob(((Outcome.Ok<TenantId>) tenant).value(), slug);
+    }
+
     public Outcome<ApplicationReceipt> submit(
             String jobSlug, String idempotencyKey, String candidateAccessToken, Submission raw) {
+        return submitForTenant(
+                publicTenantId, null, jobSlug, idempotencyKey, candidateAccessToken, raw);
+    }
+
+    public Outcome<ApplicationReceipt> submit(
+            String publicHandle, String jobSlug, String idempotencyKey,
+            String candidateAccessToken, Submission raw) {
+        Outcome<TenantId> tenant = resolvePublicTenant(publicHandle);
+        if (tenant instanceof Outcome.Fail<TenantId> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        return submitForTenant(((Outcome.Ok<TenantId>) tenant).value(), publicHandle,
+                jobSlug, idempotencyKey, candidateAccessToken, raw);
+    }
+
+    private Outcome<ApplicationReceipt> submitForTenant(
+            TenantId tenantId, String publicHandle, String jobSlug, String idempotencyKey,
+            String candidateAccessToken, Submission raw) {
         if (!validSlug(jobSlug)) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan bulunamadı");
         }
@@ -125,7 +163,8 @@ public final class ApplicationIntakeService {
         String publicRef = "app_" + randomUrlToken(18);
         String occurredAt = clock.instant().toString();
         SubmitCommand command = new SubmitCommand(
-                publicTenantId,
+                tenantId,
+                publicHandle,
                 jobSlug,
                 publicRef,
                 accessDigest,
@@ -147,6 +186,14 @@ public final class ApplicationIntakeService {
                 app.publicRef(),
                 candidateAccessToken,
                 app.status(), app.version(), app.createdAt(), result.state() == SubmitState.REPLAYED));
+    }
+
+    private Outcome<TenantId> resolvePublicTenant(String publicHandle) {
+        if (publicHandle == null || publicHandle.length() > 120
+                || !PUBLIC_HANDLE.matcher(publicHandle).matches()) {
+            return Outcome.fail(OutcomeCode.NOT_FOUND, "kariyer sitesi bulunamadı");
+        }
+        return store.resolveActiveCareerTenant(publicHandle);
     }
 
     public Outcome<CandidateStatusView> candidateStatus(String publicRef, String candidateAccessToken) {

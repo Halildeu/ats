@@ -14,9 +14,25 @@ public record JobPosting(
         String mode,
         String employmentType,
         String summary,
-        List<String> highlights) {
+        List<String> highlights,
+        List<String> applicationFields,
+        String noticeVersion,
+        JobPostingStatus status,
+        boolean applyEnabled,
+        int version,
+        String createdAt,
+        String updatedAt) {
 
     public JobPosting {
         highlights = highlights == null ? List.of() : List.copyOf(highlights);
+        applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+        if (noticeVersion == null || noticeVersion.isBlank()) {
+            throw new IllegalArgumentException("noticeVersion zorunlu");
+        }
+        if (status == null) throw new IllegalArgumentException("status zorunlu");
+        if (applyEnabled != status.acceptsApplications()) {
+            throw new IllegalArgumentException("applyEnabled/status invariant bozuk");
+        }
+        if (version < 0) throw new IllegalArgumentException("version negatif olamaz");
     }
 }

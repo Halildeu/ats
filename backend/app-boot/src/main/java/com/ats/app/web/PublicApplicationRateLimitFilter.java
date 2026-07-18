@@ -19,8 +19,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE + 30)
 final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
 
-    private static final String PREFIX = "/api/v1/jobs/";
-    private static final String SUFFIX = "/applications";
+    private static final String SUBMISSION_PATH =
+            "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/applications";
+    private static final String SUBMISSION_BUCKET = "public-application-submit";
     private final PublicApplicationRateLimiter limiter;
 
     PublicApplicationRateLimitFilter(PublicApplicationRateLimiter limiter) {
@@ -30,15 +31,16 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return !"POST".equals(request.getMethod())
-                || !request.getRequestURI().matches("/api/v1/jobs/[^/]+/applications");
+                || !request.getRequestURI().matches(SUBMISSION_PATH);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain chain) throws ServletException, IOException {
-        String uri = request.getRequestURI();
-        String jobSlug = uri.substring(PREFIX.length(), uri.length() - SUFFIX.length());
-        if (!limiter.allow(request.getRemoteAddr(), jobSlug)) {
+        // The default /jobs alias and canonical /careers/{handle}/jobs route
+        // reach the same intake surface. Use one per-IP bucket so aliases and
+        // attacker-controlled path segments cannot multiply bucket count.
+        if (!limiter.allow(request.getRemoteAddr(), SUBMISSION_BUCKET)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setHeader("Retry-After", "600");
             response.setHeader("Cache-Control", CacheControl.noStore().getHeaderValue());

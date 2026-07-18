@@ -2,6 +2,8 @@ package com.ats.app;
 
 import com.ats.application.ApplicationIntakeService;
 import com.ats.application.ApplicationStore;
+import com.ats.application.JobPostingService;
+import com.ats.application.JobPostingStore;
 import com.ats.consent.ConsentGate;
 import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
@@ -37,6 +39,7 @@ import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
 import com.ats.persistence.PostgresApplicationStore;
+import com.ats.persistence.PostgresJobPostingStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
@@ -163,6 +166,16 @@ class WiringConfig {
         return new ApplicationIntakeService(
                 store, new com.ats.kernel.Ids.TenantId(publicTenantId),
                 Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    JobPostingStore jobPostingStore(DataSource ds, Flyway flyway) {
+        return new PostgresJobPostingStore(ds);
+    }
+
+    @Bean
+    JobPostingService jobPostingService(JobPostingStore store) {
+        return new JobPostingService(store, Clock.systemUTC(), new SecureRandom());
     }
 
     // --- ingest ---

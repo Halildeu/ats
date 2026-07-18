@@ -11,6 +11,7 @@ public interface ApplicationStore {
 
     record SubmitCommand(
             TenantId publicTenantId,
+            String publicHandle,
             String jobSlug,
             String publicRef,
             String candidateAccessDigest,
@@ -53,6 +54,9 @@ public interface ApplicationStore {
     Outcome<List<JobPosting>> listPublishedJobs(TenantId publicTenantId);
 
     Outcome<JobPosting> findPublishedJob(TenantId publicTenantId, String slug);
+
+    /** Public handle aktif bir kariyer sitesine atomik olarak çözülür; tenant id dışarıdan alınmaz. */
+    Outcome<TenantId> resolveActiveCareerTenant(String publicHandle);
 
     /** Application + SUBMITTED event + idempotency satırı tek DB transaction'ında. */
     Outcome<SubmitResult> submit(SubmitCommand command);

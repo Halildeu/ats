@@ -57,6 +57,13 @@ ats:
     issuer: ${ATS_JWT_ISSUER:}
     audience: ${ATS_JWT_AUDIENCE:}
     tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
+  authorization:
+    # Same-bearer platform permission projection. Empty keeps public careers
+    # bootable, but every recruiter endpoint fails closed. Legacy ats-api
+    # authorities are an explicit test/rolling-deploy escape hatch only.
+    platform-base-url: ${ATS_PLATFORM_AUTHZ_BASE_URL:}
+    timeout: ${ATS_PLATFORM_AUTHZ_TIMEOUT:3s}
+    allow-legacy-authorities: ${ATS_ALLOW_LEGACY_AUTHZ:false}
   model-governance:
     # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry (o durumda boot-gate,
     # aktif provider'ın enabled-capability'lerini APPROVED'a çözemez → fail-closed düşer).

@@ -31,11 +31,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
     @Override
     public Outcome<List<JobPosting>> listPublishedJobs(TenantId publicTenantId) {
         String sql = """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND published = true
-                 ORDER BY updated_at DESC, slug
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.status = 'PUBLISHED' AND j.apply_enabled = true
+                 ORDER BY j.updated_at DESC, j.slug
                 """;
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());
@@ -52,10 +55,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
     @Override
     public Outcome<JobPosting> findPublishedJob(TenantId publicTenantId, String slug) {
         String sql = """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND slug = ? AND published = true
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.slug = ?
+                   AND j.status = 'PUBLISHED' AND j.apply_enabled = true
                 """;
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());
@@ -71,15 +78,44 @@ public final class PostgresApplicationStore implements ApplicationStore {
     }
 
     @Override
+    public Outcome<TenantId> resolveActiveCareerTenant(String publicHandle) {
+        String sql = """
+                SELECT tenant_id
+                  FROM ats_career_site
+                 WHERE public_handle = ? AND active = true
+                """;
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, publicHandle);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next()
+                        ? Outcome.ok(new TenantId(rs.getString("tenant_id")))
+                        : Outcome.fail(OutcomeCode.NOT_FOUND, "kariyer sitesi bulunamadı");
+            }
+        } catch (SQLException ex) {
+            return Pg.sqlFail(ex);
+        }
+    }
+
+    @Override
     public Outcome<SubmitResult> submit(SubmitCommand command) {
         try (Connection c = ds.getConnection()) {
             c.setAutoCommit(false);
             try {
                 JobPosting job = lockPublishedJob(
-                        c, command.publicTenantId(), command.jobSlug());
+                        c, command.publicTenantId(), command.publicHandle(), command.jobSlug());
                 if (job == null) {
                     c.rollback();
                     return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan bulunamadı");
+                }
+                if (!job.noticeVersion().equals(command.submission().noticeVersion())) {
+                    c.rollback();
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "ilan aydınlatma sürümü değişti; formu yenileyin");
+                }
+                if (!configuredFieldsAccept(job, command)) {
+                    c.rollback();
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "ilan başvuru alanları değişti; formu yenileyin");
                 }
 
                 boolean reserved = reserveIdempotency(c, job, command);
@@ -247,18 +283,39 @@ public final class PostgresApplicationStore implements ApplicationStore {
         }
     }
 
-    private JobPosting lockPublishedJob(Connection c, TenantId publicTenantId, String slug)
+    private JobPosting lockPublishedJob(
+            Connection c, TenantId publicTenantId, String publicHandle, String slug)
             throws SQLException {
-        String sql = """
-                SELECT tenant_id, job_id, slug, title, team, location, mode,
-                       employment_type, summary, highlights::text
-                  FROM ats_job_posting
-                 WHERE tenant_id = ? AND slug = ? AND published = true
-                 FOR SHARE
+        boolean canonicalHandle = publicHandle != null;
+        String sql = canonicalHandle ? """
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id
+                 WHERE j.tenant_id = ? AND c.public_handle = ? AND c.active = true
+                   AND j.slug = ? AND j.status = 'PUBLISHED' AND j.apply_enabled = true
+                 FOR SHARE OF j
+                """ : """
+                SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
+                       j.employment_type, j.summary, j.highlights::text,
+                       j.application_fields::text, j.notice_version, j.status,
+                       j.apply_enabled, j.version, j.created_at, j.updated_at
+                  FROM ats_job_posting j
+                  JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
+                 WHERE j.tenant_id = ? AND j.slug = ?
+                   AND j.status = 'PUBLISHED' AND j.apply_enabled = true
+                 FOR SHARE OF j
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, publicTenantId.value());
-            ps.setString(2, slug);
+            if (canonicalHandle) {
+                ps.setString(2, publicHandle);
+                ps.setString(3, slug);
+            } else {
+                ps.setString(2, slug);
+            }
             try (ResultSet rs = ps.executeQuery()) { return rs.next() ? readJob(rs) : null; }
         }
     }
@@ -278,6 +335,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setTimestamp(5, timestamp(command.occurredAt()));
             return ps.executeUpdate() == 1;
         }
+    }
+
+    private static boolean configuredFieldsAccept(JobPosting job, SubmitCommand command) {
+        var fields = job.applicationFields();
+        var submission = command.submission();
+        return (fields.contains("linkedIn") || submission.linkedIn() == null)
+                && (fields.contains("portfolio") || submission.portfolio() == null)
+                && (fields.contains("note") || submission.note() == null);
     }
 
     private ExistingIdempotency readIdempotency(Connection c, JobPosting job, String key) throws SQLException {
@@ -406,10 +471,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
     }
 
     private static JobPosting readJob(ResultSet rs) throws SQLException {
-        return new JobPosting(new TenantId(rs.getString("tenant_id")), rs.getString("job_id"),
-                rs.getString("slug"), rs.getString("title"), rs.getString("team"),
-                rs.getString("location"), rs.getString("mode"), rs.getString("employment_type"),
-                rs.getString("summary"), Pg.stringsFromJson(rs.getString("highlights")));
+        return PostgresJobPostingStore.readJob(rs);
     }
 
     private static int bindFilters(PreparedStatement ps, TenantId tenantId,
