@@ -27,6 +27,21 @@ Recruitment AI = EU AI Act'te **high-risk** alan (Annex III). Risk gradyanı (re
 5. **EU AI Act / NYC LL144 artefaktları:** model/version log + human-oversight log + transparency disclosure (Art.50) + technical-file/conformity (P3+ procurement). 
 6. **KVKK kesişimi:** açık rıza + aydınlatma + DSAR + VERBIS + özel-nitelikli/biyometrik dokunma yasağı (ATS-0003).
 
+### Aday self-servis yazımı ile AI write-back ayrımı (2026-07-16 açıklaması)
+
+`candidate-write` yasağı, AI'ın veya bir entegrasyon/connector'ın aday kaydı oluşturması,
+adayı puanlaması, sıralaması, reddetmesi ya da yaşam-döngüsü aşamasını otonom
+değiştirmesidir. Bu yasak aşağıdaki insan-kaynaklı ürün işlemlerini kapsamaz:
+
+- adayın kendi bilgilerini görüp düzenleyerek güncel aydınlatmayı kabul ettikten sonra
+  ilan formunu kendisinin göndermesi;
+- yetkili insan İK kullanıcısının tenant-bound kimlikle, kapalı ve audit edilen
+  `SUBMITTED → UNDER_REVIEW → INTERVIEW_PENDING` durum makinesini işletmesi.
+
+Bu ayrım AI-governance kararını gevşetmez: self-servis başvuru gövdesinde caller tenant,
+status, score veya rank alanı yoktur; ret/teklif/otomatik eleme durum kümesine alınmaz;
+AI/connector write-back sözleşme yüzeyinde yasak kalır.
+
 ## Sonuçlar
 
 **Olumlu:** legal kalkan + "uyumu güven ürününe çevir" (bias-audit = feature); regüle alıcıya risk-azaltma satışı; Mobley-tipi davalardan kaçınma.

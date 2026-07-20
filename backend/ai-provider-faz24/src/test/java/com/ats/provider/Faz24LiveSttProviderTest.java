@@ -38,7 +38,10 @@ class Faz24LiveSttProviderTest {
 
     private static final String HAPPY_BODY = """
             {"text":"merhaba dunya","language":"tr","language_probability":0.98,
-             "duration":3.0,"elapsed_ms":120,"model":"medium","compute_type":"float16",
+             "duration":3.0,"elapsed_ms":120,"model":"Systran/faster-whisper-medium",
+             "model_revision":"08e178d48790749d25932bbc082711ddcfdfbc4f",
+             "model_sha256":"sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+             "compute_type":"float16",
              "device":"cuda","segments":[
                {"id":0,"start":0.0,"end":1.48,"text":"merhaba","avg_logprob":-0.2,"no_speech_prob":0.01},
                {"id":1,"start":1.5,"end":3.0,"text":"dunya"}]}
@@ -138,11 +141,12 @@ class Faz24LiveSttProviderTest {
         for (AIProvider.TranscriptSegment seg : result.segments()) {
             assertEquals(Faz24LiveSttProvider.UNDIARIZED_STREAM, seg.speaker());
         }
-        // gov1-1b: sağlayıcının RAPORLADIĞI model kimliği zarfa taşınır (HAPPY_BODY "model":"medium").
-        // Versiyon SUNULMAZ → null. Enforcement gov1-1c'de; burada yalnız envelope.
-        assertEquals("medium", result.modelIdentity().reportedModelId());
-        assertEquals(null, result.modelIdentity().reportedModelVersion(),
-                "live-stt model-versiyonu sunmaz → null");
+        // Faz25: gerçek model repo + revision + doğrulanmış artifact SHA kanonik zarfa taşınır.
+        assertEquals("Systran/faster-whisper-medium", result.modelIdentity().reportedModelId());
+        assertEquals(
+                "hf:08e178d48790749d25932bbc082711ddcfdfbc4f"
+                        + "@sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+                result.modelIdentity().reportedModelVersion());
         assertEquals(1, CALLS.get());
         assertEquals("language=tr", lastQuery);
         ParsedPart part = parseSinglePart(lastRequestBody, lastContentTypeHeader);
@@ -208,6 +212,35 @@ class Faz24LiveSttProviderTest {
         assertInstanceOf(Outcome.Ok.class, out, "malformed model transcript'i düşürmemeli: " + out);
         AIProvider.TranscriptResult result = ((Outcome.Ok<AIProvider.TranscriptResult>) out).value();
         assertEquals(null, result.modelIdentity().reportedModelId(), "malformed reported model → null'a indirilmeli");
+    }
+
+    @Test
+    void missing_or_malformed_artifact_component_yields_missing_version() {
+        String validModel = "\"model\":\"Systran/faster-whisper-medium\",";
+        String validRevision = "\"model_revision\":\"08e178d48790749d25932bbc082711ddcfdfbc4f\",";
+        String validSha = "\"model_sha256\":\"sha256:"
+                + "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae\",";
+        for (String identityFields : java.util.List.of(
+                validModel + validRevision,
+                validModel + validSha,
+                validModel + "\"model_revision\":\"main\"," + validSha,
+                validModel + validRevision + "\"model_sha256\":\"sha256:not-a-digest\",")) {
+            responseBody = "{" + identityFields + "\"language\":\"tr\",\"segments\":[]}";
+            AIProvider.TranscriptResult result = ((Outcome.Ok<AIProvider.TranscriptResult>)
+                    provider(null, okSource()).transcribe("rec-1")).value();
+            assertEquals(null, result.modelIdentity().reportedModelVersion(),
+                    "eksik/malformed artifact alanı governance için missing olmalı");
+        }
+    }
+
+    @Test
+    void canonical_artifact_version_is_exact_and_lowercase() {
+        String revision = "08e178d48790749d25932bbc082711ddcfdfbc4f";
+        String digest = "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae";
+        assertEquals("hf:" + revision + "@sha256:" + digest,
+                Faz24LiveSttProvider.canonicalArtifactVersion(revision, "sha256:" + digest));
+        assertEquals(null, Faz24LiveSttProvider.canonicalArtifactVersion(revision.toUpperCase(), digest));
+        assertEquals(null, Faz24LiveSttProvider.canonicalArtifactVersion(revision, digest.toUpperCase()));
     }
 
     // ---- fail-closed cevap-map vakaları ----

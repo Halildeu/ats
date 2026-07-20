@@ -1,6 +1,13 @@
 package com.ats.app;
 
 import com.ats.app.screening.ScreeningRuntimeService;
+import com.ats.application.ApplicationIntakeService;
+import com.ats.application.ApplicationStore;
+import com.ats.application.JobPostingService;
+import com.ats.application.JobPostingStore;
+import com.ats.application.ResumeDocumentParser;
+import com.ats.application.ResumeImportService;
+import com.ats.application.ResumeImportStore;
 import com.ats.consent.ConsentGate;
 import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
@@ -26,6 +33,11 @@ import com.ats.ingest.IngestService;
 import com.ats.ingest.LocalPatternScanAdapter;
 import com.ats.ingest.MalwareScanPort;
 import com.ats.ingest.ObjectStorePort;
+import com.ats.interview.InterviewStore;
+import com.ats.interview.InterviewWorkspaceService;
+import com.ats.kernel.Outcome;
+import com.ats.offer.OfferStore;
+import com.ats.offer.OfferWorkspaceService;
 import com.ats.ops.OperationalEventSink;
 import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
@@ -35,6 +47,11 @@ import com.ats.orchestration.SegmentSanitizer;
 import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
+import com.ats.persistence.PostgresApplicationStore;
+import com.ats.persistence.PostgresResumeImportStore;
+import com.ats.persistence.PostgresJobPostingStore;
+import com.ats.persistence.PostgresInterviewStore;
+import com.ats.persistence.PostgresOfferStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
@@ -53,6 +70,7 @@ import com.ats.screening.ScreeningEvidenceStore;
 import com.zaxxer.hikari.HikariConfig;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.security.SecureRandom;
 import java.util.EnumMap;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
@@ -63,6 +81,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * ATS-0008 D-A composition: TÜM domain bean'leri burada AÇIKÇA kurulur —
@@ -149,6 +168,85 @@ class WiringConfig {
     @Bean
     RetentionScanner retentionScanner(DataSource ds, Flyway flyway) {
         return new PostgresRetentionScanner(ds);
+    }
+
+    @Bean
+    ApplicationStore applicationStore(DataSource ds, Flyway flyway) {
+        return new PostgresApplicationStore(ds);
+    }
+
+    @Bean
+    ApplicationIntakeService applicationIntakeService(ApplicationStore store,
+            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+        return new ApplicationIntakeService(
+                store, new com.ats.kernel.Ids.TenantId(publicTenantId),
+                Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    ResumeImportStore resumeImportStore(DataSource ds, Flyway flyway) {
+        return new PostgresResumeImportStore(ds);
+    }
+
+    @Bean
+    ResumeDocumentParser resumeDocumentParser() {
+        return new PdfBoxResumeDocumentParser();
+    }
+
+    @Bean(destroyMethod = "close")
+    ResumeImportService resumeImportService(
+            ResumeImportStore store,
+            ApplicationStore applicationStore,
+            ResumeDocumentParser parser,
+            MalwareScanPort scanner,
+            AppProperties props,
+            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+        AppProperties.ResumeImport cfg = props.resumeImport();
+        ResumeImportService.DocumentScanner documentScanner = bytes -> {
+            Outcome<com.ats.ingest.MalwareScanPort.ScanResult> result = scanner.scan(bytes);
+            if (result instanceof Outcome.Fail<com.ats.ingest.MalwareScanPort.ScanResult> fail) {
+                return Outcome.fail(fail.code(), fail.reason());
+            }
+            return Outcome.ok(((Outcome.Ok<com.ats.ingest.MalwareScanPort.ScanResult>) result).value()
+                    == com.ats.ingest.MalwareScanPort.ScanResult.CLEAN
+                    ? ResumeImportService.ScanDecision.CLEAN
+                    : ResumeImportService.ScanDecision.REJECTED);
+        };
+        return new ResumeImportService(
+                store, applicationStore, parser, documentScanner,
+                new com.ats.kernel.Ids.TenantId(publicTenantId), Clock.systemUTC(),
+                new SecureRandom(), cfg.maxUploadBytes(), cfg.maxPages(),
+                cfg.syntheticOnly(), cfg.maxConcurrentParses());
+    }
+
+    @Bean
+    JobPostingStore jobPostingStore(DataSource ds, Flyway flyway) {
+        return new PostgresJobPostingStore(ds);
+    }
+
+    @Bean
+    JobPostingService jobPostingService(JobPostingStore store) {
+        return new JobPostingService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    InterviewStore interviewStore(DataSource ds, Flyway flyway) {
+        return new PostgresInterviewStore(ds);
+    }
+
+    @Bean
+    InterviewWorkspaceService interviewWorkspaceService(InterviewStore store) {
+        return new InterviewWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    OfferStore offerStore(DataSource ds, Flyway flyway) {
+        return new PostgresOfferStore(ds);
+    }
+
+    @Bean
+    OfferWorkspaceService offerWorkspaceService(OfferStore store) {
+        return new OfferWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
     }
 
     @Bean
