@@ -587,7 +587,13 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
     @Override
     public Outcome<ResumeDraft> findConfirmedDraft(
             TenantId tenantId, String jobId, String candidateAccessDigest,
-            String importId, int expectedDraftVersion) {
+            String importId, int expectedDraftVersion, String nowIso) {
+        Timestamp now;
+        try {
+            now = timestamp(nowIso);
+        } catch (IllegalArgumentException ex) {
+            return Outcome.fail(OutcomeCode.INVALID, "CV taslak arama zamanı geçersiz");
+        }
         String sql = """
                 SELECT d.draft_id, d.import_id, d.version, d.created_at,
                        f.field_key, f.field_value
@@ -598,7 +604,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                     ON f.tenant_id=d.tenant_id AND f.draft_id=d.draft_id
                  WHERE d.tenant_id=? AND d.job_id=? AND d.candidate_access_digest=?
                    AND d.import_id=? AND d.version=? AND d.consumed_at IS NULL
-                   AND i.state='CONFIRMED' AND d.expires_at > CURRENT_TIMESTAMP
+                   AND i.state='CONFIRMED' AND d.expires_at > ?
                  ORDER BY f.field_key
                 """;
         try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -607,6 +613,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
             ps.setString(3, candidateAccessDigest);
             ps.setString(4, importId);
             ps.setInt(5, expectedDraftVersion);
+            ps.setTimestamp(6, now);
             Map<ResumeField, String> fields = new LinkedHashMap<>();
             String draftId = null;
             String createdAt = null;
