@@ -115,7 +115,7 @@ class OpenApiDriftTest {
                 String nameB = tagName(b);
                 return nameA.compareTo(nameB);
             });
-            pruned.put("tags", JsonValue.array(sortedTags));
+            pruned.put("tags", new JsonValue.JsonArray(sortedTags));
         }
         return JsonCodec.canonical(JsonValue.object(pruned));
     }
