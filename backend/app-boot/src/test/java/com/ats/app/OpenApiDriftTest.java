@@ -78,6 +78,28 @@ class OpenApiDriftTest {
 
         if (!pinnedCanonical.equals(liveCanonical)) {
             writeLive(liveCanonical);
+            System.err.println("DEBUG_SIZES pinned=" + pinnedCanonical.length()
+                    + " live=" + liveCanonical.length());
+            int minLen = Math.min(pinnedCanonical.length(), liveCanonical.length());
+            int firstDiff = -1;
+            for (int idx = 0; idx < minLen; idx++) {
+                if (pinnedCanonical.charAt(idx) != liveCanonical.charAt(idx)) {
+                    firstDiff = idx;
+                    break;
+                }
+            }
+            System.err.println("DEBUG_FIRST_DIFF_INDEX=" + firstDiff);
+            if (firstDiff >= 0) {
+                int start = Math.max(0, firstDiff - 80);
+                int end = Math.min(minLen, firstDiff + 120);
+                System.err.println("DEBUG_PINNED_AT_DIFF=" + pinnedCanonical.substring(start, end));
+                System.err.println("DEBUG_LIVE_AT_DIFF=" + liveCanonical.substring(start, end));
+            }
+            // Also print CODE-POINT of the differing char if same length
+            if (firstDiff >= 0) {
+                System.err.println("DEBUG_PINNED_CP=" + (int) pinnedCanonical.charAt(firstDiff)
+                        + " LIVE_CP=" + (int) liveCanonical.charAt(firstDiff));
+            }
         }
         assertEquals(pinnedCanonical, liveCanonical,
                 "API sözleşmesi pinlenen snapshot'tan SAPTI. Bilinçsiz değişiklikse geri alın;"
