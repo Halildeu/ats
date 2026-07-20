@@ -10,12 +10,13 @@
   </parent>
   <artifactId>compliance-screening</artifactId>
 
-  <!-- ATS 156-a — protected-attribute screening KERNEL (framework-free saf çekirdek).
+  <!-- ATS 156-a/156-b — protected-attribute screening KERNEL + framework-free persistence PORTU.
        Deterministik LEKSİK korumalı-özellik + soru-kalıbı tarayıcısı; İNSAN-reviewer için
        compliance-SİNYALİ üretir (aday-karar/score/outcome YAPISAL olarak YOK).
        Bağımlılık: yalnız shared-kernel (JsonCodec fail-closed parser). Framework/persistence/
        vendor + orchestration/provider/export/governance/contracts YASAK (ArchUnit).
-       Runtime-wiring/WORM/store/transcript-değişimi bu modülde YOK (156-b/c/d ayrı slice). -->
+       156-b portu atomik restricted-store + pointer-only receipt sözleşmesini taşır; JDBC/WORM
+       adapter'ı persistence-postgres'tadır. Runtime-wiring/transcript/UI 156-c/d ayrı slice. -->
 
   <dependencies>
     <dependency>

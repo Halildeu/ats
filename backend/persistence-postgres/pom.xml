@@ -74,6 +74,12 @@
       <artifactId>consent</artifactId>
       <version>0.0.0</version>
     </dependency>
+    <!-- ATS #156-b: adapter → framework-free screening portu (ters bağımlılık YOK). -->
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>compliance-screening</artifactId>
+      <version>0.0.0</version>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
