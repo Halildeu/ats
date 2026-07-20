@@ -86,7 +86,12 @@ class OpenApiDriftTest {
                         + " (PR'da API-sözleşme değişikliği olarak açıkça beyan edin).");
     }
 
-    /** "servers" (test-portu değişken) çıkarılır; kalan JSON anahtar-sıralı canonical'e indirgenir. */
+    /**
+     * "servers" (test-portu değişken) çıkarılır; "tags" array Springdoc controller
+     * discovery-order variance nedeniyle name'e göre alfabetik sıralanır (OpenAPI
+     * tags semantik olarak set — sequence değil). Kalan JSON anahtar-sıralı canonical'e
+     * indirgenir.
+     */
     private static String normalizedCanonical(String rawJson) {
         JsonValue parsed;
         try {
@@ -99,7 +104,31 @@ class OpenApiDriftTest {
         }
         Map<String, JsonValue> pruned = new LinkedHashMap<>(obj.values());
         pruned.remove("servers");
+        // Tags Springdoc'un @Tag bean-discovery sırasında dizilir; JVM/classpath hash
+        // randomization → run-to-run tag sırası değişir → byte-canonical drift.
+        // Semantik olarak tags bir set: name'e göre sırala, deterministik çıktı garanti.
+        JsonValue tagsVal = pruned.get("tags");
+        if (tagsVal instanceof JsonValue.JsonArray tagsArr) {
+            java.util.List<JsonValue> sortedTags = new java.util.ArrayList<>(tagsArr.items());
+            sortedTags.sort((a, b) -> {
+                String nameA = tagName(a);
+                String nameB = tagName(b);
+                return nameA.compareTo(nameB);
+            });
+            pruned.put("tags", JsonValue.array(sortedTags));
+        }
         return JsonCodec.canonical(JsonValue.object(pruned));
+    }
+
+    private static String tagName(JsonValue tag) {
+        if (!(tag instanceof JsonValue.JsonObject o)) {
+            return "";
+        }
+        JsonValue nameVal = o.values().get("name");
+        if (nameVal instanceof JsonValue.JsonString s) {
+            return s.value();
+        }
+        return "";
     }
 
     private static void writeLive(String canonical) throws IOException {
