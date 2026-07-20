@@ -18,16 +18,19 @@ public interface RetentionScanner {
             InterviewId interviewId,
             List<String> transcriptKeys,
             List<String> citationKeys,
-            List<String> exportArtifactKeys) {
+            List<String> exportArtifactKeys,
+            List<String> screeningFindingSetRefs) {
 
         public ExpiredContent {
             transcriptKeys = List.copyOf(transcriptKeys);
             citationKeys = List.copyOf(citationKeys);
             exportArtifactKeys = List.copyOf(exportArtifactKeys);
+            screeningFindingSetRefs = List.copyOf(screeningFindingSetRefs);
         }
 
         public boolean empty() {
-            return transcriptKeys.isEmpty() && citationKeys.isEmpty() && exportArtifactKeys.isEmpty();
+            return transcriptKeys.isEmpty() && citationKeys.isEmpty() && exportArtifactKeys.isEmpty()
+                    && screeningFindingSetRefs.isEmpty();
         }
     }
 

@@ -49,6 +49,10 @@ public final class PostgresRetentionScanner implements RetentionScanner {
                     + " WHERE tenant_id = ? AND created_at < ?", byInterview, Kind.CITATION);
             collect(c, tenantId, cutoff, "SELECT interview_id, artifact_key FROM export_artifact"
                     + " WHERE tenant_id = ? AND created_at < ?", byInterview, Kind.ARTIFACT);
+            collect(c, tenantId, cutoff,
+                    "SELECT interview_id, finding_set_ref FROM protected_screening_evidence"
+                            + " WHERE tenant_id = ? AND created_at < ?",
+                    byInterview, Kind.SCREENING);
         } catch (SQLException e) {
             return Pg.sqlFail(e);
         }
@@ -56,17 +60,18 @@ public final class PostgresRetentionScanner implements RetentionScanner {
         for (Map.Entry<String, Expired> entry : byInterview.entrySet()) {
             Expired x = entry.getValue();
             out.add(new ExpiredContent(new InterviewId(entry.getKey()),
-                    x.transcripts, x.citations, x.artifacts));
+                    x.transcripts, x.citations, x.artifacts, x.screeningFindingSetRefs));
         }
         return Outcome.ok(List.copyOf(out));
     }
 
-    private enum Kind { TRANSCRIPT, CITATION, ARTIFACT }
+    private enum Kind { TRANSCRIPT, CITATION, ARTIFACT, SCREENING }
 
     private static final class Expired {
         final List<String> transcripts = new ArrayList<>();
         final List<String> citations = new ArrayList<>();
         final List<String> artifacts = new ArrayList<>();
+        final List<String> screeningFindingSetRefs = new ArrayList<>();
     }
 
     private static void collect(Connection c, TenantId tenant, OffsetDateTime cutoff, String sql,
@@ -82,6 +87,7 @@ public final class PostgresRetentionScanner implements RetentionScanner {
                         case TRANSCRIPT -> x.transcripts.add(key);
                         case CITATION -> x.citations.add(key);
                         case ARTIFACT -> x.artifacts.add(key);
+                        case SCREENING -> x.screeningFindingSetRefs.add(key);
                     }
                 }
             }

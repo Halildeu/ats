@@ -211,4 +211,15 @@ class SecurityConfigConverterTest {
                 "tenant", ATS_CLIENT);
         assertTrue(auth.isEmpty());
     }
+
+    @Test
+    void screening_scopes_require_exact_assigned_roles_and_remain_split_read_write() {
+        var auth = SecurityConfig.deriveAuthorities(
+                jwt(Map.of("tenant", "t-1",
+                        "scope", "ats.screening.write ats.screening.read",
+                        "resource_access", roles("ats.screening.read"))),
+                "tenant", ATS_CLIENT);
+        assertEquals(List.of("SCREENING_READ"), names(auth),
+                "read rolü write yetkisine yükselmemeli; scope ve rol exact kesişmeli");
+    }
 }

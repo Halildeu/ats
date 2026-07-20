@@ -9,6 +9,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * 156-b kalıcılık portu: bir tarama sonucunu kısıtlı/silinebilir bulgu düzlemi ile pointer-only
@@ -25,6 +26,76 @@ import java.util.Objects;
 public interface ScreeningEvidenceStore {
 
     String SCHEMA_VERSION = "screening_evidence_v1";
+    Pattern REQUEST_KEY_FORMAT = Pattern.compile(
+            "scrq_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
+    Pattern SOURCE_REF_FORMAT = Pattern.compile("[A-Za-z0-9._:/-]{1,256}");
+
+    /**
+     * Public runtime çağrısının içerik taşımayan, tenant/interview-scope'lu idempotency bağı.
+     * Kaynak ref'i yalnız server-side çözülmüş, insert-only kanonik content kaydının opak anahtarıdır;
+     * tarayıcı/UI bu değeri üretmez. Ham içerik veya içerik/bulgu hash'i YOKTUR.
+     */
+    record RequestBinding(
+            String idempotencyKey,
+            ScreeningSourceKind sourceKind,
+            String canonicalSourceRef,
+            Integer segmentIndex) {
+        public RequestBinding {
+            if (idempotencyKey == null || !REQUEST_KEY_FORMAT.matcher(idempotencyKey).matches()) {
+                throw new IllegalArgumentException(
+                        "idempotencyKey sistem üretimli scrq_<UUIDv4> olmalı");
+            }
+            Objects.requireNonNull(sourceKind, "sourceKind");
+            if (canonicalSourceRef == null
+                    || !SOURCE_REF_FORMAT.matcher(canonicalSourceRef).matches()) {
+                throw new IllegalArgumentException(
+                        "canonicalSourceRef güvenli opak ref olmalı (1..256)");
+            }
+            if (sourceKind == ScreeningSourceKind.TRANSCRIPT_SEGMENT) {
+                if (segmentIndex == null || segmentIndex < 0) {
+                    throw new IllegalArgumentException(
+                            "TRANSCRIPT_SEGMENT için segmentIndex >= 0 zorunlu");
+                }
+            } else if (sourceKind == ScreeningSourceKind.CITATION_CLAIM) {
+                if (segmentIndex != null) {
+                    throw new IllegalArgumentException(
+                            "CITATION_CLAIM segmentIndex taşıyamaz");
+                }
+            } else {
+                throw new IllegalArgumentException(
+                        "kanonik runtime source henüz desteklenmiyor: " + sourceKind);
+            }
+        }
+    }
+
+    /** Atomik idempotent save sonucu; replay yeni kernel/WORM kanıtı üretmez. */
+    record IdempotentSaveResult(
+            SaveReceipt receipt,
+            StoredEvidence evidence,
+            boolean replayed) {
+        public IdempotentSaveResult {
+            Objects.requireNonNull(receipt, "receipt");
+            Objects.requireNonNull(evidence, "evidence");
+            if (!receipt.findingSetRef().equals(evidence.findingSetRef())
+                    || !receipt.runId().equals(evidence.runId())
+                    || receipt.disposition() != evidence.disposition()
+                    || !receipt.evidenceId().equals(evidence.evidenceId())) {
+                throw new IllegalArgumentException(
+                        "idempotent save receipt/evidence tutarsız");
+            }
+        }
+    }
+
+    /** Erken replay sonucu; canonical içerik yeniden okunmadan original evidence döner. */
+    record RequestReplay(RequestBinding binding, StoredEvidence evidence) {
+        public RequestReplay {
+            Objects.requireNonNull(binding, "binding");
+            Objects.requireNonNull(evidence, "evidence");
+            if (binding.sourceKind() != evidence.sourceKind()) {
+                throw new IllegalArgumentException("request binding/evidence sourceKind tutarsız");
+            }
+        }
+    }
 
     /** Tek kernel çalıştırmasının kalıcılaştırma komutu. Disposition daima {@link #disposition()} ile türetilir. */
     record SaveCommand(
@@ -134,16 +205,50 @@ public interface ScreeningEvidenceStore {
     }
 
     /** Purge replay'i aynı tombstone evidenceId'sini döndürür; orijinal receipt değişmez. */
-    record PurgeReceipt(FindingSetRef findingSetRef, EvidenceId tombstoneEvidenceId) {
+    record PurgeReceipt(
+            FindingSetRef findingSetRef,
+            EvidenceId tombstoneEvidenceId,
+            boolean replayed) {
         public PurgeReceipt {
             Objects.requireNonNull(findingSetRef, "findingSetRef");
             requireId(tombstoneEvidenceId == null ? null : tombstoneEvidenceId.value(), "tombstoneEvidenceId");
         }
     }
 
+    /** DSR'nin herhangi bir yan etkiden önce bütün screening hedeflerini doğrulaması için. */
+    enum PurgeTargetState {
+        ACTIVE,
+        PURGED
+    }
+
     Outcome<SaveReceipt> save(SaveCommand command);
 
+    /**
+     * First-writer-wins runtime save: request mapping + restricted aggregate + pointer-only WORM
+     * aynı transaction'dadır. Aynı key/aynı canonical metadata original evidence'i replay eder;
+     * aynı key/farklı metadata {@link com.ats.kernel.OutcomeCode#CONFLICT} döndürür.
+     */
+    Outcome<IdempotentSaveResult> saveIdempotent(SaveCommand command, RequestBinding binding);
+
+    /**
+     * İçeriği yeniden resolve/screen etmeden önce persistent first-writer belleğini okur.
+     * ABSENT = NOT_FOUND; aynı key farklı metadata veya terminal PURGED = CONFLICT.
+     */
+    Outcome<RequestReplay> findRequest(
+            TenantId tenantId, InterviewId interviewId, RequestBinding expectedBinding);
+
+    /** Runtime evidence'i restricted canonical source binding'iyle birlikte okur. */
+    Outcome<RequestReplay> getBoundEvidence(
+            TenantId tenantId, InterviewId interviewId, FindingSetRef findingSetRef);
+
     Outcome<StoredEvidence> get(TenantId tenantId, FindingSetRef findingSetRef);
+
+    /**
+     * Salt-okuma preflight: target aktif restricted aggregate veya doğrulanmış tombstone replay'i
+     * olmalıdır. Hiç var olmamış ref NOT_FOUND; aggregate'siz/tombstone'suz drift NOT_CONFIGURED.
+     */
+    Outcome<PurgeTargetState> inspectPurgeTarget(
+            TenantId tenantId, InterviewId interviewId, FindingSetRef findingSetRef);
 
     Outcome<PurgeReceipt> purge(PurgeCommand command);
 

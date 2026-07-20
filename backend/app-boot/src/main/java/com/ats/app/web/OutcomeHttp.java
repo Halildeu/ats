@@ -19,6 +19,7 @@ final class OutcomeHttp {
     static ResponseEntity<Map<String, String>> fail(Outcome.Fail<?> fail) {
         HttpStatus status = switch (fail.code()) {
             case INVALID -> HttpStatus.BAD_REQUEST;
+            case CONFLICT -> HttpStatus.CONFLICT;
             case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
             case DENIED, TENANT_SCOPE_VIOLATION -> HttpStatus.FORBIDDEN;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;

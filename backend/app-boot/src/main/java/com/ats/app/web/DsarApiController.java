@@ -5,6 +5,7 @@ import com.ats.dsr.DsrService.ErasureReceipt;
 import com.ats.dsr.ErasureScope;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Outcome;
+import com.ats.screening.FindingSetRef;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,7 @@ class DsarApiController {
 
     record ScopeDto(List<String> transcriptKeys, List<String> citationKeys,
             List<String> exportArtifactKeys, List<String> reviewCaseKeys,
+            List<String> screeningFindingSetRefs,
             List<String> tombstoneTargetEvidenceIds) {}
 
     record ErasureBody(String dsarKey, ScopeDto scope) {}
@@ -67,12 +69,21 @@ class DsarApiController {
         // fail-closed doğrulama (Codex #66 blocker-2): null eleman NPE→500 yerine 400
         if (hasNullElement(s.transcriptKeys()) || hasNullElement(s.citationKeys())
                 || hasNullElement(s.exportArtifactKeys()) || hasNullElement(s.reviewCaseKeys())
+                || hasNullElement(s.screeningFindingSetRefs())
                 || hasNullElement(s.tombstoneTargetEvidenceIds())) {
             return badRequest("scope listelerinde null eleman olamaz (fail-closed)");
+        }
+        for (String ref : orEmpty(s.screeningFindingSetRefs())) {
+            try {
+                new FindingSetRef(ref);
+            } catch (IllegalArgumentException ex) {
+                return badRequest("screeningFindingSetRefs yalnız fsr_<64 lowercase hex> kabul eder");
+            }
         }
         ErasureScope scope = new ErasureScope(
                 orEmpty(s.transcriptKeys()), orEmpty(s.citationKeys()),
                 orEmpty(s.exportArtifactKeys()), orEmpty(s.reviewCaseKeys()),
+                orEmpty(s.screeningFindingSetRefs()),
                 orEmpty(s.tombstoneTargetEvidenceIds()));
         Outcome<ErasureReceipt> out = dsrService.executeErasure(tenantAccess.tenant(auth),
                 tenantAccess.actor(auth), new InterviewId(interviewId), body.dsarKey(), scope);

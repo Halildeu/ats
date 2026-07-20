@@ -86,7 +86,12 @@ class OpenApiDriftTest {
                         + " (PR'da API-sözleşme değişikliği olarak açıkça beyan edin).");
     }
 
-    /** "servers" (test-portu değişken) çıkarılır; kalan JSON anahtar-sıralı canonical'e indirgenir. */
+    /**
+     * "servers" (test-portu değişken) çıkarılır; "tags" array Springdoc controller
+     * discovery-order variance nedeniyle name'e göre alfabetik sıralanır (OpenAPI
+     * tags semantik olarak set — sequence değil). Kalan JSON anahtar-sıralı canonical'e
+     * indirgenir.
+     */
     private static String normalizedCanonical(String rawJson) {
         JsonValue parsed;
         try {
@@ -99,7 +104,31 @@ class OpenApiDriftTest {
         }
         Map<String, JsonValue> pruned = new LinkedHashMap<>(obj.values());
         pruned.remove("servers");
+        // Tags Springdoc'un @Tag bean-discovery sırasında dizilir; JVM/classpath hash
+        // randomization → run-to-run tag sırası değişir → byte-canonical drift.
+        // Semantik olarak tags bir set: name'e göre sırala, deterministik çıktı garanti.
+        JsonValue tagsVal = pruned.get("tags");
+        if (tagsVal instanceof JsonValue.JsonArray tagsArr) {
+            java.util.List<JsonValue> sortedTags = new java.util.ArrayList<>(tagsArr.items());
+            sortedTags.sort((a, b) -> {
+                String nameA = tagName(a);
+                String nameB = tagName(b);
+                return nameA.compareTo(nameB);
+            });
+            pruned.put("tags", new JsonValue.JsonArray(sortedTags));
+        }
         return JsonCodec.canonical(JsonValue.object(pruned));
+    }
+
+    private static String tagName(JsonValue tag) {
+        if (!(tag instanceof JsonValue.JsonObject o)) {
+            return "";
+        }
+        JsonValue nameVal = o.values().get("name");
+        if (nameVal instanceof JsonValue.JsonString s) {
+            return s.value();
+        }
+        return "";
     }
 
     private static void writeLive(String canonical) throws IOException {
@@ -522,5 +551,36 @@ class OpenApiDriftTest {
         java.util.Set<String> values = new java.util.HashSet<>();
         array.forEach(value -> values.add(value.asText()));
         return java.util.Set.copyOf(values);
+    }
+
+    @org.junit.jupiter.api.Test
+    void screening_union_and_closed_required_schemas_are_pinned_semantically() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode snap = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(getClass().getResourceAsStream("/openapi-snapshot.json"));
+        com.fasterxml.jackson.databind.JsonNode requestSchema = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/screenings").path("post")
+                .path("requestBody").path("content").path("application/json").path("schema");
+        org.junit.jupiter.api.Assertions.assertEquals("object", requestSchema.path("type").asText());
+        org.junit.jupiter.api.Assertions.assertEquals(2, requestSchema.path("oneOf").size());
+        com.fasterxml.jackson.databind.JsonNode responses = snap.path("paths")
+                .path("/api/v1/interviews/{interviewId}/screenings").path("post")
+                .path("responses");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                responses.path("200").path("headers").has("X-ATS-Replay"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                responses.path("201").path("headers").has("X-ATS-Replay"));
+
+        com.fasterxml.jackson.databind.JsonNode schemas = snap.path("components").path("schemas");
+        for (String name : java.util.List.of(
+                "TranscriptSegmentScreeningRequest", "CitationClaimScreeningRequest",
+                "ScreeningSource", "ScreeningTextSpan", "ScreeningFinding",
+                "ScreeningEvidence", "ScreeningError")) {
+            com.fasterxml.jackson.databind.JsonNode schema = schemas.path(name);
+            org.junit.jupiter.api.Assertions.assertFalse(schema.isMissingNode(), name);
+            org.junit.jupiter.api.Assertions.assertFalse(
+                    schema.path("additionalProperties").asBoolean(true), name);
+            org.junit.jupiter.api.Assertions.assertTrue(schema.path("required").isArray(), name);
+            org.junit.jupiter.api.Assertions.assertFalse(schema.path("required").isEmpty(), name);
+        }
     }
 }

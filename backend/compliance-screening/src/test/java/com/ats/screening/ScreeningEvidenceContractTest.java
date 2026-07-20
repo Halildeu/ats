@@ -65,6 +65,9 @@ class ScreeningEvidenceContractTest {
                 ScreeningEvidenceStore.SaveCommand.class,
                 ScreeningEvidenceStore.SaveReceipt.class,
                 ScreeningEvidenceStore.StoredEvidence.class,
+                ScreeningEvidenceStore.RequestBinding.class,
+                ScreeningEvidenceStore.IdempotentSaveResult.class,
+                ScreeningEvidenceStore.RequestReplay.class,
                 ScreeningEvidenceStore.PurgeCommand.class,
                 ScreeningEvidenceStore.PurgeReceipt.class)) {
             for (RecordComponent component : type.getRecordComponents()) {
@@ -78,11 +81,44 @@ class ScreeningEvidenceContractTest {
     }
 
     @Test
+    void request_binding_is_uuid_v4_only_and_runtime_source_union_is_closed() {
+        String key = "scrq_00000000-0000-4000-8000-000000000001";
+        assertEquals(ScreeningSourceKind.TRANSCRIPT_SEGMENT,
+                new ScreeningEvidenceStore.RequestBinding(
+                        key, ScreeningSourceKind.TRANSCRIPT_SEGMENT, "iv/tr-1", 0).sourceKind());
+        assertEquals(ScreeningSourceKind.CITATION_CLAIM,
+                new ScreeningEvidenceStore.RequestBinding(
+                        key, ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", null).sourceKind());
+        assertEquals(256, new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.CITATION_CLAIM, "a".repeat(256), null)
+                .canonicalSourceRef().length());
+
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                "candidate@example.com", ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", null));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                "scrq_00000000-0000-1000-8000-000000000001",
+                ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", null));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.TRANSCRIPT_SEGMENT, "iv/tr-1", null));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.CITATION_CLAIM, "iv/cit-1", 0));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.FREE_TEXT, "iv/free", null));
+        assertThrows(IllegalArgumentException.class, () -> new ScreeningEvidenceStore.RequestBinding(
+                key, ScreeningSourceKind.CITATION_CLAIM, "a".repeat(257), null));
+    }
+
+    @Test
     void disposition_vocabulary_is_closed() {
         assertEquals(Set.of("CLEAR", "REVIEW_REQUIRED", "SCREENING_UNAVAILABLE"),
                 Arrays.stream(ScreeningDisposition.values()).map(Enum::name).collect(Collectors.toSet()));
         assertTrue(Arrays.stream(ScreeningDisposition.values())
                 .noneMatch(x -> x.name().contains("REJECT") || x.name().contains("HIRE")));
+    }
+
+    @Test
+    void public_span_unit_is_kernel_owned_and_stable() {
+        assertEquals("UTF16_CODE_UNIT", TextSpan.UNIT);
     }
 
     private static ScreeningEvidenceStore.SaveCommand command(

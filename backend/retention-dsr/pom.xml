@@ -54,6 +54,11 @@
       <version>0.0.0</version>
     </dependency>
     <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>compliance-screening</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>

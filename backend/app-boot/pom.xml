@@ -52,6 +52,7 @@
     <dependency><groupId>com.ats</groupId><artifactId>retention-dsr</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.ats</groupId><artifactId>ai-provider-faz24</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.ats</groupId><artifactId>model-governance</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.ats</groupId><artifactId>compliance-screening</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>com.ats</groupId><artifactId>persistence-postgres</artifactId><version>${project.version}</version></dependency>
 
     <!-- composition runtime -->

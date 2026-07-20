@@ -1,5 +1,6 @@
 package com.ats.app;
 
+import com.ats.app.screening.ScreeningRuntimeService;
 import com.ats.application.ApplicationIntakeService;
 import com.ats.application.ApplicationStore;
 import com.ats.application.JobPostingService;
@@ -58,11 +59,14 @@ import com.ats.persistence.PostgresExportArtifactStore;
 import com.ats.persistence.PostgresModelGovernanceLedger;
 import com.ats.persistence.PostgresRetentionScanner;
 import com.ats.persistence.PostgresReviewCaseStore;
+import com.ats.persistence.PostgresScreeningEvidenceStore;
 import com.ats.persistence.PostgresTranscriptStore;
 import com.ats.provider.Faz24LiveSttProvider;
 import com.ats.provider.HttpAIProvider;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCaseStore;
+import com.ats.screening.ProtectedAttributeScreener;
+import com.ats.screening.ScreeningEvidenceStore;
 import com.zaxxer.hikari.HikariConfig;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -243,6 +247,29 @@ class WiringConfig {
     @Bean
     OfferWorkspaceService offerWorkspaceService(OfferStore store) {
         return new OfferWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    ScreeningEvidenceStore screeningEvidenceStore(DataSource ds, Flyway flyway) {
+        return new PostgresScreeningEvidenceStore(ds);
+    }
+
+    @Bean
+    ProtectedAttributeScreener protectedAttributeScreener() {
+        return ProtectedAttributeScreener.fromClasspath(
+                "screening/protected-attribute-screening-policy.v1.json");
+    }
+
+    @Bean
+    ScreeningRuntimeService screeningRuntimeService(
+            ProtectedAttributeScreener screener,
+            ScreeningEvidenceStore evidenceStore,
+            TranscriptStore transcriptStore,
+            CitationStore citationStore,
+            OperationalEventSink eventSink) {
+        return new ScreeningRuntimeService(
+                screener, evidenceStore, transcriptStore, citationStore,
+                eventSink, Clock.systemUTC());
     }
 
     // --- ingest ---
@@ -453,8 +480,9 @@ class WiringConfig {
     DsrService dsrService(DsarStore dsarStore, TranscriptStore transcriptStore,
             CitationStore citationStore, ExportArtifactStore artifactStore,
             ReviewCaseStore reviewStore, HumanReviewService humanReview,
+            ScreeningEvidenceStore screeningStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
         return new DsrService(dsarStore, transcriptStore, citationStore, artifactStore,
-                reviewStore, humanReview, ledger, sink);
+                reviewStore, humanReview, screeningStore, ledger, sink, Clock.systemUTC());
     }
 }
