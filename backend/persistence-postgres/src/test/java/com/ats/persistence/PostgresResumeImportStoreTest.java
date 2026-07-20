@@ -99,7 +99,8 @@ class PostgresResumeImportStoreTest {
         assertEquals(2, confirmed.draft().fields().size(), "UNREVIEWED alan taslağa geçmez");
 
         var loadedDraft = store.findConfirmedDraft(
-                TENANT, JOB, ACCESS, importId, 0).asOptional().orElseThrow();
+                TENANT, JOB, ACCESS, importId, 0, "2026-07-18T12:04:00Z")
+                .asOptional().orElseThrow();
         assertEquals(confirmed.draft().draftId(), loadedDraft.draftId());
 
         try (Connection c = ds.getConnection()) {

@@ -166,10 +166,14 @@ public interface ResumeImportStore {
      */
     Outcome<Integer> purgeDue(String occurredAt, int limit);
 
-    /** Used by application-submit to bind a confirmed draft in the same DB transaction. */
+    /**
+     * Used by application-submit to bind a confirmed draft in the same DB transaction.
+     * {@code nowIso} is the caller-supplied clock (ISO-8601 UTC) used to enforce draft TTL;
+     * adapters must not read wall-clock time so that tests and cross-region callers stay deterministic.
+     */
     Outcome<ResumeDraft> findConfirmedDraft(
             TenantId tenantId, String jobId, String candidateAccessDigest,
-            String importId, int expectedDraftVersion);
+            String importId, int expectedDraftVersion, String nowIso);
 
     /** Test/operations visibility without candidate values. */
     Outcome<Map<ImportState, Long>> countStates(TenantId tenantId);

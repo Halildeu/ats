@@ -116,7 +116,8 @@ class ResumeImportServiceTest {
             return Outcome.ok(0);
         }
         @Override public Outcome<ResumeImportService.ResumeDraft> findConfirmedDraft(
-                TenantId tenantId, String jobId, String digest, String importId, int version) {
+                TenantId tenantId, String jobId, String digest, String importId,
+                int version, String nowIso) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "unused");
         }
         @Override public Outcome<Map<ResumeImportService.ImportState, Long>> countStates(
