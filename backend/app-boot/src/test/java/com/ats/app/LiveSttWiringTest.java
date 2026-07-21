@@ -48,6 +48,7 @@ class LiveSttWiringTest {
                 new AppProperties.Security("https://idp.example/jwks.json", "https://idp.example", "ats", "tenant"),
                 new AppProperties.Ingest(1024L),
                 new AppProperties.Retention(false, null, 0, null),
+                null,
                 new AppProperties.ObjectStore("in-memory-dev"));
     }
 
