@@ -36,9 +36,11 @@ class ModelGovernanceBootTest {
     }
 
     private static ApprovedModelSpec liveTranscribe() {
-        return ApprovedModelSpec.of(Capability.TRANSCRIBE, "faz24-live-stt", "whisper-tr", "v0.1.0",
-                java.util.Set.of("whisper-large-v3-tr"), java.util.Set.of(), LIVE_EP, "ip-live-stt-1",
-                ModelScope.GLOBAL);
+        return ApprovedModelSpec.of(Capability.TRANSCRIBE, "faz24-live-stt",
+                "Systran/faster-whisper-medium",
+                "hf:08e178d48790749d25932bbc082711ddcfdfbc4f"
+                        + "@sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+                java.util.Set.of(), java.util.Set.of(), LIVE_EP, "ip-live-stt-1", ModelScope.GLOBAL);
     }
 
     /** WORM-backed registry: verilen spec'lerin HEPSİ APPROVED. */

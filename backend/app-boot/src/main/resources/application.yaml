@@ -2,12 +2,25 @@
 # eksikte startup'ı düşürür). Tüm değerler env'den; parola yalnız env.
 server:
   port: ${ATS_PORT:8080}
+  # Workload yalnız ClusterIP arkasında NGINX ingress'ten erişilir. Tomcat'in
+  # RFC forwarded header desteği remoteAddr'ı gerçek client IP'ye indirger;
+  # public application rate-limit tüm kullanıcıları ingress pod IP'sinde birleştirmez.
+  forward-headers-strategy: native
 
 spring:
   main:
     banner-mode: off
+  jackson:
+    deserialization:
+      # Public başvuru gövdesinde caller-supplied tenant/status gibi gölge
+      # alanlar sessizce yutulmaz; tüm controller DTO'larında fail-closed 400.
+      fail-on-unknown-properties: true
 
 ats:
+  application:
+    # Public careers host tek bir tenant kataloğuna bağlanır; caller header/body
+    # tenant seçemez. Test seed anchor'ı güvenli varsayılandır, deploy override edebilir.
+    public-tenant-id: ${ATS_PUBLIC_TENANT_ID:00000000-0000-0000-0000-000000000001}
   db:
     url: ${ATS_DB_URL:}
     username: ${ATS_DB_USERNAME:}
@@ -44,6 +57,13 @@ ats:
     issuer: ${ATS_JWT_ISSUER:}
     audience: ${ATS_JWT_AUDIENCE:}
     tenant-claim-name: ${ATS_JWT_TENANT_CLAIM:tenant}
+  authorization:
+    # Same-bearer platform permission projection. Empty keeps public careers
+    # bootable, but every recruiter endpoint fails closed. Legacy ats-api
+    # authorities are an explicit test/rolling-deploy escape hatch only.
+    platform-base-url: ${ATS_PLATFORM_AUTHZ_BASE_URL:}
+    timeout: ${ATS_PLATFORM_AUTHZ_TIMEOUT:3s}
+    allow-legacy-authorities: ${ATS_ALLOW_LEGACY_AUTHZ:false}
   model-governance:
     # P3-gov0 onaylı-model kaynağı (classpath). Boş → boş registry (o durumda boot-gate,
     # aktif provider'ın enabled-capability'lerini APPROVED'a çözemez → fail-closed düşer).
@@ -51,10 +71,16 @@ ats:
     approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
-  object-store:
-    # ATS-0008 D-D / ATS-0018: gerçek MinIO/S3 seçimi G0 owner-gated. Sessiz in-memory
-    # production wiring YOK; mevcut source slice yalnız açık dev/test opt-in'ini kabul eder.
-    mode: ${ATS_OBJECT_STORE_MODE:}
+  resume-import:
+    enabled: ${ATS_RESUME_IMPORT_ENABLED:true}
+    # Real CV/PII activation remains a named privacy/security owner gate.
+    synthetic-only: ${ATS_RESUME_IMPORT_SYNTHETIC_ONLY:true}
+    max-upload-bytes: ${ATS_RESUME_IMPORT_MAX_UPLOAD_BYTES:10485760}
+    max-pages: ${ATS_RESUME_IMPORT_MAX_PAGES:20}
+    max-concurrent-parses: ${ATS_RESUME_IMPORT_MAX_CONCURRENT_PARSES:2}
+    # Privacy contract: terminal/expired transient data is swept well inside the <=15m baseline.
+    purge-initial-delay: ${ATS_RESUME_IMPORT_PURGE_INITIAL_DELAY:PT30S}
+    purge-interval: ${ATS_RESUME_IMPORT_PURGE_INTERVAL:PT5M}
   retention:
     enabled: ${ATS_RETENTION_ENABLED:false}
     cron: ${ATS_RETENTION_CRON:}

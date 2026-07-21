@@ -9,10 +9,10 @@ import com.ats.consent.InMemoryConsentStore;
 import com.ats.contracts.AIProvider.Entailment;
 import com.ats.dsr.DsrService;
 import com.ats.dsr.DsarRequest;
+import com.ats.dsr.ErasureScope;
 import com.ats.dsr.InMemoryDsarStore;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.InMemoryExportArtifactStore;
-import com.ats.ingest.InMemoryObjectStore;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.InterviewId;
 import com.ats.kernel.Ids.TenantId;
@@ -131,11 +131,7 @@ class PostgresRetentionTest {
         InMemoryEventSink sink = new InMemoryEventSink();
         InMemoryReviewCaseStore reviewStore = new InMemoryReviewCaseStore();
         PostgresConsentStore consents = new PostgresConsentStore(ds);
-        DsrService service = new DsrService(
-                new InMemoryDsarStore(), (tenant, interview, key) ->
-                        Outcome.fail(com.ats.kernel.OutcomeCode.NOT_CONFIGURED, "test-unused"),
-                new PostgresErasureExecutionStore(ds), new InMemoryObjectStore(),
-                transcripts, citations, artifacts,
+        DsrService service = new DsrService(new InMemoryDsarStore(), transcripts, citations, artifacts,
                 reviewStore, new HumanReviewService(new ConsentGate(consents, sink), reviewStore,
                         new PostgresEvidenceLedger(ds), sink), new PostgresScreeningEvidenceStore(ds),
                 new PostgresEvidenceLedger(ds), sink, Clock.systemUTC());
@@ -173,11 +169,7 @@ class PostgresRetentionTest {
         assertFalse(scanner.scanExpired(T1, " ").isOk());
         InMemoryEventSink sink = new InMemoryEventSink();
         InMemoryReviewCaseStore rs = new InMemoryReviewCaseStore();
-        DsrService service = new DsrService(
-                new InMemoryDsarStore(), (tenant, interview, key) ->
-                        Outcome.fail(com.ats.kernel.OutcomeCode.NOT_CONFIGURED, "test-unused"),
-                new PostgresErasureExecutionStore(ds), new InMemoryObjectStore(),
-                transcripts, citations, artifacts,
+        DsrService service = new DsrService(new InMemoryDsarStore(), transcripts, citations, artifacts,
                 rs, new HumanReviewService(new ConsentGate(new PostgresConsentStore(ds), sink), rs,
                         new PostgresEvidenceLedger(ds), sink), new PostgresScreeningEvidenceStore(ds),
                 new PostgresEvidenceLedger(ds), sink, Clock.systemUTC());
@@ -203,21 +195,21 @@ class PostgresRetentionTest {
         InMemoryEventSink sink = new InMemoryEventSink();
         InMemoryReviewCaseStore reviews = new InMemoryReviewCaseStore();
         DsrService service = new DsrService(
-                dsars, new PostgresErasureScopeResolver(ds),
-                new PostgresErasureExecutionStore(ds), new InMemoryObjectStore(),
-                new InMemoryTranscriptStore(), new InMemoryCitationStore(),
+                dsars, new InMemoryTranscriptStore(), new InMemoryCitationStore(),
                 new InMemoryExportArtifactStore(), reviews,
                 new HumanReviewService(
                         new ConsentGate(new InMemoryConsentStore(), sink), reviews,
                         new PostgresEvidenceLedger(ds), sink),
                 screenings, new PostgresEvidenceLedger(ds), sink, Clock.systemUTC());
         String dsarKey = service.receiveDsar(
-                tenant, interview, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE")
+                tenant, interview, "subject-opaque-503", "DATA_SUBJECT_ERASURE")
                 .asOptional().orElseThrow();
 
         DsrService.ErasureReceipt receipt = service.executeErasure(
-                tenant, dpo, interview, dsarKey)
-                .asOptional().orElseThrow().receipt();
+                tenant, dpo, interview, dsarKey,
+                new ErasureScope(List.of(), List.of(), List.of(), List.of(),
+                        List.of(result.findingSetRef().value()), List.of()))
+                .asOptional().orElseThrow();
 
         assertEquals(1, receipt.tombstoneCount());
         assertEquals(1, receipt.deletedContentCount());

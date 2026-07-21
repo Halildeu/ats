@@ -43,6 +43,14 @@
             "title": "Model",
             "type": "string"
           },
+          "model_revision": {
+            "title": "Model Revision",
+            "type": "string"
+          },
+          "model_sha256": {
+            "title": "Model Sha256",
+            "type": "string"
+          },
           "status": {
             "description": "ok / degraded / loading",
             "title": "Status",
@@ -57,6 +65,8 @@
           "status",
           "version",
           "model",
+          "model_revision",
+          "model_sha256",
           "device",
           "compute_type"
         ],
@@ -105,6 +115,16 @@
             "title": "Model",
             "type": "string"
           },
+          "model_revision": {
+            "description": "Immutable upstream model revision",
+            "title": "Model Revision",
+            "type": "string"
+          },
+          "model_sha256": {
+            "description": "Verified SHA-256 of the loaded model.bin",
+            "title": "Model Sha256",
+            "type": "string"
+          },
           "segments": {
             "items": {
               "$ref": "#/components/schemas/TranscriptSegment"
@@ -125,6 +145,8 @@
           "duration",
           "elapsed_ms",
           "model",
+          "model_revision",
+          "model_sha256",
           "compute_type",
           "device"
         ],
@@ -228,7 +250,7 @@
   "info": {
     "description": "Faz 24 Meeting Intelligence — Whisper synchronous transcribe (PoC) + two-stage WebSocket live streaming (#128). Diarization separate.",
     "title": "live-stt-service",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
