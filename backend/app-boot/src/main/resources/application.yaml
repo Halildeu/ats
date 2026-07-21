@@ -21,6 +21,10 @@ ats:
     # Public careers host tek bir tenant kataloğuna bağlanır; caller header/body
     # tenant seçemez. Test seed anchor'ı güvenli varsayılandır, deploy override edebilir.
     public-tenant-id: ${ATS_PUBLIC_TENANT_ID:00000000-0000-0000-0000-000000000001}
+  # ATS-0008 D-D / ATS-0018 sınırı: gerçek object-store seçimi G0 owner gate'inde.
+  # Yalnız açık dev/test opt-in'i kabul edilir; sessiz production wiring engellenir.
+  object-store:
+    mode: ${ATS_OBJECT_STORE_MODE:in-memory-dev}
   db:
     url: ${ATS_DB_URL:}
     username: ${ATS_DB_USERNAME:}

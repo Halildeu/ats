@@ -70,6 +70,8 @@ final class AiGovernanceTestSupport {
         registry.add("ats.ai.endpoint-ref", g::endpointRef);
         registry.add("ats.ai.approvals.transcribe-ref", g::transcribeRef);
         registry.add("ats.ai.approvals.cite-ref", g::citeRef);
+        // Source slice'ta gerçek object-store G0-ertelenmiş: test açıkça geçici adapter seçer.
+        registry.add("ats.object-store.mode", () -> "in-memory-dev");
     }
 
     private static ModelApprovalRef require(Map<Capability, ModelApprovalRef> refs, Capability cap) {

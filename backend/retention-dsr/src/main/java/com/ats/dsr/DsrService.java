@@ -2,7 +2,17 @@ package com.ats.dsr;
 
 import com.ats.contracts.EvidenceLedger;
 import com.ats.contracts.EvidenceLedger.LedgerEntry;
+import com.ats.dsr.ErasureExecutionStore.BeginCommand;
+import com.ats.dsr.ErasureExecutionStore.Execution;
+import com.ats.dsr.ErasureExecutionStore.ExecutionKind;
+import com.ats.dsr.ErasureExecutionStore.ExecutionState;
+import com.ats.dsr.ErasureExecutionStore.ExecutionStep;
+import com.ats.dsr.ErasureExecutionStore.PlannedStep;
+import com.ats.dsr.ErasureExecutionStore.StepEffect;
+import com.ats.dsr.ErasureExecutionStore.StepState;
+import com.ats.dsr.ErasureExecutionStore.StepType;
 import com.ats.export.ExportArtifactStore;
+import com.ats.ingest.ObjectStorePort;
 import com.ats.kernel.Ids.ActorId;
 import com.ats.kernel.Ids.EvidenceId;
 import com.ats.kernel.Ids.InterviewId;
@@ -21,25 +31,28 @@ import com.ats.screening.FindingSetRef;
 import com.ats.screening.ScreeningEvidenceStore;
 import com.ats.screening.ScreeningEvidenceStore.PurgeCommand;
 import com.ats.screening.ScreeningEvidenceStore.PurgeReason;
-import com.ats.screening.ScreeningEvidenceStore.PurgeTargetState;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
- * PRD-P1 F10 DSR/erasure orkestrasyonu (ATS-0016 slice-6, port-only) — ATS-0003 runtime karşılığı:
- * - **Content-plane silinir** (transcript/citation/export-artifact — silinebilir düzlem);
- *   **WORM SİLİNMEZ** — hedef evidence-id'lere append-only TOMBSTONE yazılır (unlinkable-tombstone
- *   ilkesinin ledger tarafı; HMAC-salt-destruction crypto düzlemi ATS-0007 key-mgmt slice'ı).
- * - Vaka non-terminal ise WITHDRAWN'a taşınır; EXPORTED/WITHDRAWN terminal DEĞİŞMEZ (state-machine
- *   çıkışsız) — ama altındaki content yine silinir; bu dürüstçe raporlanır.
- * - Sıra fail-closed: tombstone'lar ÖNCE (denetim izi garanti), sonra content silme, sonra vaka
- *   geçişi, en son DSAR=FULFILLED. Herhangi bir adım hatası YUTULMAZ (partial-erasure açıkça döner;
- *   idempotent yeniden-koşu güvenli: silinmiş content'in delete'i no-op, FULFILLED dsar tekrar koşmaz).
- * - Retention-TIMER bilinçli KAPSAM DIŞI: süre hesabı persist timestamp ister (persistence-unlock
- *   slice'ı); bu sınıf timer "yapıldı" iddia etmez.
+ * ATS #169 cross-plane erasure/retention orchestration.
+ *
+ * <p>DSAR kapsamı caller'dan alınmaz: PostgreSQL truth'undan resolve edilir ve aynı transaction'da
+ * interview terminal olarak seal edilir. Her yan etki kalıcı saga adımıdır. Crash, stale worker veya
+ * aynı anda ikinci worker halinde tamamlanmış adımlar replay edilmez; side-effect ile step-commit
+ * arasındaki crash ise hedef adapter'ların idempotent davranışıyla aynı mantıksal receipt'e döner.
+ * WORM silinmez; DSR'da kaynak evidence için append-only tombstone yazılır.
  */
 public final class DsrService {
 
@@ -49,11 +62,61 @@ public final class DsrService {
     static final String TOMBSTONE_APPENDED_EVENT = "evidence.tombstone.appended";
     static final String RETENTION_PURGED_EVENT = "privacy.retention.purged";
 
-    public record ErasureReceipt(String dsarKey, int tombstoneCount, int deletedContentCount, boolean caseTransitioned) {}
+    private static final Duration WORKER_LEASE = Duration.ofSeconds(30);
 
-    public record PurgeReceipt(int interviewCount, int deletedContentCount) {}
+    public record ErasureReceipt(
+            String dsarKey,
+            int tombstoneCount,
+            int deletedContentCount,
+            int objectDeleteIssuedCount,
+            boolean caseTransitioned) {}
+
+    /** İlk yürütme ile terminal receipt replay'ini transport katmanına dürüstçe ayırır. */
+    public record ErasureResult(ErasureReceipt receipt, boolean replayed) {}
+
+    /**
+     * Salt-okunur execution projection'ı. Hedef ref, actor veya içerik taşımaz; yalnız
+     * operatörün timeout/lease sonrası güvenli biçimde reconcile edebileceği durum ve makbuzdur.
+     */
+    public record ErasureStatus(
+            String dsarKey,
+            ExecutionState state,
+            int completedStepCount,
+            int totalStepCount,
+            int retryAfterSeconds,
+            ErasureReceipt receipt) {
+        public ErasureStatus {
+            if (isBlank(dsarKey) || state == null || completedStepCount < 0
+                    || totalStepCount < 1 || completedStepCount > totalStepCount
+                    || retryAfterSeconds < 0 || retryAfterSeconds > WORKER_LEASE.toSeconds()) {
+                throw new IllegalArgumentException("erasure status projection geçersiz");
+            }
+            if (state == ExecutionState.RUNNING && receipt != null) {
+                throw new IllegalArgumentException("RUNNING status terminal receipt taşıyamaz");
+            }
+            if (state == ExecutionState.FULFILLED
+                    && (receipt == null || completedStepCount != totalStepCount
+                            || retryAfterSeconds != 0)) {
+                throw new IllegalArgumentException(
+                        "FULFILLED status tam adım + receipt + retry=0 gerektirir");
+            }
+        }
+    }
+
+    public record PurgeReceipt(
+            int interviewCount, int deletedContentCount, int objectDeleteIssuedCount) {}
+
+    private record RunReceipt(Execution execution, boolean newlyFulfilled) {}
+
+    @FunctionalInterface
+    private interface CompletionGate {
+        Outcome<Void> complete();
+    }
 
     private final DsarStore dsarStore;
+    private final ErasureScopeResolver scopeResolver;
+    private final ErasureExecutionStore executionStore;
+    private final ObjectStorePort objectStore;
     private final TranscriptStore transcriptStore;
     private final CitationStore citationStore;
     private final ExportArtifactStore artifactStore;
@@ -64,11 +127,24 @@ public final class DsrService {
     private final OperationalEventSink sink;
     private final Clock clock;
 
-    public DsrService(DsarStore dsarStore, TranscriptStore transcriptStore, CitationStore citationStore,
-            ExportArtifactStore artifactStore, ReviewCaseStore reviewStore, HumanReviewService humanReview,
-            ScreeningEvidenceStore screeningStore, EvidenceLedger ledger,
-            OperationalEventSink sink, Clock clock) {
+    public DsrService(
+            DsarStore dsarStore,
+            ErasureScopeResolver scopeResolver,
+            ErasureExecutionStore executionStore,
+            ObjectStorePort objectStore,
+            TranscriptStore transcriptStore,
+            CitationStore citationStore,
+            ExportArtifactStore artifactStore,
+            ReviewCaseStore reviewStore,
+            HumanReviewService humanReview,
+            ScreeningEvidenceStore screeningStore,
+            EvidenceLedger ledger,
+            OperationalEventSink sink,
+            Clock clock) {
         this.dsarStore = dsarStore;
+        this.scopeResolver = scopeResolver;
+        this.executionStore = executionStore;
+        this.objectStore = objectStore;
         this.transcriptStore = transcriptStore;
         this.citationStore = citationStore;
         this.artifactStore = artifactStore;
@@ -80,10 +156,14 @@ public final class DsrService {
         this.clock = clock;
     }
 
-    /** DSAR kabul kaydı — talep gövdesi/kimlik içeriği TUTULMAZ (opak subject-ref + reason kodu). */
-    public Outcome<String> receiveDsar(TenantId tenantId, InterviewId interviewId, String subjectRef, String reasonCode) {
-        if (isBlank(subjectRef) || isBlank(reasonCode)) {
-            return Outcome.fail(OutcomeCode.INVALID, "subject_ref + reason_code zorunlu (opak pointer)");
+    /** DSAR kabul kaydı; subjectRef opak pointer'dır, aday içeriği değildir. */
+    public Outcome<String> receiveDsar(
+            TenantId tenantId, InterviewId interviewId, String subjectRef, String reasonCode) {
+        if (tenantId == null || interviewId == null
+                || !DsarInputPolicy.validSubjectRef(subjectRef)
+                || !DsarInputPolicy.validReasonCode(reasonCode)) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "subject_ref prefixed opak ref/UUIDv4; reason_code desteklenen kapalı erasure kodu olmalı");
         }
         Outcome<String> stored = dsarStore.put(new DsarRequest(
                 tenantId, interviewId, subjectRef, reasonCode, DsarRequest.State.RECEIVED));
@@ -94,211 +174,449 @@ public final class DsrService {
         return stored;
     }
 
-    public Outcome<ErasureReceipt> executeErasure(TenantId tenantId, ActorId actorId, InterviewId interviewId,
-            String dsarKey, ErasureScope scope) {
-        if (scope == null || scope.empty()) {
-            return Outcome.fail(OutcomeCode.INVALID, "erasure scope boş (silinecek content/tombstone hedefi yok)");
+    /**
+     * Caller yalnız DSAR anahtarı verir. Silinecek object/content/review/WORM hedefleri server
+     * truth'undan resolve edilir; caller-authored scope kabul eden overload bilinçli olarak yoktur.
+     */
+    public Outcome<ErasureResult> executeErasure(
+            TenantId tenantId, ActorId actorId, InterviewId interviewId, String dsarKey) {
+        if (tenantId == null || actorId == null || interviewId == null
+                || isBlank(actorId.value()) || isBlank(dsarKey)) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenant/actor/interview/dsarKey zorunlu");
         }
         Outcome<DsarRequest> found = dsarStore.find(tenantId, interviewId, dsarKey);
         if (!(found instanceof Outcome.Ok<DsarRequest> dsarOk)) {
-            return Outcome.fail(OutcomeCode.NOT_FOUND, "dsar yok (tenant-scope)");
+            return copyFailure(found);
         }
         DsarRequest dsar = dsarOk.value();
-        if (dsar.state() == DsarRequest.State.FULFILLED) {
-            return Outcome.fail(OutcomeCode.INVALID, "dsar zaten FULFILLED (çift-yürütme yok; yeni talep = yeni dsar)");
-        }
 
-        // Yeni screening hedeflerinin TAMAMI herhangi bir tombstone/delete yan etkisinden önce
-        // doğrulanır. Ortadaki bozuk ref yüzünden önceki geçerli ref'lerin kısmi silinmesi yoktur;
-        // bozuk hedefi yok sayıp DSAR'ı FULFILLED saymak da yasaktır.
-        List<FindingSetRef> screeningRefs = new ArrayList<>();
-        for (String refValue : scope.screeningFindingSetRefs()) {
-            try {
-                screeningRefs.add(new FindingSetRef(refValue));
-            } catch (IllegalArgumentException ex) {
-                return Outcome.fail(OutcomeCode.INVALID,
-                        "screening findingSetRef biçimi geçersiz (content silinmedi)");
+        Outcome<Execution> existing = executionStore.find(tenantId, interviewId, dsarKey);
+        Execution execution;
+        if (existing instanceof Outcome.Ok<Execution> ok) {
+            execution = ok.value();
+            if (execution.kind() != ExecutionKind.DATA_SUBJECT_ERASURE) {
+                return Outcome.fail(OutcomeCode.CONFLICT,
+                        "dsarKey farklı execution kind ile bağlı");
             }
-        }
-        for (FindingSetRef ref : screeningRefs) {
-            Outcome<PurgeTargetState> inspected = screeningStore.inspectPurgeTarget(
-                    tenantId, interviewId, ref);
-            if (!(inspected instanceof Outcome.Ok<PurgeTargetState>)) {
-                Outcome.Fail<PurgeTargetState> fail =
-                        (Outcome.Fail<PurgeTargetState>) inspected;
-                return Outcome.fail(fail.code(),
-                        "screening erasure target preflight başarısız; content silinmedi");
-            }
-        }
-
-        // 1) TOMBSTONE'lar önce — WORM denetim izi garanti altına alınmadan content silinmez
-        int tombstones = 0;
-        for (String evidenceId : scope.tombstoneTargetEvidenceIds()) {
-            Outcome<LedgerEntry> appended = ledger.appendTombstoneEvent(
-                    tenantId, actorId, interviewId, new EvidenceId(evidenceId), dsar.reasonCode());
-            if (!(appended instanceof Outcome.Ok<LedgerEntry>)) {
+        } else if (((Outcome.Fail<Execution>) existing).code() == OutcomeCode.NOT_FOUND) {
+            if (dsar.state() == DsarRequest.State.FULFILLED) {
                 return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
-                        "tombstone append başarısız — content SİLİNMEDİ (fail-closed; denetim izi önce): " + evidenceId);
+                        "FULFILLED DSAR için durable execution receipt yok (fail-closed)");
             }
-            tombstones++;
-            emit(tenantId, TOMBSTONE_APPENDED_EVENT, "evidence", "notice", PiiClass.ID_ONLY,
-                    Map.of("actor_ref", actorId.value(), "reason_code", dsar.reasonCode()));
+            Outcome<ErasureScope> resolved = scopeResolver.resolveAndSealDsr(
+                    tenantId, interviewId, dsarKey);
+            if (!(resolved instanceof Outcome.Ok<ErasureScope> scopeOk)) {
+                return copyFailure(resolved);
+            }
+            ErasureScope scope = scopeOk.value();
+            Outcome<Execution> begun = executionStore.begin(new BeginCommand(
+                    tenantId, interviewId, dsarKey, ExecutionKind.DATA_SUBJECT_ERASURE,
+                    scope.digest(), actorId.value(), dsrPlan(scope)));
+            if (!(begun instanceof Outcome.Ok<Execution> begunOk)) {
+                return copyFailure(begun);
+            }
+            execution = begunOk.value();
+        } else {
+            return copyFailure(existing);
         }
 
-        // 2) Content-plane silme (silinebilir düzlem; idempotent — yok olanın delete'i no-op)
-        int deleted = 0;
-        for (FindingSetRef ref : screeningRefs) {
-            Outcome<ScreeningEvidenceStore.PurgeReceipt> purged = screeningStore.purge(
-                    new PurgeCommand(tenantId, actorId, interviewId, ref,
-                            PurgeReason.DATA_SUBJECT_ERASURE, Instant.now(clock).toString()));
-            if (!(purged instanceof Outcome.Ok<ScreeningEvidenceStore.PurgeReceipt> purgeOk)) {
-                Outcome.Fail<ScreeningEvidenceStore.PurgeReceipt> fail =
-                        (Outcome.Fail<ScreeningEvidenceStore.PurgeReceipt>) purged;
-                return Outcome.fail(fail.code(),
-                        "screening evidence silme başarısız (partial-erasure; yutulmadı)");
-            }
-            if (!purgeOk.value().replayed()) {
-                tombstones++;
-                deleted++;
-                emit(tenantId, TOMBSTONE_APPENDED_EVENT, "evidence", "notice", PiiClass.ID_ONLY,
-                        Map.of("actor_ref", actorId.value(),
-                                "reason_code", PurgeReason.DATA_SUBJECT_ERASURE.name()));
-            }
+        Outcome<RunReceipt> run = runExecution(execution, dsar.reasonCode(),
+                () -> dsar.state() == DsarRequest.State.FULFILLED
+                        ? Outcome.ok(null)
+                        : dsarStore.save(tenantId, dsarKey, dsar.fulfilled()));
+        if (!(run instanceof Outcome.Ok<RunReceipt> runOk)) {
+            return copyFailure(run);
         }
-        for (String key : scope.transcriptKeys()) {
-            Outcome<Void> del = transcriptStore.delete(tenantId, key);
-            if (!del.isOk()) {
-                return Outcome.fail(OutcomeCode.INVALID, "transcript silme başarısız (partial-erasure; yutulmadı): " + key);
-            }
-            deleted++;
+        Execution receipt = runOk.value().execution();
+        if (runOk.value().newlyFulfilled()) {
+            emit(tenantId, ERASURE_EXECUTED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
+                    Map.of("actor_ref", receipt.actorRef(), "reason_code", dsar.reasonCode()));
+            emit(tenantId, DSAR_FULFILLED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
+                    Map.of("actor_ref", receipt.actorRef()));
         }
-        for (String key : scope.citationKeys()) {
-            Outcome<Void> del = citationStore.delete(tenantId, key);
-            if (!del.isOk()) {
-                return Outcome.fail(OutcomeCode.INVALID, "citation silme başarısız (partial-erasure; yutulmadı): " + key);
-            }
-            deleted++;
-        }
-        for (String key : scope.exportArtifactKeys()) {
-            Outcome<Void> del = artifactStore.delete(tenantId, key);
-            if (!del.isOk()) {
-                return Outcome.fail(OutcomeCode.INVALID, "export-artifact silme başarısız (partial-erasure; yutulmadı): " + key);
-            }
-            deleted++;
-        }
-
-        // 3) Vaka geçişi: non-terminal → WITHDRAWN; terminal (EXPORTED/WITHDRAWN) state DEĞİŞMEZ
-        //    (state-machine çıkışsız) ama content'i yukarıda silindi — dürüst rapor.
-        boolean transitioned = false;
-        for (String caseKey : scope.reviewCaseKeys()) {
-            Outcome<ReviewCase> caseFound = reviewStore.find(tenantId, interviewId, caseKey);
-            if (!(caseFound instanceof Outcome.Ok<ReviewCase> caseOk)) {
-                return Outcome.fail(OutcomeCode.NOT_FOUND, "vaka yok (tenant-scope): " + caseKey);
-            }
-            if (!caseOk.value().state().terminal()) {
-                Outcome<Void> withdrawn = humanReview.withdraw(tenantId, interviewId, caseKey, dsar.reasonCode());
-                if (!withdrawn.isOk()) {
-                    return Outcome.fail(OutcomeCode.INVALID, "vaka WITHDRAWN geçişi başarısız (yutulmadı): " + caseKey);
-                }
-                transitioned = true;
-            }
-        }
-
-        // 4) DSAR kapanışı
-        Outcome<Void> saved = dsarStore.save(tenantId, dsarKey, dsar.fulfilled());
-        if (!saved.isOk()) {
-            return Outcome.fail(OutcomeCode.INVALID,
-                    "dsar FULFILLED yazılamadı (erasure YÜRÜTÜLDÜ — operasyonel müdahale ile kapatın; yutulmadı)");
-        }
-        emit(tenantId, ERASURE_EXECUTED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
-                Map.of("actor_ref", actorId.value(), "reason_code", dsar.reasonCode()));
-        emit(tenantId, DSAR_FULFILLED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
-                Map.of("actor_ref", actorId.value()));
-        return Outcome.ok(new ErasureReceipt(dsarKey, tombstones, deleted, transitioned));
+        ErasureReceipt erasureReceipt = receiptOf(dsarKey, receipt);
+        return Outcome.ok(new ErasureResult(erasureReceipt, !runOk.value().newlyFulfilled()));
     }
 
     /**
-     * ATS-0018 slice-8c — retention purge (F10 kalanı): cutoff'tan eski CONTENT-plane verisi silinir.
-     * DSAR'sız ve TOMBSTONE'suz: bu bir veri-sahibi talebi değil politika-temizliğidir; WORM zaten
-     * pointer-only ve kendi retention'ına tabidir (worm_metadata — bu metodun kapsamı DEĞİL, dürüst
-     * sınır). State tabloları (vaka/dsar/rıza) SİLİNMEZ. Cutoff'u çağıran verir (tenant politikası
-     * config/owner düzlemi; zamanlayıcı tetikleyicisi composition/scheduler işi — burada saat yok).
-     * Idempotent: silinmişin delete'i no-op; hata yutulmaz (partial-purge açıkça döner).
+     * POST timeout/409 sonrasında yan etkisiz durum ve terminal receipt recovery yüzeyi.
+     * Tenant + interview scope store tarafından enforce edilir; execution yoksa NOT_FOUND.
      */
-    public Outcome<PurgeReceipt> purgeExpired(TenantId tenantId, ActorId actorId,
-            RetentionScanner scanner, String cutoffIso) {
-        if (scanner == null || isBlank(cutoffIso) || actorId == null || isBlank(actorId.value())) {
-            return Outcome.fail(OutcomeCode.INVALID, "scanner + cutoffIso + actor zorunlu");
+    public Outcome<ErasureStatus> erasureStatus(
+            TenantId tenantId, InterviewId interviewId, String dsarKey) {
+        if (tenantId == null || interviewId == null || isBlank(dsarKey)) {
+            return Outcome.fail(OutcomeCode.INVALID, "tenant/interview/dsarKey zorunlu");
         }
-        Outcome<java.util.List<RetentionScanner.ExpiredContent>> scanned = scanner.scanExpired(tenantId, cutoffIso);
-        if (!(scanned instanceof Outcome.Ok<java.util.List<RetentionScanner.ExpiredContent>> ok)) {
-            return Outcome.fail(((Outcome.Fail<java.util.List<RetentionScanner.ExpiredContent>>) scanned).code(),
-                    ((Outcome.Fail<java.util.List<RetentionScanner.ExpiredContent>>) scanned).reason());
+        Outcome<Execution> found = executionStore.find(tenantId, interviewId, dsarKey);
+        if (!(found instanceof Outcome.Ok<Execution> ok)) {
+            return copyFailure(found);
         }
-        int interviews = 0;
+        Execution execution = ok.value();
+        if (execution.kind() != ExecutionKind.DATA_SUBJECT_ERASURE) {
+            return Outcome.fail(OutcomeCode.CONFLICT,
+                    "execution data-subject erasure değildir");
+        }
+        int completed = (int) execution.steps().stream()
+                .filter(step -> step.state() == StepState.COMPLETED)
+                .count();
+        int retryAfter = retryAfterSeconds(execution, Instant.now(clock));
+        ErasureReceipt receipt = execution.state() == ExecutionState.FULFILLED
+                ? receiptOf(dsarKey, execution)
+                : null;
+        return Outcome.ok(new ErasureStatus(
+                dsarKey, execution.state(), completed, execution.steps().size(),
+                retryAfter, receipt));
+    }
+
+    /**
+     * Retention scheduler önce bütün yarım RUNNING execution'ları resume eder, sonra yeni cutoff
+     * scope'larını first-writer plan olarak kaydeder. Aynı scope sonraki timer turunda tekrar görünse
+     * bile FULFILLED receipt replay edilir ve silme sayısı yeniden raporlanmaz.
+     */
+    public Outcome<PurgeReceipt> purgeExpired(
+            TenantId tenantId, ActorId actorId, RetentionScanner scanner, String cutoffIso) {
+        if (tenantId == null || scanner == null || isBlank(cutoffIso)
+                || actorId == null || isBlank(actorId.value())) {
+            return Outcome.fail(OutcomeCode.INVALID,
+                    "tenant + scanner + cutoffIso + actor zorunlu");
+        }
+
         int deleted = 0;
-        for (RetentionScanner.ExpiredContent expired : ok.value()) {
+        int objectDeletesIssued = 0;
+        Set<String> newlyCompleted = new HashSet<>();
+        Outcome<List<Execution>> running = executionStore.listRunning(
+                tenantId, ExecutionKind.RETENTION_EXPIRED);
+        if (!(running instanceof Outcome.Ok<List<Execution>> runningOk)) {
+            return copyFailure(running);
+        }
+        for (Execution execution : runningOk.value()) {
+            Outcome<RunReceipt> resumed = runExecution(
+                    execution, PurgeReason.RETENTION_EXPIRED.name(), () -> Outcome.ok(null));
+            if (!(resumed instanceof Outcome.Ok<RunReceipt> resumedOk)) {
+                return copyFailure(resumed);
+            }
+            if (resumedOk.value().newlyFulfilled()
+                    && newlyCompleted.add(execution.executionKey())) {
+                deleted += resumedOk.value().execution().deletedContentCount();
+                objectDeletesIssued += resumedOk.value().execution().objectDeleteIssuedCount();
+                emitRetention(resumedOk.value().execution());
+            }
+        }
+
+        Outcome<List<RetentionScanner.ExpiredContent>> scanned =
+                scanner.scanExpired(tenantId, cutoffIso);
+        if (!(scanned instanceof Outcome.Ok<List<RetentionScanner.ExpiredContent>> scannedOk)) {
+            return copyFailure(scanned);
+        }
+        for (RetentionScanner.ExpiredContent expired : scannedOk.value()) {
             if (expired.empty()) {
                 continue;
             }
-            for (String refValue : expired.screeningFindingSetRefs()) {
-                FindingSetRef ref;
-                try {
-                    ref = new FindingSetRef(refValue);
-                } catch (IllegalArgumentException ex) {
-                    return Outcome.fail(OutcomeCode.INVALID,
-                            "retention purge: screening findingSetRef biçimi geçersiz");
-                }
-                Outcome<ScreeningEvidenceStore.PurgeReceipt> purged = screeningStore.purge(
-                        new PurgeCommand(tenantId, actorId, expired.interviewId(), ref,
-                                PurgeReason.RETENTION_EXPIRED, Instant.now(clock).toString()));
-                if (!(purged instanceof Outcome.Ok<ScreeningEvidenceStore.PurgeReceipt> purgeOk)) {
-                    return Outcome.fail(OutcomeCode.INVALID,
-                            "retention purge: screening evidence silme başarısız (yutulmadı)");
-                }
-                if (!purgeOk.value().replayed()) {
-                    deleted++;
-                }
+            ErasureScope scope;
+            try {
+                scope = new ErasureScope(
+                        expired.objectKeys(), expired.transcriptKeys(), expired.citationKeys(),
+                        expired.exportArtifactKeys(), List.of(),
+                        expired.screeningFindingSetRefs(), List.of());
+            } catch (IllegalArgumentException ex) {
+                return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
+                        "retention scanner server scope'u geçersiz (fail-closed)");
             }
-            for (String key : expired.transcriptKeys()) {
-                Outcome<Void> del = transcriptStore.delete(tenantId, key);
-                if (!del.isOk()) {
-                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: transcript silme başarısız (yutulmadı): " + key);
+            String executionKey = retentionExecutionKey(expired.interviewId(), scope);
+            Outcome<Execution> foundExecution = executionStore.find(
+                    tenantId, expired.interviewId(), executionKey);
+            Execution execution;
+            if (foundExecution instanceof Outcome.Ok<Execution> existingOk) {
+                execution = existingOk.value();
+            } else if (((Outcome.Fail<Execution>) foundExecution).code() == OutcomeCode.NOT_FOUND) {
+                Outcome<Execution> begun = executionStore.begin(new BeginCommand(
+                        tenantId, expired.interviewId(), executionKey,
+                        ExecutionKind.RETENTION_EXPIRED, scope.digest(), actorId.value(),
+                        retentionPlan(scope)));
+                if (!(begun instanceof Outcome.Ok<Execution> begunOk)) {
+                    return copyFailure(begun);
                 }
-                deleted++;
+                execution = begunOk.value();
+            } else {
+                return copyFailure(foundExecution);
             }
-            for (String key : expired.citationKeys()) {
-                Outcome<Void> del = citationStore.delete(tenantId, key);
-                if (!del.isOk()) {
-                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: citation silme başarısız (yutulmadı): " + key);
-                }
-                deleted++;
+            Outcome<RunReceipt> run = runExecution(
+                    execution, PurgeReason.RETENTION_EXPIRED.name(), () -> Outcome.ok(null));
+            if (!(run instanceof Outcome.Ok<RunReceipt> runOk)) {
+                return copyFailure(run);
             }
-            for (String key : expired.exportArtifactKeys()) {
-                Outcome<Void> del = artifactStore.delete(tenantId, key);
-                if (!del.isOk()) {
-                    return Outcome.fail(OutcomeCode.INVALID, "retention purge: artifact silme başarısız (yutulmadı): " + key);
-                }
-                deleted++;
+            if (runOk.value().newlyFulfilled()
+                    && newlyCompleted.add(execution.executionKey())) {
+                deleted += runOk.value().execution().deletedContentCount();
+                objectDeletesIssued += runOk.value().execution().objectDeleteIssuedCount();
+                emitRetention(runOk.value().execution());
             }
-            interviews++;
-            // actor_ref: taxonomy required-extra'sı reason_code; actor_ref denetim için EK taşınır
-            // (registry required = minimum; scheduler/operatör kimliği purge audit'inde değerli)
-            emit(tenantId, RETENTION_PURGED_EVENT, "privacy", "notice", PiiClass.ID_ONLY,
-                    Map.of("reason_code", "retention_expired", "actor_ref", actorId.value()));
         }
-        // boş tarama = meşru no-op (timer periyodik koşar); "silindi" iddiası receipt sayılarıyla dürüst
-        return Outcome.ok(new PurgeReceipt(interviews, deleted));
+        return Outcome.ok(new PurgeReceipt(
+                newlyCompleted.size(), deleted, objectDeletesIssued));
     }
 
-    private void emit(TenantId tenantId, String eventTypeId, String category, String severity,
+    private Outcome<RunReceipt> runExecution(
+            Execution initial, String reasonCode, CompletionGate completionGate) {
+        if (initial.state() == ExecutionState.FULFILLED) {
+            Outcome<Void> completion = completionGate.complete();
+            if (!completion.isOk()) {
+                return copyFailure(completion);
+            }
+            return Outcome.ok(new RunReceipt(initial, false));
+        }
+
+        String worker = "erasure-worker-" + UUID.randomUUID();
+        Instant now = Instant.now(clock);
+        Outcome<Execution> acquired = executionStore.acquire(
+                initial.tenantId(), initial.interviewId(), initial.executionKey(),
+                worker, now, now.plus(WORKER_LEASE));
+        if (!(acquired instanceof Outcome.Ok<Execution> acquiredOk)) {
+            return copyFailure(acquired);
+        }
+        Execution current = acquiredOk.value();
+        if (current.state() == ExecutionState.FULFILLED) {
+            Outcome<Void> completion = completionGate.complete();
+            if (!completion.isOk()) {
+                return copyFailure(completion);
+            }
+            return Outcome.ok(new RunReceipt(current, false));
+        }
+
+        for (ExecutionStep step : current.steps()) {
+            if (step.state() == StepState.COMPLETED) {
+                continue;
+            }
+            Outcome<StepEffect> performed = performStep(current, step, reasonCode);
+            if (!(performed instanceof Outcome.Ok<StepEffect> performedOk)) {
+                executionStore.release(current.tenantId(), current.interviewId(),
+                        current.executionKey(), worker);
+                return copyFailure(performed);
+            }
+            Instant completedAt = Instant.now(clock);
+            Outcome<Execution> completed = executionStore.completeStep(
+                    current.tenantId(), current.interviewId(), current.executionKey(),
+                    worker, step.sequence(), performedOk.value(), completedAt,
+                    completedAt.plus(WORKER_LEASE));
+            if (!(completed instanceof Outcome.Ok<Execution> completedOk)) {
+                executionStore.release(current.tenantId(), current.interviewId(),
+                        current.executionKey(), worker);
+                return copyFailure(completed);
+            }
+            current = completedOk.value();
+            if (step.type() == StepType.WORM_TOMBSTONE
+                    || step.type() == StepType.SCREENING_PURGE) {
+                emit(current.tenantId(), TOMBSTONE_APPENDED_EVENT, "evidence", "notice",
+                        PiiClass.ID_ONLY,
+                        Map.of("actor_ref", current.actorRef(), "reason_code", reasonCode));
+            }
+        }
+
+        Outcome<Void> completion = completionGate.complete();
+        if (!completion.isOk()) {
+            executionStore.release(current.tenantId(), current.interviewId(),
+                    current.executionKey(), worker);
+            return copyFailure(completion);
+        }
+        Outcome<Execution> fulfilled = executionStore.fulfill(
+                current.tenantId(), current.interviewId(), current.executionKey(),
+                worker, Instant.now(clock));
+        if (!(fulfilled instanceof Outcome.Ok<Execution> fulfilledOk)) {
+            executionStore.release(current.tenantId(), current.interviewId(),
+                    current.executionKey(), worker);
+            return copyFailure(fulfilled);
+        }
+        return Outcome.ok(new RunReceipt(fulfilledOk.value(), true));
+    }
+
+    private static ErasureReceipt receiptOf(String dsarKey, Execution execution) {
+        return new ErasureReceipt(dsarKey, execution.tombstoneCount(),
+                execution.deletedContentCount(), execution.objectDeleteIssuedCount(),
+                execution.caseTransitioned());
+    }
+
+    private static int retryAfterSeconds(Execution execution, Instant now) {
+        if (execution.state() != ExecutionState.RUNNING || execution.leaseUntil() == null) {
+            return 0;
+        }
+        Instant leaseUntil;
+        try {
+            leaseUntil = Instant.parse(execution.leaseUntil());
+        } catch (java.time.format.DateTimeParseException exception) {
+            return 0;
+        }
+        long millis = Duration.between(now, leaseUntil).toMillis();
+        if (millis <= 0) {
+            return 0;
+        }
+        long roundedUp = (millis + 999L) / 1000L;
+        return (int) Math.min(WORKER_LEASE.toSeconds(), Math.max(1L, roundedUp));
+    }
+
+    private Outcome<StepEffect> performStep(
+            Execution execution, ExecutionStep step, String reasonCode) {
+        TenantId tenant = execution.tenantId();
+        InterviewId interview = execution.interviewId();
+        ActorId actor = new ActorId(execution.actorRef());
+        return switch (step.type()) {
+            case INTERVIEW_SEAL -> Outcome.ok(StepEffect.none());
+            case WORM_TOMBSTONE -> {
+                if (execution.kind() != ExecutionKind.DATA_SUBJECT_ERASURE) {
+                    yield Outcome.fail(OutcomeCode.CONFLICT,
+                            "retention execution WORM_TOMBSTONE adımı taşıyamaz");
+                }
+                Outcome<LedgerEntry> appended = ledger.appendTombstoneEvent(
+                        tenant, actor, interview, new EvidenceId(step.targetRef()), reasonCode);
+                if (!(appended instanceof Outcome.Ok<LedgerEntry>)) {
+                    yield copyFailure(appended);
+                }
+                yield Outcome.ok(new StepEffect(1, 0, false));
+            }
+            case OBJECT_DELETE -> objectDeleteIssued(
+                    objectStore.delete(tenant, step.targetRef()));
+            case SCREENING_PURGE -> {
+                FindingSetRef ref;
+                try {
+                    ref = new FindingSetRef(step.targetRef());
+                } catch (IllegalArgumentException ex) {
+                    yield Outcome.fail(OutcomeCode.NOT_CONFIGURED,
+                            "durable screening target ref bozuk (fail-closed)");
+                }
+                PurgeReason purgeReason = execution.kind() == ExecutionKind.DATA_SUBJECT_ERASURE
+                        ? PurgeReason.DATA_SUBJECT_ERASURE
+                        : PurgeReason.RETENTION_EXPIRED;
+                Outcome<ScreeningEvidenceStore.PurgeReceipt> purged = screeningStore.purge(
+                        new PurgeCommand(tenant, actor, interview, ref, purgeReason,
+                                Instant.now(clock).toString()));
+                if (!(purged instanceof Outcome.Ok<ScreeningEvidenceStore.PurgeReceipt>)) {
+                    yield copyFailure(purged);
+                }
+                // Physical retry replay olsa da bu durable planın mantıksal etkisi sabittir.
+                yield Outcome.ok(new StepEffect(1, 1, false));
+            }
+            case TRANSCRIPT_DELETE -> deleted(
+                    transcriptStore.delete(tenant, step.targetRef()), "transcript");
+            case CITATION_DELETE -> deleted(
+                    citationStore.delete(tenant, step.targetRef()), "citation");
+            case EXPORT_ARTIFACT_DELETE -> deleted(
+                    artifactStore.delete(tenant, step.targetRef()), "export-artifact");
+            case REVIEW_WITHDRAW -> withdrawReview(
+                    tenant, interview, step.targetRef(), reasonCode);
+        };
+    }
+
+    private Outcome<StepEffect> withdrawReview(
+            TenantId tenant, InterviewId interview, String caseKey, String reasonCode) {
+        Outcome<ReviewCase> found = reviewStore.find(tenant, interview, caseKey);
+        if (!(found instanceof Outcome.Ok<ReviewCase> foundOk)) {
+            return copyFailure(found);
+        }
+        if (foundOk.value().state().name().equals("WITHDRAWN")) {
+            return Outcome.ok(new StepEffect(0, 0, true));
+        }
+        if (foundOk.value().state().terminal()) {
+            return Outcome.fail(OutcomeCode.CONFLICT,
+                    "scope sonrası review terminal state yarışı tespit edildi (fail-closed)");
+        }
+        Outcome<Void> withdrawn = humanReview.withdraw(tenant, interview, caseKey, reasonCode);
+        if (!withdrawn.isOk()) {
+            return copyFailure(withdrawn);
+        }
+        return Outcome.ok(new StepEffect(0, 0, true));
+    }
+
+    private static Outcome<StepEffect> deleted(Outcome<Void> outcome, String plane) {
+        if (!outcome.isOk()) {
+            Outcome.Fail<Void> fail = (Outcome.Fail<Void>) outcome;
+            return Outcome.fail(fail.code(), plane + " delete başarısız (saga RUNNING kaldı)");
+        }
+        return Outcome.ok(new StepEffect(0, 1, false));
+    }
+
+    /**
+     * Mevcut object-store adapter'ı yalnız in-memory-dev'tir. Başarılı çağrı saga'da
+     * "delete issued" olarak tamamlanır; kalıcı/crypto-erasure kanıtı olmadığı için
+     * deletedContentCount artırılmaz. G0 adapter/erasure kararı gelmeden bu sınır genişletilmez.
+     */
+    private static Outcome<StepEffect> objectDeleteIssued(Outcome<Void> outcome) {
+        if (!outcome.isOk()) {
+            Outcome.Fail<Void> fail = (Outcome.Fail<Void>) outcome;
+            return Outcome.fail(fail.code(),
+                    "object-store delete başarısız (saga RUNNING kaldı)");
+        }
+        return Outcome.ok(StepEffect.none());
+    }
+
+    private static List<PlannedStep> dsrPlan(ErasureScope scope) {
+        ArrayList<PlannedStep> steps = new ArrayList<>();
+        add(steps, StepType.INTERVIEW_SEAL, "sealed");
+        addAll(steps, StepType.WORM_TOMBSTONE, scope.tombstoneTargetEvidenceIds());
+        addAll(steps, StepType.OBJECT_DELETE, scope.objectKeys());
+        addAll(steps, StepType.SCREENING_PURGE, scope.screeningFindingSetRefs());
+        addAll(steps, StepType.TRANSCRIPT_DELETE, scope.transcriptKeys());
+        addAll(steps, StepType.CITATION_DELETE, scope.citationKeys());
+        addAll(steps, StepType.EXPORT_ARTIFACT_DELETE, scope.exportArtifactKeys());
+        addAll(steps, StepType.REVIEW_WITHDRAW, scope.reviewCaseKeys());
+        return List.copyOf(steps);
+    }
+
+    private static List<PlannedStep> retentionPlan(ErasureScope scope) {
+        ArrayList<PlannedStep> steps = new ArrayList<>();
+        addAll(steps, StepType.OBJECT_DELETE, scope.objectKeys());
+        addAll(steps, StepType.SCREENING_PURGE, scope.screeningFindingSetRefs());
+        addAll(steps, StepType.TRANSCRIPT_DELETE, scope.transcriptKeys());
+        addAll(steps, StepType.CITATION_DELETE, scope.citationKeys());
+        addAll(steps, StepType.EXPORT_ARTIFACT_DELETE, scope.exportArtifactKeys());
+        return List.copyOf(steps);
+    }
+
+    /**
+     * erasure_execution PK'si tenant+execution_key'dir; scope ref'leri başka interview'da aynı
+     * olsa bile plan identity çakışmasın diye interview kimliği de uzunluk-prefix'li hash'e bağlıdır.
+     */
+    static String retentionExecutionKey(InterviewId interviewId, ErasureScope scope) {
+        String material = "retention-execution/v1\n"
+                + interviewId.value().length() + ":" + interviewId.value() + "\n"
+                + scope.digest();
+        try {
+            return "retention-" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 runtime'da yok", ex);
+        }
+    }
+
+    private static void addAll(
+            List<PlannedStep> steps, StepType type, List<String> targets) {
+        for (String target : targets) {
+            add(steps, type, target);
+        }
+    }
+
+    private static void add(List<PlannedStep> steps, StepType type, String target) {
+        steps.add(new PlannedStep(steps.size(), type, target));
+    }
+
+    private void emitRetention(Execution execution) {
+        emit(execution.tenantId(), RETENTION_PURGED_EVENT, "privacy", "notice",
+                PiiClass.ID_ONLY,
+                Map.of("reason_code", "retention_expired", "actor_ref", execution.actorRef()));
+    }
+
+    private void emit(
+            TenantId tenantId, String eventTypeId, String category, String severity,
             PiiClass pii, Map<String, String> extras) {
         OperationalEvent.create(tenantId, eventTypeId, category, severity, pii, extras)
                 .asOptional()
                 .ifPresent(sink::emit);
     }
 
-    private static boolean isBlank(String s) {
-        return s == null || s.isBlank();
+    private static <T, R> Outcome<T> copyFailure(Outcome<R> outcome) {
+        Outcome.Fail<R> fail = (Outcome.Fail<R>) outcome;
+        return Outcome.fail(fail.code(), fail.reason());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -13,18 +13,46 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 @ConfigurationProperties(prefix = "ats")
 public record AppProperties(
         Db db, Ai ai, Security security, Ingest ingest, Retention retention,
-        ResumeImport resumeImport) {
+        ResumeImport resumeImport, ObjectStore objectStore) {
 
     @ConstructorBinding
     public AppProperties {
         if (resumeImport == null) {
             resumeImport = new ResumeImport(true, true, 10_485_760, 20, 2);
         }
+        if (objectStore == null) {
+            throw new IllegalStateException(
+                    "eksik zorunlu konfig: ats.object-store.mode (env ATS_OBJECT_STORE_MODE)"
+                    + " — fail-closed: G0 object-store kararı yokken yalnız açık in-memory-dev"
+                    + " beyanı kabul edilir");
+        }
     }
 
-    /** Source-compatible constructor for existing composition tests/callers. */
+    /** Source-compatible constructor for existing composition tests/callers (no ResumeImport/ObjectStore). */
     public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
-        this(db, ai, security, ingest, retention, null);
+        this(db, ai, security, ingest, retention, null, new ObjectStore("in-memory-dev"));
+    }
+
+    /** Source-compatible constructor for main baseline (with ResumeImport only). */
+    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention,
+                         ResumeImport resumeImport) {
+        this(db, ai, security, ingest, retention, resumeImport, new ObjectStore("in-memory-dev"));
+    }
+
+    /**
+     * ATS-0008 D-D / ATS-0018 sınırı: gerçek object-store seçimi G0 owner gate'indedir.
+     * Bu dilim vendor/topoloji seçmez; yalnız geçici adapter'ın sessiz production wiring'ini
+     * engelleyen açık dev/test opt-in'ini kabul eder.
+     */
+    public record ObjectStore(String mode) {
+        public ObjectStore {
+            require(mode, "ats.object-store.mode (env ATS_OBJECT_STORE_MODE)");
+            if (!mode.equals("in-memory-dev")) {
+                throw new IllegalStateException(
+                        "ats.object-store.mode kapalı küme: in-memory-dev (fail-closed;"
+                        + " gerçek object-store G0 owner gate'inde açılır); verilen: " + mode);
+            }
+        }
     }
 
     /** Candidate CV import remains synthetic-only until named privacy/security activation gates. */

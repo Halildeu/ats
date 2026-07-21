@@ -201,6 +201,11 @@ class SecurityConfig {
                             .hasAuthority("DSAR_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar/erasure")
                             .hasAuthority("ERASURE_EXECUTE")
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/interviews/*/dsar/erasure/receipt")
+                            // Timeout/lease sonrası salt-okunur recovery; ayrı geniş read
+                            // scope açılmaz, yıkıcı yetki sahibi kendi execution'ını reconcile eder.
+                            .hasAuthority("ERASURE_EXECUTE")
                         // bilinmeyen yüzey: fail-closed (yeni endpoint = açık matcher + scope kararı)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o.jwt(j -> j

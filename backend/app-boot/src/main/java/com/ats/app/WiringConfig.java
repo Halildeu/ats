@@ -21,6 +21,8 @@ import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
+import com.ats.dsr.ErasureExecutionStore;
+import com.ats.dsr.ErasureScopeResolver;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.ExportArtifactStore;
 import com.ats.export.ExportService;
@@ -57,6 +59,8 @@ import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
 import com.ats.persistence.PostgresExportArtifactStore;
 import com.ats.persistence.PostgresModelGovernanceLedger;
+import com.ats.persistence.PostgresErasureExecutionStore;
+import com.ats.persistence.PostgresErasureScopeResolver;
 import com.ats.persistence.PostgresRetentionScanner;
 import com.ats.persistence.PostgresReviewCaseStore;
 import com.ats.persistence.PostgresScreeningEvidenceStore;
@@ -171,6 +175,16 @@ class WiringConfig {
     }
 
     @Bean
+    ErasureScopeResolver erasureScopeResolver(DataSource ds, Flyway flyway) {
+        return new PostgresErasureScopeResolver(ds);
+    }
+
+    @Bean
+    ErasureExecutionStore erasureExecutionStore(DataSource ds, Flyway flyway) {
+        return new PostgresErasureExecutionStore(ds);
+    }
+
+    @Bean
     ApplicationStore applicationStore(DataSource ds, Flyway flyway) {
         return new PostgresApplicationStore(ds);
     }
@@ -280,9 +294,15 @@ class WiringConfig {
     }
 
     @Bean
-    ObjectStorePort objectStorePort() {
-        LOG.warn("ObjectStore = IN-MEMORY (kalıcı DEĞİL): raw-media object-store D-D "
-                + "G0-ertelenmiş; process restart'ında ham medya kaybolur. PG'de yalnız opak key durur.");
+    ObjectStorePort objectStorePort(AppProperties props) {
+        if (!"in-memory-dev".equals(props.objectStore().mode())) {
+            // AppProperties kapalı kümesi ilk savunmadır; wiring'de de sessiz fallback yoktur.
+            throw new IllegalStateException(
+                    "ObjectStore wiring reddedildi: yalnız açık in-memory-dev opt-in'i destekleniyor");
+        }
+        LOG.warn("ObjectStore = IN-MEMORY-DEV (kalıcı DEĞİL, açık opt-in): raw-media "
+                + "object-store D-D G0-ertelenmiş; process restart'ında ham medya kaybolur. "
+                + "PG'de yalnız opak key durur; production-ready/crypto-erasure kanıtı değildir.");
         return new InMemoryObjectStore();
     }
 
@@ -477,12 +497,15 @@ class WiringConfig {
     }
 
     @Bean
-    DsrService dsrService(DsarStore dsarStore, TranscriptStore transcriptStore,
+    DsrService dsrService(DsarStore dsarStore, ErasureScopeResolver scopeResolver,
+            ErasureExecutionStore executionStore, ObjectStorePort objectStore,
+            TranscriptStore transcriptStore,
             CitationStore citationStore, ExportArtifactStore artifactStore,
             ReviewCaseStore reviewStore, HumanReviewService humanReview,
             ScreeningEvidenceStore screeningStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
-        return new DsrService(dsarStore, transcriptStore, citationStore, artifactStore,
+        return new DsrService(dsarStore, scopeResolver, executionStore, objectStore,
+                transcriptStore, citationStore, artifactStore,
                 reviewStore, humanReview, screeningStore, ledger, sink, Clock.systemUTC());
     }
 }

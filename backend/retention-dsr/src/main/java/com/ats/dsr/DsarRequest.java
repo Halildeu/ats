@@ -16,6 +16,20 @@ public record DsarRequest(
 
     public enum State { RECEIVED, FULFILLED }
 
+    public DsarRequest {
+        if (tenantId == null || interviewId == null || state == null) {
+            throw new IllegalArgumentException("DSAR tenant/interview/state zorunlu (fail-closed)");
+        }
+        if (!DsarInputPolicy.validSubjectRef(subjectRef)) {
+            throw new IllegalArgumentException(
+                    "DSAR subjectRef yalnız prefixed opak ref veya UUIDv4 olabilir (fail-closed)");
+        }
+        if (!DsarInputPolicy.validReasonCode(reasonCode)) {
+            throw new IllegalArgumentException(
+                    "DSAR reasonCode yalnız desteklenen kapalı erasure kodu olabilir (fail-closed)");
+        }
+    }
+
     public DsarRequest fulfilled() {
         return new DsarRequest(tenantId, interviewId, subjectRef, reasonCode, State.FULFILLED);
     }

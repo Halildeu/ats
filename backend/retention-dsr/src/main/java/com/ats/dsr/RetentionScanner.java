@@ -13,15 +13,20 @@ import java.util.List;
  */
 public interface RetentionScanner {
 
-    /** Süresi dolan content-plane anahtarları (yalnız SİLİNEBİLİR düzlem; WORM/state dahil değil). */
+    /**
+     * Süresi dolan silinebilir hedefler. {@code objectKeys}, immutable WORM recording receipt'inden
+     * çözülen opak object-store pointer'larıdır; WORM satırının kendisi scope'a dahil değildir.
+     */
     record ExpiredContent(
             InterviewId interviewId,
+            List<String> objectKeys,
             List<String> transcriptKeys,
             List<String> citationKeys,
             List<String> exportArtifactKeys,
             List<String> screeningFindingSetRefs) {
 
         public ExpiredContent {
+            objectKeys = List.copyOf(objectKeys);
             transcriptKeys = List.copyOf(transcriptKeys);
             citationKeys = List.copyOf(citationKeys);
             exportArtifactKeys = List.copyOf(exportArtifactKeys);
@@ -29,7 +34,7 @@ public interface RetentionScanner {
         }
 
         public boolean empty() {
-            return transcriptKeys.isEmpty() && citationKeys.isEmpty() && exportArtifactKeys.isEmpty()
+            return objectKeys.isEmpty() && transcriptKeys.isEmpty() && citationKeys.isEmpty() && exportArtifactKeys.isEmpty()
                     && screeningFindingSetRefs.isEmpty();
         }
     }
