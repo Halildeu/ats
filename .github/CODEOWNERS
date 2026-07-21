@@ -1,19 +1,69 @@
 # Immutable history ve gate kodu owner review olmadan değişmemeli.
+# CI/workflow ve source guard'lar
 /.github/workflows/ @Halildeu
+/.github/CODEOWNERS @Halildeu
 /scripts/check-published-immutability.mjs @Halildeu
 /scripts/generate-dsar-input-contract.mjs @Halildeu
+/scripts/check-*.mjs @Halildeu
 /scripts/test/published-immutability.test.mjs @Halildeu
 /scripts/test/dsar-input-contract-generator.test.mjs @Halildeu
+
+# Contract + policy tanımları
 /contracts/policies/ @Halildeu
+/contracts/ @Halildeu
+/contracts-java/ @Halildeu
+
+# ATS-0003 KVKK / DSR akışı
 /backend/persistence-postgres/src/main/resources/db/migration/ @Halildeu
-/backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputPolicy.java @Halildeu
-/backend/retention-dsr/src/main/java/com/ats/dsr/DsarInputContractGenerated.java @Halildeu
-/backend/retention-dsr/src/main/java/com/ats/dsr/DsarRequest.java @Halildeu
-/backend/retention-dsr/src/main/java/com/ats/dsr/DsrService.java @Halildeu
+/backend/retention-dsr/ @Halildeu
 /backend/app-boot/src/main/java/com/ats/app/web/DsarApiController.java @Halildeu
+/backend/persistence-postgres/src/main/java/com/ats/persistence/PostgresErasureExecutionStore.java @Halildeu
+/backend/persistence-postgres/src/main/java/com/ats/persistence/PostgresErasureScopeResolver.java @Halildeu
+
+# ATS-0004/0005 human-oversight + AI governance
+/backend/persistence-postgres/src/main/java/com/ats/persistence/PostgresEvidenceLedger.java @Halildeu
+/backend/persistence-postgres/src/main/java/com/ats/persistence/PostgresModelGovernanceLedger.java @Halildeu
+/backend/model-governance/ @Halildeu
+/backend/app-boot/src/main/java/com/ats/app/ModelGovernanceBoot.java @Halildeu
+/backend/app-boot/src/main/java/com/ats/app/operator/ @Halildeu
+/docs/adr/ATS-0020-model-governance-boot-gate.md @Halildeu
+/docs/adr/ATS-0021-worm-status-authority.md @Halildeu
+
+# ATS-0007 security threat-model + kontrol-map + kritik test path
+/docs/security/threat-register.md @Halildeu
+/docs/security/control-map.md @Halildeu
+/docs/adr/ATS-0007-security-key-management-threat-model.md @Halildeu
+
+# Faz 25 #156 P3 screening (WORM store + runtime API + reviewer surface)
+/backend/compliance-screening/ @Halildeu
+/backend/persistence-postgres/src/main/java/com/ats/persistence/PostgresScreeningEvidenceStore.java @Halildeu
+/backend/app-boot/src/main/java/com/ats/app/screening/ @Halildeu
+/backend/app-boot/src/main/java/com/ats/app/web/ScreeningApiController.java @Halildeu
+/web/mfe-interview-evidence/src/screening/ @Halildeu
+
+# Compliance + governance dokümantasyon
+/docs/compliance/kvkk-p1-crosswalk.md @Halildeu
+/docs/governance/human-oversight-standard.md @Halildeu
+/docs/governance/rubric-standard.md @Halildeu
+/docs/ai-governance/ @Halildeu
+/docs/prd/ @Halildeu
+
+# Test drift-guard'ları (fail-closed)
 /backend/retention-dsr/src/test/java/com/ats/dsr/DsarInputPolicyTest.java @Halildeu
 /backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresStoresTest.java @Halildeu
+/backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresScreeningEvidenceStoreTest.java @Halildeu
+/backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresErasureExecutionStoreTest.java @Halildeu
+/backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresErasureScopeResolverTest.java @Halildeu
+/backend/persistence-postgres/src/test/java/com/ats/persistence/PostgresModelGovernanceLedgerTest.java @Halildeu
+/backend/app-boot/src/test/java/com/ats/app/OpenApiDriftTest.java @Halildeu
+/backend/app-boot/src/test/resources/openapi-snapshot.json @Halildeu
+
+# Web MFE reviewer surface + DSR client
 /web/mfe-interview-evidence/src/dsarApi.ts @Halildeu
 /web/mfe-interview-evidence/src/dsarApi.test.ts @Halildeu
 /web/mfe-interview-evidence/src/generated/ @Halildeu
+
+# Runbook + ADR + PRD
+/docs/adr/ @Halildeu
 /docs/runbooks/RB-dsar-v8-input-contract-migration.md @Halildeu
+/docs/runbooks/ @Halildeu
