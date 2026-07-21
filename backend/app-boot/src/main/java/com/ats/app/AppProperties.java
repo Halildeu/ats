@@ -2,7 +2,6 @@ package com.ats.app;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * Fail-closed konfig: DB ve AI uçları için SESSİZ default YOK — eksik/boş değer
@@ -12,46 +11,35 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
  */
 @ConfigurationProperties(prefix = "ats")
 public record AppProperties(
-        Db db, Ai ai, Security security, Ingest ingest, Retention retention,
-        ResumeImport resumeImport) {
+        Db db,
+        Ai ai,
+        Security security,
+        Ingest ingest,
+        Retention retention,
+        ObjectStore objectStore) {
 
-    @ConstructorBinding
     public AppProperties {
-        if (resumeImport == null) {
-            resumeImport = new ResumeImport(true, true, 10_485_760, 20, 2);
+        if (objectStore == null) {
+            throw new IllegalStateException(
+                    "eksik zorunlu konfig: ats.object-store.mode (env ATS_OBJECT_STORE_MODE)"
+                    + " — fail-closed: G0 object-store kararı yokken yalnız açık in-memory-dev"
+                    + " beyanı kabul edilir");
         }
     }
 
-    /** Source-compatible constructor for existing composition tests/callers. */
-    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
-        this(db, ai, security, ingest, retention, null);
-    }
-
-    /** Candidate CV import remains synthetic-only until named privacy/security activation gates. */
-    public record ResumeImport(
-            boolean enabled,
-            boolean syntheticOnly,
-            int maxUploadBytes,
-            int maxPages,
-            int maxConcurrentParses) {
-        public ResumeImport {
-            if (maxUploadBytes <= 0) maxUploadBytes = 10_485_760;
-            if (maxUploadBytes > 10_485_760) {
+    /**
+     * ATS-0008 D-D / ATS-0018 sınırı: gerçek object-store seçimi G0 owner gate'indedir.
+     * Bu dilim vendor/topoloji seçmez; yalnız geçici adapter'ın sessiz production wiring'ini
+     * engelleyen açık dev/test opt-in'ini kabul eder.
+     */
+    public record ObjectStore(String mode) {
+        public ObjectStore {
+            require(mode, "ats.object-store.mode (env ATS_OBJECT_STORE_MODE)");
+            if (!mode.equals("in-memory-dev")) {
                 throw new IllegalStateException(
-                        "ats.resume-import.max-upload-bytes <= 10 MiB olmalı");
-            }
-            if (maxPages <= 0) maxPages = 20;
-            if (maxPages > 50) {
-                throw new IllegalStateException("ats.resume-import.max-pages <= 50 olmalı");
-            }
-            if (maxConcurrentParses <= 0) maxConcurrentParses = 2;
-            if (maxConcurrentParses > 8) {
-                throw new IllegalStateException(
-                        "ats.resume-import.max-concurrent-parses <= 8 olmalı");
-            }
-            if (enabled && !syntheticOnly) {
-                throw new IllegalStateException(
-                        "Gerçek CV aktivasyonu bu source slice'ta kapalıdır; synthetic-only=true zorunlu");
+                        "ats.object-store.mode kapalı küme: in-memory-dev; verilen: " + mode
+                        + " — kalıcı adapter MinIO/S3, topology, region/egress ve erasure"
+                        + " semantiği G0 Owner/Product + Legal/DPO + InfoSec kararı gerektirir");
             }
         }
     }
