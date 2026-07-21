@@ -101,12 +101,11 @@
       <version>0.0.0</version>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <version>${postgresql.version}</version>
-      <scope>test</scope>
-    </dependency>
+    <!--
+      Faz 25 #172 build hygiene: runtime-scope org.postgresql:postgresql declared above already
+      participates in the test classpath (Maven scope inheritance), so a separate test-scope
+      duplicate produced an effective-model warning. Removed to keep effective-model clean.
+    -->
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>
