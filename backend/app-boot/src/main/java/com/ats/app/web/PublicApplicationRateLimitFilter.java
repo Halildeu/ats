@@ -19,8 +19,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE + 30)
 final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
 
-    private static final String PREFIX = "/api/v1/jobs/";
-    private static final String SUFFIX = "/applications";
+    private static final String SUBMISSION_PATH =
+            "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/applications";
+    private static final String RESUME_CREATE_PATH =
+            "/api/v1/(?:jobs/[^/]+|careers/[^/]+/jobs/[^/]+)/resume-imports";
+    private static final String RESUME_UPLOAD_PATH =
+            "/api/v1/candidate/resume-imports/[^/]+/document(?:/replace)?";
+    private static final String SUBMISSION_BUCKET = "public-application-submit";
     private final PublicApplicationRateLimiter limiter;
 
     PublicApplicationRateLimitFilter(PublicApplicationRateLimiter limiter) {
@@ -29,16 +34,26 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod())
-                || !request.getRequestURI().matches("/api/v1/jobs/[^/]+/applications");
+        String method = request.getMethod();
+        String uri = request.getRequestURI();
+        return !("POST".equals(method)
+                && (uri.matches(SUBMISSION_PATH) || uri.matches(RESUME_CREATE_PATH)
+                        || uri.matches(RESUME_UPLOAD_PATH)))
+                && !("PUT".equals(method) && uri.matches(RESUME_UPLOAD_PATH));
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
             FilterChain chain) throws ServletException, IOException {
+        // The default /jobs alias and canonical /careers/{handle}/jobs route
+        // reach the same intake surface. Use one per-IP bucket so aliases and
+        // attacker-controlled path segments cannot multiply bucket count.
         String uri = request.getRequestURI();
-        String jobSlug = uri.substring(PREFIX.length(), uri.length() - SUFFIX.length());
-        if (!limiter.allow(request.getRemoteAddr(), jobSlug)) {
+        String bucket = uri.matches(SUBMISSION_PATH) ? SUBMISSION_BUCKET
+                : uri.matches(RESUME_CREATE_PATH) ? "public-resume-import-create"
+                : uri.endsWith("/document/replace") ? "public-resume-import-replace"
+                : "public-resume-import-upload";
+        if (!limiter.allow(request.getRemoteAddr(), bucket)) {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setHeader("Retry-After", "600");
             response.setHeader("Cache-Control", CacheControl.noStore().getHeaderValue());

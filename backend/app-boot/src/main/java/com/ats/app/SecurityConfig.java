@@ -21,6 +21,9 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 /**
  * Authn/z kapısı — İLK veri-endpoint'leriyle BİRLİKTE gelir (slice-9 taahhüdü:
@@ -58,10 +61,15 @@ class SecurityConfig {
             Map.entry("ats.transcription.write", "TRANSCRIPTION_WRITE"),
             Map.entry("ats.transcript.read", "TRANSCRIPT_READ"),
             Map.entry("ats.citation.write", "CITATION_WRITE"),
+            Map.entry("ats.screening.write", "SCREENING_WRITE"),
+            Map.entry("ats.screening.read", "SCREENING_READ"),
             Map.entry("ats.review.write", "REVIEW_WRITE"),
             Map.entry("ats.review.read", "REVIEW_READ"),
             Map.entry("ats.application.read", "APPLICATION_READ"),
             Map.entry("ats.application.status.write", "APPLICATION_STATUS_WRITE"),
+            Map.entry("ats.job.read", "JOB_READ"),
+            Map.entry("ats.job.write", "JOB_WRITE"),
+            Map.entry("ats.job.publish", "JOB_PUBLISH"),
             // 39d-8: salt-okuma makbuz-recovery — write'a mecbur bırakmayan ayrı read yetkisi
             Map.entry("ats.export.read", "EXPORT_READ"),
             Map.entry("ats.export.repair", "EXPORT_REPAIR"),
@@ -73,6 +81,8 @@ class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder decoder, AppProperties props)
             throws Exception {
+        AuthorizationManager<RequestAuthorizationContext> tenantAuthenticated =
+                tenantAuthenticated(props.security().tenantClaimName());
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
@@ -84,13 +94,76 @@ class SecurityConfig {
                         // yüzeyi public; tenant request'ten değil server-side ilandan çözülür.
                         .requestMatchers(HttpMethod.GET, "/api/v1/jobs", "/api/v1/jobs/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/jobs/*/resume-imports").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/careers/*/jobs",
+                                "/api/v1/careers/*/jobs/*").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/careers/*/jobs/*/applications").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/careers/*/jobs/*/resume-imports").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications")
-                            .hasAuthority("APPLICATION_READ")
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/applications/*/interviews").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/applications/*/offers").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/candidate/applications/*/offers/*/response").permitAll()
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/candidate/applications/*/withdraw").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/resume-imports/*").permitAll()
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/candidate/resume-imports/*/document",
+                                "/api/v1/candidate/resume-imports/*/fields/*").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/candidate/resume-imports/*/document/replace",
+                                "/api/v1/candidate/resume-imports/*/confirm",
+                                "/api/v1/candidate/resume-imports/*/terminate").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/applications",
+                                "/api/v1/recruiter/applications/*")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/applications/*/status")
-                            .hasAuthority("APPLICATION_STATUS_WRITE")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/evaluations")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/recruiter/applications/*/interviews",
+                                "/api/v1/recruiter/applications/*/interviews/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/interviews",
+                                "/api/v1/recruiter/applications/*/interviews/*/transitions")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/recruiter/applications/*/interviews/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/recruiter/applications/*/offers",
+                                "/api/v1/recruiter/applications/*/offers/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/recruiter/applications/*/offers",
+                                "/api/v1/recruiter/applications/*/offers/*/transitions")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT,
+                                "/api/v1/recruiter/applications/*/offers/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/recruiter/jobs",
+                                "/api/v1/recruiter/jobs/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recruiter/jobs")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/recruiter/jobs/*")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/recruiter/jobs/*/transitions")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.PUT, "/api/v1/interviews/*/recording-consent")
                             .hasAuthority("CONSENT_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/workspace")
+                            .access(tenantAuthenticated)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/scorecards")
+                            .access(tenantAuthenticated)
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/recordings")
                             .hasAuthority("RECORDING_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/transcribe")
@@ -100,6 +173,10 @@ class SecurityConfig {
                             .hasAuthority("TRANSCRIPT_READ")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/citations")
                             .hasAuthority("CITATION_WRITE")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/screenings")
+                            .hasAuthority("SCREENING_WRITE")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/screenings/*")
+                            .hasAuthority("SCREENING_READ")
                         .requestMatchers(HttpMethod.GET, "/api/v1/interviews/*/review-case",
                                 "/api/v1/interviews/*/review-cases")
                             .hasAuthority("REVIEW_READ")
@@ -123,6 +200,11 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar")
                             .hasAuthority("DSAR_WRITE")
                         .requestMatchers(HttpMethod.POST, "/api/v1/interviews/*/dsar/erasure")
+                            .hasAuthority("ERASURE_EXECUTE")
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/interviews/*/dsar/erasure/receipt")
+                            // Timeout/lease sonrası salt-okunur recovery; ayrı geniş read
+                            // scope açılmaz, yıkıcı yetki sahibi kendi execution'ını reconcile eder.
                             .hasAuthority("ERASURE_EXECUTE")
                         // bilinmeyen yüzey: fail-closed (yeni endpoint = açık matcher + scope kararı)
                         .anyRequest().denyAll())
@@ -222,5 +304,20 @@ class SecurityConfig {
             }
         }
         return java.util.Set.copyOf(out);
+    }
+
+    /** Valid JWT + exact configured non-blank tenant claim; product permission controller guard'dadır. */
+    private static AuthorizationManager<RequestAuthorizationContext> tenantAuthenticated(
+            String tenantClaimName) {
+        String claim = tenantClaimName == null || tenantClaimName.isBlank()
+                ? "tenant" : tenantClaimName;
+        return (authentication, context) -> {
+            org.springframework.security.core.Authentication auth = authentication.get();
+            boolean granted = auth != null && auth.isAuthenticated()
+                    && auth.getPrincipal() instanceof Jwt jwt
+                    && jwt.getClaimAsString(claim) != null
+                    && !jwt.getClaimAsString(claim).isBlank();
+            return new AuthorizationDecision(granted);
+        };
     }
 }

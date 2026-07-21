@@ -58,6 +58,24 @@ kompozisyonu ayrı dilim); blank-text segment DROP değil FAIL; `cite()` bu moto
 NOT_CONFIGURED (delege yok — composite provider ayrı, açık kompozisyon dilimi);
 multipart boundary collision-taramalı; contentType ingest-allowlist aynası (kapalı
 küme → header-injection yapısal imkânsız). Keşfedilen spec PUBLIC-safe snapshot olarak
-pinli (`ai-provider-faz24/src/test/resources/live-stt-openapi-v0.1.0.json`) +
+pinli (ilk v0.1.0 snapshot'ını supersede eden
+`ai-provider-faz24/src/test/resources/live-stt-openapi-v0.2.0.json`) +
 `LiveSttOpenApiConformanceTest` adaptör varsayımlarını makine-zorlamalı doğrular.
 İç ağ topolojisi/erişim detayı bu (public) repoya bilinçli yazılmaz.
+
+## Amendment — 2026-07-16 model artifact provenance (Faz 25 Full ATS)
+
+`live-stt-service` v0.2.0, floating `model=medium` beyanını kaldırıp gerçek inference
+artifact kimliğini zorunlu sözleşme yaptı: `model=Systran/faster-whisper-medium`,
+immutable Hugging Face revision ve yükleme öncesi gerçek `model.bin` baytlarından
+doğrulanan SHA-256. ATS adaptörü servis sürümünü model sürümü saymaz; revision +
+digest'i `hf:<revision>@sha256:<digest>` kanonik model-versiyonuna bağlar. Alanlardan
+biri yoksa/malformed ise reported version `null` kalır ve model-governance kapısı
+default-deny verir.
+
+Yeni içerik-adresli politika ref'i
+`mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43`'tür.
+Eski `mapr_549a...` politika kaydı, mevcut WORM geçmişini doğrulanabilir tutmak için
+catalog'da append-only legacy içerik olarak korunur; runtime binding yalnız açıkça
+seçilen yeni ref'e geçirilir. Pinli OpenAPI kanıtı artık
+`ai-provider-faz24/src/test/resources/live-stt-openapi-v0.2.0.json`'dır.

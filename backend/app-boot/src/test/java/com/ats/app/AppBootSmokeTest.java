@@ -19,6 +19,8 @@ import com.ats.kernel.Outcome;
 import com.ats.orchestration.CitationService;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.review.HumanReviewService;
+import com.ats.screening.ScreeningEvidenceStore;
+import com.ats.app.screening.ScreeningRuntimeService;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -36,8 +38,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Boot-smoke: composition GERÇEK PG16 üstünde ayağa kalkar — Flyway V1..V4
- * migrate olur (V4 = gov1-1e-b model_governance_ledger), /healthz gerçek DB ping'iyle
+ * Boot-smoke: composition GERÇEK PG16 üstünde ayağa kalkar — Flyway V1..V6
+ * migrate olur, /healthz gerçek DB ping'iyle
  * 200 döner, tüm servis bean'leri
  * kurulur, consent-gate deny-by-default PG üstünde canlıdır.
  *
@@ -78,7 +80,7 @@ class AppBootSmokeTest {
                 ResultSet rs = st.executeQuery(
                         "SELECT count(*) FROM flyway_schema_history WHERE success AND version IS NOT NULL")) {
             assertTrue(rs.next());
-            assertTrue(rs.getInt(1) >= 3, "V1..V3 migrate edilmiş olmalı; bulunan: " + rs.getInt(1));
+            assertTrue(rs.getInt(1) >= 6, "V1..V6 migrate edilmiş olmalı; bulunan: " + rs.getInt(1));
         }
     }
 
@@ -99,6 +101,8 @@ class AppBootSmokeTest {
         assertNotNull(ctx.getBean(HumanReviewService.class));
         assertNotNull(ctx.getBean(ExportService.class));
         assertNotNull(ctx.getBean(DsrService.class));
+        assertNotNull(ctx.getBean(ScreeningRuntimeService.class));
+        assertNotNull(ctx.getBean(ScreeningEvidenceStore.class));
         assertNotNull(ctx.getBean(EvidenceLedger.class));
         assertNotNull(ctx.getBean(RetentionScanner.class));
     }

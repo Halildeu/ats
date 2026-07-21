@@ -3,6 +3,7 @@ package com.ats.app.web;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
 import java.util.Map;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -18,6 +19,7 @@ final class OutcomeHttp {
     static ResponseEntity<Map<String, String>> fail(Outcome.Fail<?> fail) {
         HttpStatus status = switch (fail.code()) {
             case INVALID -> HttpStatus.BAD_REQUEST;
+            case CONFLICT -> HttpStatus.CONFLICT;
             case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
             case DENIED, TENANT_SCOPE_VIOLATION -> HttpStatus.FORBIDDEN;
             case NOT_FOUND -> HttpStatus.NOT_FOUND;
@@ -26,6 +28,7 @@ final class OutcomeHttp {
             case OK -> HttpStatus.UNPROCESSABLE_ENTITY; // Fail(OK) tutarsızlığı: fail-closed
         };
         return ResponseEntity.status(status)
+                .cacheControl(CacheControl.noStore())
                 .body(Map.of("error", fail.code().name(), "reason", fail.reason()));
     }
 }

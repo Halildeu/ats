@@ -10,12 +10,10 @@
   </parent>
   <artifactId>retention-dsr</artifactId>
 
-  <!-- PRD-P1 F10 DSR/erasure orkestrasyonu (ATS-0016 slice-6, port-only; ATS-0008 modül adı).
-       ATS-0003 runtime karşılığı: content-plane silinir (transcript/citation/export-artifact),
-       WORM SİLİNMEZ — append-only tombstone; vaka non-terminal ise WITHDRAWN'a taşınır.
-       Retention-TIMER bilinçli DIŞARIDA: saklama-süresi hesabı persist timestamp gerektirir
-       (persistence-unlock slice'ı); bu modül "yapıldı" DEMEZ. Crypto-erase/HMAC-salt-destruction
-       key-mgmt düzlemi (ATS-0007) — burada port'lardan mantıksal silme + tombstone yapılır. -->
+  <!-- PRD-P1 F10 / ATS #169: server-authoritative DSAR scope + durable cross-plane saga portları.
+       Object/transcript/citation/export/screening silinir; non-terminal review WITHDRAWN olur;
+       WORM SİLİNMEZ, append-only tombstone kalır. Retention cutoff/timer composition katmanındadır.
+       Crypto-erase/HMAC-salt-destruction ve #170 immutable-field hukuk kararı bu modülün dış gate'idir. -->
 
   <dependencies>
     <dependency>
@@ -51,6 +49,16 @@
     <dependency>
       <groupId>com.ats</groupId>
       <artifactId>consent</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>compliance-screening</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ats</groupId>
+      <artifactId>ingest-media</artifactId>
       <version>0.0.0</version>
     </dependency>
     <dependency>

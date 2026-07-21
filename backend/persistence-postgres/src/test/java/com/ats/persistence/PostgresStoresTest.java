@@ -223,13 +223,116 @@ class PostgresStoresTest {
 
     @Test
     void dsar_roundtrip_and_state_update() {
-        String key = dsars.put(new DsarRequest(T1, I1, "subj-opaque", "erasure_request",
+        String key = dsars.put(new DsarRequest(T1, I1, "550e8400-e29b-41d4-a716-446655440000", "DATA_SUBJECT_ERASURE",
                 DsarRequest.State.RECEIVED)).asOptional().orElseThrow();
         DsarRequest found = dsars.find(T1, I1, key).asOptional().orElseThrow();
         assertEquals(DsarRequest.State.RECEIVED, found.state());
         assertTrue(dsars.save(T1, key, found.fulfilled()).isOk());
         assertEquals(DsarRequest.State.FULFILLED, dsars.find(T1, I1, key).asOptional().orElseThrow().state());
         assertFalse(dsars.find(T2, I1, key).isOk());
+    }
+
+    @Test
+    void dsar_database_constraint_matches_canonical_uuid_v4_and_reason_even_outside_domain_adapter()
+            throws java.sql.SQLException {
+        try (java.sql.Connection c = ds.getConnection();
+                java.sql.PreparedStatement ps = c.prepareStatement(
+                        "INSERT INTO dsar_request"
+                                + " (tenant_id, dsar_key, interview_id, subject_ref, reason_code, state)"
+                                + " VALUES (?,?,?,?,?,?)")) {
+            ps.setString(1, "raw-constraint-tenant");
+            ps.setString(2, "raw-constraint-dsar");
+            ps.setString(3, "raw-constraint-interview");
+            ps.setString(4, "candidate@example.com");
+            ps.setString(5, "DATA_SUBJECT_ERASURE");
+            ps.setString(6, "RECEIVED");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate);
+
+            ps.setString(4, "550e8400-e29b-41d4-a716-446655440000");
+            ps.setString(5, "KVKK madde 7 talebi");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate);
+
+            ps.setString(4, "550e8400-e29b-51d4-a716-446655440000");
+            ps.setString(5, "DATA_SUBJECT_ERASURE");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "UUIDv5 veritabanı sınırında da reddedilmeli");
+
+            ps.setString(4, "550e8400-e29b-41d4-7716-446655440000");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "geçersiz UUID variant veritabanı sınırında da reddedilmeli");
+
+            ps.setString(4, "550e8400-e29b-41d4-a716-446655440000\n");
+            org.junit.jupiter.api.Assertions.assertThrows(java.sql.SQLException.class, ps::executeUpdate,
+                    "satır-sonu PostgreSQL anchor semantiğinde kabul edilmemeli");
+
+            ps.setString(4, "subject:550e8400-e29b-41d4-a716-446655440000");
+            assertEquals(1, ps.executeUpdate(), "canonical prefix + UUIDv4 PostgreSQL dialectinde geçmeli");
+        }
+    }
+
+    @Test
+    void v8_blocks_legacy_violation_then_migrates_only_after_explicit_remediation()
+            throws java.sql.SQLException {
+        String database = "dsar_v8_legacy_test";
+        try (java.sql.Connection c = ds.getConnection(); java.sql.Statement st = c.createStatement()) {
+            st.execute("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
+            st.execute("CREATE DATABASE " + database);
+        }
+        PGSimpleDataSource migrationDs = new PGSimpleDataSource();
+        migrationDs.setUrl("jdbc:postgresql://" + PG.getHost() + ":" + PG.getFirstMappedPort()
+                + "/" + database);
+        migrationDs.setUser(PG.getUsername());
+        migrationDs.setPassword(PG.getPassword());
+        try {
+            Flyway throughV7 = Flyway.configure().dataSource(migrationDs).target("7").load();
+            throughV7.migrate();
+            try (java.sql.Connection c = migrationDs.getConnection();
+                    java.sql.PreparedStatement ps = c.prepareStatement(
+                            "INSERT INTO dsar_request"
+                                    + " (tenant_id, dsar_key, interview_id, subject_ref,"
+                                    + " reason_code, state) VALUES (?,?,?,?,?,?)")) {
+                ps.setString(1, "legacy-tenant");
+                ps.setString(2, "legacy-dsar");
+                ps.setString(3, "legacy-interview");
+                ps.setString(4, "s-legacy");
+                ps.setString(5, "kvkk_talep");
+                ps.setString(6, "RECEIVED");
+                ps.executeUpdate();
+            }
+
+            Flyway throughV8 = Flyway.configure().dataSource(migrationDs).load();
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    org.flywaydb.core.api.FlywayException.class, throughV8::migrate,
+                    "uygunsuz legacy satır varken runtime yarım-açılmamalı");
+
+            try (java.sql.Connection c = migrationDs.getConnection();
+                    java.sql.PreparedStatement ps = c.prepareStatement(
+                            "UPDATE dsar_request"
+                                    + " SET subject_ref = ?, reason_code = ? WHERE dsar_key = ?")) {
+                ps.setString(1, "550e8400-e29b-41d4-a716-446655440000");
+                ps.setString(2, "DATA_SUBJECT_ERASURE");
+                ps.setString(3, "legacy-dsar");
+                assertEquals(1, ps.executeUpdate());
+            }
+            throughV8.migrate();
+            try (java.sql.Connection c = migrationDs.getConnection();
+                    java.sql.PreparedStatement ps = c.prepareStatement(
+                            "SELECT count(*) FROM pg_constraint"
+                                    + " WHERE conrelid = 'dsar_request'::regclass AND convalidated"
+                                    + " AND conname IN (?,?)")) {
+                ps.setString(1, "dsar_request_subject_ref_contract_ck");
+                ps.setString(2, "dsar_request_reason_code_contract_ck");
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    assertTrue(rs.next());
+                    assertEquals(2, rs.getInt(1));
+                }
+            }
+        } finally {
+            try (java.sql.Connection c = ds.getConnection();
+                    java.sql.Statement st = c.createStatement()) {
+                st.execute("DROP DATABASE IF EXISTS " + database + " WITH (FORCE)");
+            }
+        }
     }
 
     @Test

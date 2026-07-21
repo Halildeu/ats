@@ -59,6 +59,34 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
 
     @Override
     public Outcome<LedgerEntry> append(EvidenceEvent e) {
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                Outcome<LedgerEntry> out = appendInTransaction(c, e);
+                if (out.isOk()) {
+                    c.commit();
+                } else {
+                    c.rollback();
+                }
+                return out;
+            } catch (SQLException ex) {
+                c.rollback();
+                return sqlFail(ex);
+            }
+        } catch (SQLException ex) {
+            return sqlFail(ex);
+        }
+    }
+
+    /**
+     * Aynı PostgreSQL transaction'ında başka restricted-plane yazımlarıyla compose edilebilen
+     * package-private seam. Public port DEĞİŞMEZ; validation, idempotency, advisory-lock ve
+     * hash-chain mantığı TEK implementasyonda kalır. Commit/rollback çağıranın sorumluluğudur.
+     */
+    Outcome<LedgerEntry> appendInTransaction(Connection c, EvidenceEvent e) {
+        if (c == null) {
+            return Outcome.fail(OutcomeCode.INVALID, "transaction connection zorunlu");
+        }
         if (e == null || e.tenantId() == null || e.actorId() == null || e.interviewId() == null
                 || isBlank(e.eventType()) || isBlank(e.occurredAt()) || isBlank(e.idempotencyKey())
                 || isBlank(e.contentHash()) || e.payload() == null) {
@@ -77,81 +105,105 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
         } catch (JsonCodec.JsonCodecException ex) {
             return Outcome.fail(OutcomeCode.INVALID, "payload kanonik JSON değil (fail-closed): " + ex.getMessage());
         }
-        try (Connection c = dataSource.getConnection()) {
-            c.setAutoCommit(false);
-            try {
-                advisoryLock(c, e.tenantId().value());
-                String prevHash = lastEntryHash(c, e.tenantId().value());
-                String evidenceId = "ev-" + UUID.randomUUID();
-                String entryHash = entryHash(prevHash, e, evidenceId, canonicalPayload);
-                long seq;
-                try (PreparedStatement ps = c.prepareStatement(
-                        "INSERT INTO worm_ledger (tenant_id, evidence_id, actor_ref, interview_id, event_type,"
-                                + " occurred_at, idempotency_key, content_hash, payload, prev_hash, entry_hash)"
-                                + " VALUES (?,?,?,?,?,?,?,?,?::jsonb,?,?) RETURNING seq")) {
-                    ps.setString(1, e.tenantId().value());
-                    ps.setString(2, evidenceId);
-                    ps.setString(3, e.actorId().value());
-                    ps.setString(4, e.interviewId().value());
-                    ps.setString(5, e.eventType());
-                    ps.setString(6, e.occurredAt());
-                    ps.setString(7, e.idempotencyKey());
-                    ps.setString(8, e.contentHash());
-                    ps.setString(9, canonicalPayload);
-                    ps.setString(10, prevHash);
-                    ps.setString(11, entryHash);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        rs.next();
-                        seq = rs.getLong(1);
-                    }
+        try {
+            advisoryLock(c, e.tenantId().value());
+            // Unique ihlalinden sonra PostgreSQL transaction'ı aborted bırakmak yerine, tenant
+            // lock altında önce mevcut satırı oku. Aynı mantık outer atomic adapter'da da güvenli.
+            Outcome<LedgerEntry> existing = findByIdempotencyInTransaction(
+                    c, e.tenantId(), e.idempotencyKey());
+            if (existing instanceof Outcome.Ok<LedgerEntry> exOk) {
+                LedgerEntry prior = exOk.value();
+                boolean identical;
+                try {
+                    identical = prior.eventType().equals(e.eventType())
+                            && prior.actorId().value().equals(e.actorId().value())
+                            && prior.interviewId().value().equals(e.interviewId().value())
+                            && prior.contentHash().equals(e.contentHash())
+                            && JsonCodec.canonical(prior.payload()).equals(canonicalPayload);
+                } catch (JsonCodec.JsonCodecException ex) {
+                    identical = false;
                 }
-                c.commit();
-                return Outcome.ok(new LedgerEntry(e.tenantId(), e.actorId(), e.interviewId(), e.eventType(),
-                        e.occurredAt(), e.idempotencyKey(), e.contentHash(), e.payload(),
-                        new EvidenceId(evidenceId), seq, prevHash, entryHash));
-            } catch (SQLException inner) {
-                c.rollback();
-                if ("23505".equals(inner.getSQLState())
-                        && String.valueOf(inner.getMessage()).contains("worm_ledger_tenant_idempotency_uq")) {
-                    // Codex 8a blocker-1: replay YALNIZ içerik birebir aynıysa idempotent sayılır.
-                    // Kimlik = eventType+actor+interview+content_hash+canonical(payload)
-                    // (occurred_at HARİÇ — meşru retry zamanı yeniden damgalayabilir; belgelendi).
-                    // İçerik farklıysa bu bir ÇAKIŞMADIR: eski satır "OK" diye dönmez, fail-closed.
-                    Outcome<LedgerEntry> existing = findByIdempotency(e.tenantId(), e.idempotencyKey());
-                    if (!(existing instanceof Outcome.Ok<LedgerEntry> exOk)) {
-                        return existing;
-                    }
-                    LedgerEntry prior = exOk.value();
-                    boolean identical;
-                    try {
-                        identical = prior.eventType().equals(e.eventType())
-                                && prior.actorId().value().equals(e.actorId().value())
-                                && prior.interviewId().value().equals(e.interviewId().value())
-                                && prior.contentHash().equals(e.contentHash())
-                                && JsonCodec.canonical(prior.payload()).equals(canonicalPayload);
-                    } catch (JsonCodec.JsonCodecException ex) {
-                        identical = false; // karşılaştırılamayan payload = conflict (fail-closed)
-                    }
-                    if (!identical) {
-                        return Outcome.fail(OutcomeCode.INVALID,
-                                "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
-                    }
-                    return existing;
+                if (!identical) {
+                    return Outcome.fail(OutcomeCode.INVALID,
+                            "idempotency conflict: aynı (tenant, idempotency_key) farklı içerikle yeniden kullanılamaz (fail-closed)");
                 }
-                return sqlFail(inner);
+                return existing;
             }
-        } catch (SQLException outer) {
-            return sqlFail(outer);
+            if (existing instanceof Outcome.Fail<LedgerEntry> fail && fail.code() != OutcomeCode.NOT_FOUND) {
+                return existing;
+            }
+
+            String prevHash = lastEntryHash(c, e.tenantId().value());
+            String evidenceId = "ev-" + UUID.randomUUID();
+            String entryHash = entryHash(prevHash, e, evidenceId, canonicalPayload);
+            long seq;
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO worm_ledger (tenant_id, evidence_id, actor_ref, interview_id, event_type,"
+                            + " occurred_at, idempotency_key, content_hash, payload, prev_hash, entry_hash)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?::jsonb,?,?) RETURNING seq")) {
+                ps.setString(1, e.tenantId().value());
+                ps.setString(2, evidenceId);
+                ps.setString(3, e.actorId().value());
+                ps.setString(4, e.interviewId().value());
+                ps.setString(5, e.eventType());
+                ps.setString(6, e.occurredAt());
+                ps.setString(7, e.idempotencyKey());
+                ps.setString(8, e.contentHash());
+                ps.setString(9, canonicalPayload);
+                ps.setString(10, prevHash);
+                ps.setString(11, entryHash);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    seq = rs.getLong(1);
+                }
+            }
+            return Outcome.ok(new LedgerEntry(e.tenantId(), e.actorId(), e.interviewId(), e.eventType(),
+                    e.occurredAt(), e.idempotencyKey(), e.contentHash(), e.payload(),
+                    new EvidenceId(evidenceId), seq, prevHash, entryHash));
+        } catch (SQLException ex) {
+            return sqlFail(ex);
         }
     }
 
     @Override
     public Outcome<LedgerEntry> appendTombstoneEvent(
             TenantId tenantId, ActorId actorId, InterviewId interviewId, EvidenceId targetEvidenceId, String reason) {
+        try (Connection c = dataSource.getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                Outcome<LedgerEntry> out = appendTombstoneInTransaction(
+                        c, tenantId, actorId, interviewId, targetEvidenceId, reason,
+                        java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString());
+                if (out.isOk()) {
+                    c.commit();
+                } else {
+                    c.rollback();
+                }
+                return out;
+            } catch (SQLException ex) {
+                c.rollback();
+                return sqlFail(ex);
+            }
+        } catch (SQLException ex) {
+            return sqlFail(ex);
+        }
+    }
+
+    /** Tombstone + restricted hard-purge'un aynı transaction'da commit edilmesi için iç seam. */
+    Outcome<LedgerEntry> appendTombstoneInTransaction(
+            Connection c,
+            TenantId tenantId,
+            ActorId actorId,
+            InterviewId interviewId,
+            EvidenceId targetEvidenceId,
+            String reason,
+            String occurredAt) {
         if (tenantId == null || actorId == null || interviewId == null || targetEvidenceId == null || isBlank(reason)) {
             return Outcome.fail(OutcomeCode.INVALID, "tombstone alanları eksik/boş olamaz");
         }
-        Outcome<LedgerEntry> target = getById(tenantId, targetEvidenceId);
+        Outcome<LedgerEntry> target = queryOne(c,
+                "SELECT * FROM worm_ledger WHERE tenant_id = ? AND evidence_id = ?",
+                tenantId.value(), targetEvidenceId.value());
         if (!(target instanceof Outcome.Ok<LedgerEntry>)) {
             return Outcome.fail(OutcomeCode.NOT_FOUND, "tombstone hedefi tenant-scope'ta yok: " + targetEvidenceId.value());
         }
@@ -163,8 +215,8 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
                 "target_evidence_id", JsonValue.of(targetEvidenceId.value()),
                 "reason_code", JsonValue.of(reason)));
         String contentHash = sha256Hex("tombstone|" + targetEvidenceId.value() + "|" + reason);
-        return append(new EvidenceEvent(tenantId, actorId, interviewId, TOMBSTONE_EVENT_TYPE,
-                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString(),
+        return appendInTransaction(c, new EvidenceEvent(tenantId, actorId, interviewId, TOMBSTONE_EVENT_TYPE,
+                occurredAt,
                 tenantId.value() + ":tombstone:" + targetEvidenceId.value(), contentHash, payload));
     }
 
@@ -273,9 +325,26 @@ public final class PostgresEvidenceLedger implements EvidenceLedger {
                 tenantId.value(), idempotencyKey);
     }
 
+    Outcome<LedgerEntry> findByIdempotencyInTransaction(
+            Connection c, TenantId tenantId, String idempotencyKey) {
+        if (c == null || tenantId == null || isBlank(idempotencyKey)) {
+            return Outcome.fail(OutcomeCode.INVALID, "connection/tenant/idempotencyKey zorunlu");
+        }
+        return queryOne(c,
+                "SELECT * FROM worm_ledger WHERE tenant_id = ? AND idempotency_key = ?",
+                tenantId.value(), idempotencyKey);
+    }
+
     private Outcome<LedgerEntry> queryOne(String sql, String a1, String a2) {
-        try (Connection c = dataSource.getConnection();
-                PreparedStatement ps = c.prepareStatement(sql)) {
+        try (Connection c = dataSource.getConnection()) {
+            return queryOne(c, sql, a1, a2);
+        } catch (SQLException ex) {
+            return sqlFail(ex);
+        }
+    }
+
+    private static Outcome<LedgerEntry> queryOne(Connection c, String sql, String a1, String a2) {
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, a1);
             ps.setString(2, a2);
             try (ResultSet rs = ps.executeQuery()) {

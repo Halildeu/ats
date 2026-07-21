@@ -191,9 +191,11 @@ export default function App() {
 
       {erasedReceipt && (
         <div data-testid="erased-info" style={{ display: "grid", gap: 4, margin: "12px 0" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <Badge variant="success">{t("dsar.eraseDone")}</Badge>
-            <Text as="span" size="sm">{erasedReceipt.dsarKey}</Text>
+            <Text as="span" size="sm" style={{ overflowWrap: "anywhere" }}>
+              {erasedReceipt.dsarKey}
+            </Text>
           </div>
           <Text as="p" variant="warning" role="status">
             {t("dsar.erasedInfo")}
@@ -202,11 +204,17 @@ export default function App() {
             {t("dsar.receiptSummary", {
               tombstones: erasedReceipt.tombstoneCount,
               deleted: erasedReceipt.deletedContentCount,
+              issued: erasedReceipt.objectDeleteIssuedCount,
             })}
           </Text>
           {erasedReceipt.caseTransitioned && (
             <Text as="p" size="sm" variant="secondary" data-testid="dsar-case-transitioned">
               {t("dsar.caseTransitioned")}
+            </Text>
+          )}
+          {erasedReceipt.replayed && (
+            <Text as="p" size="sm" variant="secondary" data-testid="dsar-replay-recovered">
+              {t("dsar.replayRecovered")}
             </Text>
           )}
         </div>
@@ -223,9 +231,9 @@ export default function App() {
           <DsarPanel
             token={token}
             interviewId={loaded.interviewId}
-            transcriptKey={loaded.transcriptKey}
             onErased={(receipt) => {
-              // dürüst state: içerik silindi — segment/inceleme yüzeyi kaldırılır
+              // Dürüst state: server-authoritative mülakat içeriği silindi;
+              // segment/inceleme yüzeyi artık stale veri göstermemeli.
               setTranscript(null);
               setLoaded(null);
               setErasedReceipt(receipt);

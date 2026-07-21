@@ -34,6 +34,8 @@
     <module>ai-orchestration</module>
     <module>human-review</module>
     <module>application-intake</module>
+    <module>interview-workspace</module>
+    <module>offer-workspace</module>
     <module>export-connector</module>
     <module>retention-dsr</module>
     <module>ai-provider-faz24</module>

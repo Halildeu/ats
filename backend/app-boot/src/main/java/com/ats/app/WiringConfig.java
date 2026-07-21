@@ -1,7 +1,13 @@
 package com.ats.app;
 
+import com.ats.app.screening.ScreeningRuntimeService;
 import com.ats.application.ApplicationIntakeService;
 import com.ats.application.ApplicationStore;
+import com.ats.application.JobPostingService;
+import com.ats.application.JobPostingStore;
+import com.ats.application.ResumeDocumentParser;
+import com.ats.application.ResumeImportService;
+import com.ats.application.ResumeImportStore;
 import com.ats.consent.ConsentGate;
 import com.ats.consent.ConsentService;
 import com.ats.consent.ConsentStore;
@@ -15,6 +21,8 @@ import com.ats.contracts.governance.ModelGovernanceJournal;
 import com.ats.contracts.governance.ModelGovernanceLedger;
 import com.ats.dsr.DsarStore;
 import com.ats.dsr.DsrService;
+import com.ats.dsr.ErasureExecutionStore;
+import com.ats.dsr.ErasureScopeResolver;
 import com.ats.dsr.RetentionScanner;
 import com.ats.export.ExportArtifactStore;
 import com.ats.export.ExportService;
@@ -27,6 +35,11 @@ import com.ats.ingest.IngestService;
 import com.ats.ingest.LocalPatternScanAdapter;
 import com.ats.ingest.MalwareScanPort;
 import com.ats.ingest.ObjectStorePort;
+import com.ats.interview.InterviewStore;
+import com.ats.interview.InterviewWorkspaceService;
+import com.ats.kernel.Outcome;
+import com.ats.offer.OfferStore;
+import com.ats.offer.OfferWorkspaceService;
 import com.ats.ops.OperationalEventSink;
 import com.ats.orchestration.AudioAccessGrants;
 import com.ats.orchestration.CitationService;
@@ -37,18 +50,27 @@ import com.ats.orchestration.TranscriptStore;
 import com.ats.orchestration.TranscriptionService;
 import com.ats.persistence.PostgresCitationStore;
 import com.ats.persistence.PostgresApplicationStore;
+import com.ats.persistence.PostgresResumeImportStore;
+import com.ats.persistence.PostgresJobPostingStore;
+import com.ats.persistence.PostgresInterviewStore;
+import com.ats.persistence.PostgresOfferStore;
 import com.ats.persistence.PostgresConsentStore;
 import com.ats.persistence.PostgresDsarStore;
 import com.ats.persistence.PostgresEvidenceLedger;
 import com.ats.persistence.PostgresExportArtifactStore;
 import com.ats.persistence.PostgresModelGovernanceLedger;
+import com.ats.persistence.PostgresErasureExecutionStore;
+import com.ats.persistence.PostgresErasureScopeResolver;
 import com.ats.persistence.PostgresRetentionScanner;
 import com.ats.persistence.PostgresReviewCaseStore;
+import com.ats.persistence.PostgresScreeningEvidenceStore;
 import com.ats.persistence.PostgresTranscriptStore;
 import com.ats.provider.Faz24LiveSttProvider;
 import com.ats.provider.HttpAIProvider;
 import com.ats.review.HumanReviewService;
 import com.ats.review.ReviewCaseStore;
+import com.ats.screening.ProtectedAttributeScreener;
+import com.ats.screening.ScreeningEvidenceStore;
 import com.zaxxer.hikari.HikariConfig;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -154,6 +176,16 @@ class WiringConfig {
     }
 
     @Bean
+    ErasureScopeResolver erasureScopeResolver(DataSource ds, Flyway flyway) {
+        return new PostgresErasureScopeResolver(ds);
+    }
+
+    @Bean
+    ErasureExecutionStore erasureExecutionStore(DataSource ds, Flyway flyway) {
+        return new PostgresErasureExecutionStore(ds);
+    }
+
+    @Bean
     ApplicationStore applicationStore(DataSource ds, Flyway flyway) {
         return new PostgresApplicationStore(ds);
     }
@@ -166,6 +198,95 @@ class WiringConfig {
                 Clock.systemUTC(), new SecureRandom());
     }
 
+    @Bean
+    ResumeImportStore resumeImportStore(DataSource ds, Flyway flyway) {
+        return new PostgresResumeImportStore(ds);
+    }
+
+    @Bean
+    ResumeDocumentParser resumeDocumentParser() {
+        return new PdfBoxResumeDocumentParser();
+    }
+
+    @Bean(destroyMethod = "close")
+    ResumeImportService resumeImportService(
+            ResumeImportStore store,
+            ApplicationStore applicationStore,
+            ResumeDocumentParser parser,
+            MalwareScanPort scanner,
+            AppProperties props,
+            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+        AppProperties.ResumeImport cfg = props.resumeImport();
+        ResumeImportService.DocumentScanner documentScanner = bytes -> {
+            Outcome<com.ats.ingest.MalwareScanPort.ScanResult> result = scanner.scan(bytes);
+            if (result instanceof Outcome.Fail<com.ats.ingest.MalwareScanPort.ScanResult> fail) {
+                return Outcome.fail(fail.code(), fail.reason());
+            }
+            return Outcome.ok(((Outcome.Ok<com.ats.ingest.MalwareScanPort.ScanResult>) result).value()
+                    == com.ats.ingest.MalwareScanPort.ScanResult.CLEAN
+                    ? ResumeImportService.ScanDecision.CLEAN
+                    : ResumeImportService.ScanDecision.REJECTED);
+        };
+        return new ResumeImportService(
+                store, applicationStore, parser, documentScanner,
+                new com.ats.kernel.Ids.TenantId(publicTenantId), Clock.systemUTC(),
+                new SecureRandom(), cfg.maxUploadBytes(), cfg.maxPages(),
+                cfg.syntheticOnly(), cfg.maxConcurrentParses());
+    }
+
+    @Bean
+    JobPostingStore jobPostingStore(DataSource ds, Flyway flyway) {
+        return new PostgresJobPostingStore(ds);
+    }
+
+    @Bean
+    JobPostingService jobPostingService(JobPostingStore store) {
+        return new JobPostingService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    InterviewStore interviewStore(DataSource ds, Flyway flyway) {
+        return new PostgresInterviewStore(ds);
+    }
+
+    @Bean
+    InterviewWorkspaceService interviewWorkspaceService(InterviewStore store) {
+        return new InterviewWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    OfferStore offerStore(DataSource ds, Flyway flyway) {
+        return new PostgresOfferStore(ds);
+    }
+
+    @Bean
+    OfferWorkspaceService offerWorkspaceService(OfferStore store) {
+        return new OfferWorkspaceService(store, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
+    ScreeningEvidenceStore screeningEvidenceStore(DataSource ds, Flyway flyway) {
+        return new PostgresScreeningEvidenceStore(ds);
+    }
+
+    @Bean
+    ProtectedAttributeScreener protectedAttributeScreener() {
+        return ProtectedAttributeScreener.fromClasspath(
+                "screening/protected-attribute-screening-policy.v1.json");
+    }
+
+    @Bean
+    ScreeningRuntimeService screeningRuntimeService(
+            ProtectedAttributeScreener screener,
+            ScreeningEvidenceStore evidenceStore,
+            TranscriptStore transcriptStore,
+            CitationStore citationStore,
+            OperationalEventSink eventSink) {
+        return new ScreeningRuntimeService(
+                screener, evidenceStore, transcriptStore, citationStore,
+                eventSink, Clock.systemUTC());
+    }
+
     // --- ingest ---
 
     @Bean
@@ -174,9 +295,15 @@ class WiringConfig {
     }
 
     @Bean
-    ObjectStorePort objectStorePort() {
-        LOG.warn("ObjectStore = IN-MEMORY (kalıcı DEĞİL): raw-media object-store D-D "
-                + "G0-ertelenmiş; process restart'ında ham medya kaybolur. PG'de yalnız opak key durur.");
+    ObjectStorePort objectStorePort(AppProperties props) {
+        if (!"in-memory-dev".equals(props.objectStore().mode())) {
+            // AppProperties kapalı kümesi ilk savunmadır; wiring'de de sessiz fallback yoktur.
+            throw new IllegalStateException(
+                    "ObjectStore wiring reddedildi: yalnız açık in-memory-dev opt-in'i destekleniyor");
+        }
+        LOG.warn("ObjectStore = IN-MEMORY-DEV (kalıcı DEĞİL, açık opt-in): raw-media "
+                + "object-store D-D G0-ertelenmiş; process restart'ında ham medya kaybolur. "
+                + "PG'de yalnız opak key durur; production-ready/crypto-erasure kanıtı değildir.");
         return new InMemoryObjectStore();
     }
 
@@ -379,11 +506,15 @@ class WiringConfig {
     }
 
     @Bean
-    DsrService dsrService(DsarStore dsarStore, TranscriptStore transcriptStore,
+    DsrService dsrService(DsarStore dsarStore, ErasureScopeResolver scopeResolver,
+            ErasureExecutionStore executionStore, ObjectStorePort objectStore,
+            TranscriptStore transcriptStore,
             CitationStore citationStore, ExportArtifactStore artifactStore,
             ReviewCaseStore reviewStore, HumanReviewService humanReview,
+            ScreeningEvidenceStore screeningStore,
             EvidenceLedger ledger, OperationalEventSink sink) {
-        return new DsrService(dsarStore, transcriptStore, citationStore, artifactStore,
-                reviewStore, humanReview, ledger, sink);
+        return new DsrService(dsarStore, scopeResolver, executionStore, objectStore,
+                transcriptStore, citationStore, artifactStore,
+                reviewStore, humanReview, screeningStore, ledger, sink, Clock.systemUTC());
     }
 }

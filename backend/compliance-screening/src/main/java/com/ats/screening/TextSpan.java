@@ -10,6 +10,9 @@ package com.ats.screening;
  */
 public record TextSpan(int startInclusive, int endExclusive, Integer segmentIndex) {
 
+    /** Java String indeksleri: Unicode UTF-16 code unit, grapheme/codepoint/UTF-8 byte değil. */
+    public static final String UNIT = "UTF16_CODE_UNIT";
+
     public TextSpan {
         if (startInclusive < 0) {
             throw new IllegalArgumentException("startInclusive < 0: " + startInclusive);

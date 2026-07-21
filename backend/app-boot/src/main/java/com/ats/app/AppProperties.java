@@ -2,6 +2,7 @@ package com.ats.app;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * Fail-closed konfig: DB ve AI uçları için SESSİZ default YOK — eksik/boş değer
@@ -10,7 +11,78 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * parola log'a/hataya yazılmaz.
  */
 @ConfigurationProperties(prefix = "ats")
-public record AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+public record AppProperties(
+        Db db, Ai ai, Security security, Ingest ingest, Retention retention,
+        ResumeImport resumeImport, ObjectStore objectStore) {
+
+    @ConstructorBinding
+    public AppProperties {
+        if (resumeImport == null) {
+            resumeImport = new ResumeImport(true, true, 10_485_760, 20, 2);
+        }
+        if (objectStore == null) {
+            throw new IllegalStateException(
+                    "eksik zorunlu konfig: ats.object-store.mode (env ATS_OBJECT_STORE_MODE)"
+                    + " — fail-closed: G0 object-store kararı yokken yalnız açık in-memory-dev"
+                    + " beyanı kabul edilir");
+        }
+    }
+
+    /** Source-compatible constructor for existing composition tests/callers (no ResumeImport/ObjectStore). */
+    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
+        this(db, ai, security, ingest, retention, null, new ObjectStore("in-memory-dev"));
+    }
+
+    /** Source-compatible constructor for main baseline (with ResumeImport only). */
+    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention,
+                         ResumeImport resumeImport) {
+        this(db, ai, security, ingest, retention, resumeImport, new ObjectStore("in-memory-dev"));
+    }
+
+    /**
+     * ATS-0008 D-D / ATS-0018 sınırı: gerçek object-store seçimi G0 owner gate'indedir.
+     * Bu dilim vendor/topoloji seçmez; yalnız geçici adapter'ın sessiz production wiring'ini
+     * engelleyen açık dev/test opt-in'ini kabul eder.
+     */
+    public record ObjectStore(String mode) {
+        public ObjectStore {
+            require(mode, "ats.object-store.mode (env ATS_OBJECT_STORE_MODE)");
+            if (!mode.equals("in-memory-dev")) {
+                throw new IllegalStateException(
+                        "ats.object-store.mode kapalı küme: in-memory-dev (fail-closed;"
+                        + " gerçek object-store G0 owner gate'inde açılır); verilen: " + mode);
+            }
+        }
+    }
+
+    /** Candidate CV import remains synthetic-only until named privacy/security activation gates. */
+    public record ResumeImport(
+            boolean enabled,
+            boolean syntheticOnly,
+            int maxUploadBytes,
+            int maxPages,
+            int maxConcurrentParses) {
+        public ResumeImport {
+            if (maxUploadBytes <= 0) maxUploadBytes = 10_485_760;
+            if (maxUploadBytes > 10_485_760) {
+                throw new IllegalStateException(
+                        "ats.resume-import.max-upload-bytes <= 10 MiB olmalı");
+            }
+            if (maxPages <= 0) maxPages = 20;
+            if (maxPages > 50) {
+                throw new IllegalStateException("ats.resume-import.max-pages <= 50 olmalı");
+            }
+            if (maxConcurrentParses <= 0) maxConcurrentParses = 2;
+            if (maxConcurrentParses > 8) {
+                throw new IllegalStateException(
+                        "ats.resume-import.max-concurrent-parses <= 8 olmalı");
+            }
+            if (enabled && !syntheticOnly) {
+                throw new IllegalStateException(
+                        "Gerçek CV aktivasyonu bu source slice'ta kapalıdır; synthetic-only=true zorunlu");
+            }
+        }
+    }
 
     /**
      * Retention-purge zamanlayıcısı — DEFAULT KAPALI (ATS-0018: zamanlayıcı-tetikleyici

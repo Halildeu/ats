@@ -41,6 +41,14 @@ public record OperationalEvent(
             Map.entry("evidence.append.deduplicated",
                     new EventSpec("evidence", "info", PiiClass.ID_ONLY,
                             java.util.Set.of("actor_ref", "ledger_entry_ref"))),
+            // ATS #156-b registry; emisyon runtime wiring ile 156-c'de açılır. Pointer-only:
+            // kategori/sinyal/span/ham metin operasyonel event'e girmez.
+            Map.entry("evidence.screening.persisted",
+                    new EventSpec("evidence", "info", PiiClass.ID_ONLY,
+                            java.util.Set.of("ledger_entry_ref"))),
+            Map.entry("evidence.screening.persist_failed",
+                    new EventSpec("evidence", "error", PiiClass.ID_ONLY,
+                            java.util.Set.of("reason_code"))),
             Map.entry("ai_pipeline.provider.request_rejected",
                     new EventSpec("ai_pipeline", "warning", PiiClass.NONE, java.util.Set.of("reason_code"))),
             Map.entry("ai_pipeline.citation.rejected",

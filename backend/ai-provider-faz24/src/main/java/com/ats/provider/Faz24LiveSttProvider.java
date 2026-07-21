@@ -66,6 +66,8 @@ public final class Faz24LiveSttProvider implements AIProvider {
             "audio/wav", "audio/mpeg", "audio/mp4", "audio/webm", "video/mp4", "video/webm");
 
     private static final Pattern ISO_639_1 = Pattern.compile("[a-z]{2}");
+    private static final Pattern MODEL_REVISION = Pattern.compile("[0-9a-f]{40}");
+    private static final Pattern MODEL_SHA256 = Pattern.compile("(?:sha256:)?[0-9a-f]{64}");
     /** double tamsayı-hassasiyet sınırı (2^53-1) — HttpAIProvider ile aynı guard. */
     private static final double MAX_SAFE_INTEGER = 9_007_199_254_740_991.0;
     private static final Set<String> LOOPBACK_HOSTS = Set.of("127.0.0.1", "localhost");
@@ -214,13 +216,14 @@ public final class Faz24LiveSttProvider implements AIProvider {
         try {
             JsonValue.JsonObject root = asObject(parsed, "root");
             String language = asString(root, "language");
-            // gov1-1b: sağlayıcının RAPORLADIĞI model kimliği artık DISCARD edilmez, zarfa taşınır
-            // (enforcement gov1-1c'de). live-stt yalnız "model" verir; model-VERSİYONU SUNMAZ
-            // (/health.version = servis-sürümü, model DEĞİL → KULLANILMAZ) → reportedModelVersion=null.
-            // Untrusted → fromProvider doğrular: eksik/malformed → null'a indirilir; ham değer
-            // log/WORM'a gitmez.
-            ReportedModelIdentity modelIdentity =
-                    ReportedModelIdentity.fromProvider(optString(root, "model"), null);
+            // gov1-1b + Faz25 artifact provenance: servis-sürümü model-versiyonu DEĞİLDİR.
+            // Provider'ın ayrı bildirdiği immutable upstream revision + yüklemeden önce doğruladığı
+            // model.bin SHA-256, tek kanonik content-addressed model-versiyonuna bağlanır. Üçlüden biri
+            // eksik/malformed ise version=null → gov1-1c default-deny. Ham değer log/WORM'a gitmez.
+            String reportedArtifactVersion = canonicalArtifactVersion(
+                    optString(root, "model_revision"), optString(root, "model_sha256"));
+            ReportedModelIdentity modelIdentity = ReportedModelIdentity.fromProvider(
+                    optString(root, "model"), reportedArtifactVersion);
             // Not: spec'te segments "required" listesinde değil; adaptör bilinçli olarak
             // spec'ten SIKI davranır (segments'siz cevap işlenemez → fail-closed).
             JsonValue.JsonArray segmentsJson = asArray(root, "segments");
@@ -344,5 +347,18 @@ public final class Faz24LiveSttProvider implements AIProvider {
     private static String optString(JsonValue.JsonObject o, String field) {
         JsonValue v = o.values().get(field);
         return (v instanceof JsonValue.JsonString s && !s.value().isBlank()) ? s.value() : null;
+    }
+
+    /**
+     * Provider artifact üçlüsünü governance'in mevcut id/version zarfına kayıpsız ve deterministik
+     * bağlar. Prefix/contains/case-fold yok; yalnız exact lowercase revision ve digest kabul edilir.
+     */
+    static String canonicalArtifactVersion(String revision, String sha256) {
+        if (revision == null || !MODEL_REVISION.matcher(revision).matches()
+                || sha256 == null || !MODEL_SHA256.matcher(sha256).matches()) {
+            return null;
+        }
+        String digest = sha256.startsWith("sha256:") ? sha256.substring("sha256:".length()) : sha256;
+        return "hf:" + revision + "@sha256:" + digest;
     }
 }

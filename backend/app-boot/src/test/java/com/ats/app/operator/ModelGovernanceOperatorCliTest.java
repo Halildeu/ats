@@ -21,16 +21,18 @@ import java.util.regex.Pattern;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Real-PG acceptance for the owner-gated CLI boundary; normal Spring context is not started. */
 @Testcontainers
+@ResourceLock("ats_governance_writer")
 class ModelGovernanceOperatorCliTest {
 
     private static final String REF =
-            "mapr_549a8e22a2c6f3c445be3e2405262bba5b80a78d72047fd95fa03deaa66a732d";
+            "mapr_04cabd439b5b51992e86e215b9796f64d27b91dd951acdf542ab6635d517fc43";
     private static final String ID = "mgt_01234567-89ab-4cde-8fab-0123456789ab";
     private static final String ACTOR = "cross-ai/faz25/2526";
     private static final String OPERATOR_USERNAME = "governance_operator_test";
@@ -160,6 +162,39 @@ class ModelGovernanceOperatorCliTest {
         assertFalse(result.allOutput().contains(PG.getPassword()));
         assertFalse(result.allOutput().contains(cliJdbcUrl()));
         assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
+    }
+
+    @Test
+    void writer_role_admin_or_login_drift_is_rejected() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                        PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+                Statement statement = connection.createStatement()) {
+            statement.execute("ALTER ROLE ats_governance_writer LOGIN SUPERUSER");
+        }
+        try {
+            Run result = run(args("check", ModelGovernanceOperatorCli.CHECK_CONFIRM,
+                            "mgt_dddddddd-eeee-4fff-8aaa-cccccccccccc", ACTOR),
+                    credentials(OPERATOR_USERNAME, OPERATOR_PASSWORD, false));
+            assertEquals(4, result.exit(), diagnostic(result));
+            assertTrue(result.err().contains("OPERATOR_FAILURE"));
+            assertFalse(result.allOutput().contains(OPERATOR_PASSWORD));
+            assertFalse(result.allOutput().contains(cliJdbcUrl()));
+            assertFalse(result.allOutput().contains(PG.getJdbcUrl()));
+        } finally {
+            try (Connection connection = DriverManager.getConnection(
+                            PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
+                    Statement statement = connection.createStatement()) {
+                statement.execute("ALTER ROLE ats_governance_writer NOLOGIN NOSUPERUSER "
+                        + "NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
+                try (ResultSet restored = statement.executeQuery(
+                        "SELECT NOT (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole "
+                                + "OR rolreplication OR rolbypassrls) "
+                                + "FROM pg_roles WHERE rolname='ats_governance_writer'")) {
+                    assertTrue(restored.next() && restored.getBoolean(1) && !restored.next(),
+                            "writer role must be restored to NOLOGIN/no-admin attributes");
+                }
+            }
+        }
     }
 
     @Test
