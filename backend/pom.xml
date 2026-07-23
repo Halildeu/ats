@@ -65,6 +65,16 @@
   <build>
     <pluginManagement>
       <plugins>
+        <!--
+          Faz 25 #172 build hygiene: pin maven-compiler-plugin at parent so effective-model
+          does not fall back to Maven's built-in default. 3.13.0 = Apache Maven official
+          stable (2024-06); all child modules inherit.
+        -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.13.0</version>
+        </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
