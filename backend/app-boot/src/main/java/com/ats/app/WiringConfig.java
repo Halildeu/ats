@@ -86,6 +86,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * ATS-0008 D-A composition: TÜM domain bean'leri burada AÇIKÇA kurulur —
@@ -325,6 +326,7 @@ class WiringConfig {
     // --- AI orchestration ---
 
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     AudioAccessGrants audioAccessGrants(AppProperties props) {
         return new InMemoryAudioAccessGrants(Clock.systemUTC(), props.ai().grantTtl());
     }
@@ -339,6 +341,7 @@ class WiringConfig {
      * client-CA denetim-PC tarafında — test-CA ≠ canlı-CA).
      */
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     AIProvider aiProvider(AppProperties props, AudioAccessGrants grants, ObjectStorePort objectStore,
             AuthorizedModelBindings authorizedModelBindings) {
         // authorizedModelBindings PARAMETRE bağımlılığı = "gate-then-construct" garantisi (Codex
@@ -375,11 +378,13 @@ class WiringConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     SegmentSanitizer segmentSanitizer() {
         return new SegmentSanitizer();
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     TranscriptionService transcriptionService(ConsentGate gate, ModelGovernanceGate governanceGate,
             ModelGovernanceJournal journal, AIProvider provider, SegmentSanitizer sanitizer,
             TranscriptStore transcriptStore, EvidenceLedger ledger, OperationalEventSink sink, AudioAccessGrants grants) {
@@ -387,6 +392,7 @@ class WiringConfig {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     CitationService citationService(ConsentGate gate, ModelGovernanceGate governanceGate,
             ModelGovernanceJournal journal, AIProvider provider, TranscriptStore transcriptStore,
             CitationStore citationStore, EvidenceLedger ledger, OperationalEventSink sink) {
@@ -426,6 +432,7 @@ class WiringConfig {
      * providerRef+endpointRef taşır (secret/URL YOK).
      */
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     AuthorizedModelBindings authorizedModelBindings(ApprovedModelRegistry registry, AppProperties props) {
         AuthorizedModelBindings bindings = ModelGovernanceBoot.authorizeProvider(
                 registry, props.ai().provider(), props.ai().endpointRef(), props.ai().approvals());
@@ -445,6 +452,7 @@ class WiringConfig {
      * geçtikten sonra kurulur (gate-then-construct ile aynı ordering).
      */
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     ModelGovernanceGate modelGovernanceGate(ApprovedModelRegistry registry, AuthorizedModelBindings bindings) {
         Map<Capability, ModelApprovalRef> capabilityBindings = new EnumMap<>(Capability.class);
         bindings.bindings().forEach((cap, spec) -> capabilityBindings.put(cap, spec.approvalRef()));
@@ -459,6 +467,7 @@ class WiringConfig {
      * ArchUnit boundary). Kapı gibi {@link AuthorizedModelBindings}'e depend eder → boot-gate sonrası kurulur.
      */
     @Bean
+    @ConditionalOnProperty(prefix = "ats.ai", name = "enabled", havingValue = "true")
     ModelGovernanceJournal modelGovernanceJournal(EvidenceLedger ledger, AuthorizedModelBindings bindings) {
         return new EvidenceLedgerModelGovernanceJournal(ledger, bindings.bindings(), Clock.systemUTC());
     }
