@@ -62,6 +62,12 @@ class AiOptionalCustomerJourneyTest {
         registry.add("ats.security.jwks-uri", JWT::jwksUri);
         registry.add("ats.security.issuer", () -> JwtTestSupport.ISSUER);
         registry.add("ats.security.audience", () -> JwtTestSupport.AUDIENCE);
+        // Ortak yetkilendirme çekirdeği (platform PDP / Zanzibar) her üründe
+        // birlikte gelir; opsiyonel olan yalnız AI governance'dır (ats.ai.enabled).
+        // Testte ağır permission-service yerine canonical recruiter-authz stub'ı
+        // kullanılır (ApplicationApiTest ile aynı desen). Production varsayılanı
+        // false kalır ve recruiter yetkisi platform PDP'den fail-closed doğrulanır.
+        registry.add("ats.authorization.allow-legacy-authorities", () -> "true");
     }
 
     @AfterAll
