@@ -79,10 +79,18 @@ ats:
     approved-models-resource: ${ATS_APPROVED_MODELS_RESOURCE:model-governance/approved-models.json}
   ingest:
     max-upload-bytes: ${ATS_MAX_UPLOAD_BYTES:104857600}
+  candidate-data:
+    # Aday verisi politikası — TEK OTORİTE (hem başvuru formu hem CV import bunu izler).
+    #   synthetic-only : yalnız sentetik .test e-posta (varsayılan)
+    #   real-allowed   : gerçek(çi) aday verisi kabul edilir — YALNIZ non-prod ortamda
+    mode: ${ATS_CANDIDATE_DATA_MODE:synthetic-only}
+    # Ortam beyanı: prod | test | dev. Varsayılan "prod" bilinçli fail-safe'tir —
+    # konfig unutulan/yanlış render edilen ortam en kısıtlayıcı moda düşer.
+    # mode=real-allowed + environment=prod kombinasyonu boot'u düşürür (machine-enforced):
+    # gerçek aday PII'sinin production aktivasyonu Legal/DPO owner gate'indedir.
+    environment: ${ATS_CANDIDATE_DATA_ENVIRONMENT:prod}
   resume-import:
     enabled: ${ATS_RESUME_IMPORT_ENABLED:true}
-    # Real CV/PII activation remains a named privacy/security owner gate.
-    synthetic-only: ${ATS_RESUME_IMPORT_SYNTHETIC_ONLY:true}
     max-upload-bytes: ${ATS_RESUME_IMPORT_MAX_UPLOAD_BYTES:10485760}
     max-pages: ${ATS_RESUME_IMPORT_MAX_PAGES:20}
     max-concurrent-parses: ${ATS_RESUME_IMPORT_MAX_CONCURRENT_PARSES:2}

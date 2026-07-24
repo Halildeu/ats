@@ -192,10 +192,12 @@ class WiringConfig {
 
     @Bean
     ApplicationIntakeService applicationIntakeService(ApplicationStore store,
-            @Value("${ats.application.public-tenant-id}") String publicTenantId) {
+            @Value("${ats.application.public-tenant-id}") String publicTenantId,
+            AppProperties props) {
         return new ApplicationIntakeService(
                 store, new com.ats.kernel.Ids.TenantId(publicTenantId),
-                Clock.systemUTC(), new SecureRandom());
+                Clock.systemUTC(), new SecureRandom(),
+                props.candidateData().realCandidateDataAllowed());
     }
 
     @Bean
@@ -231,7 +233,7 @@ class WiringConfig {
                 store, applicationStore, parser, documentScanner,
                 new com.ats.kernel.Ids.TenantId(publicTenantId), Clock.systemUTC(),
                 new SecureRandom(), cfg.maxUploadBytes(), cfg.maxPages(),
-                cfg.syntheticOnly(), cfg.maxConcurrentParses());
+                props.candidateData().syntheticOnly(), cfg.maxConcurrentParses());
     }
 
     @Bean

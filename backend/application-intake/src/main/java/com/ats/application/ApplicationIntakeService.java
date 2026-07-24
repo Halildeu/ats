@@ -136,9 +136,22 @@ public final class ApplicationIntakeService {
     private final TenantId publicTenantId;
     private final Clock clock;
     private final SecureRandom random;
+    private final boolean realCandidateDataAllowed;
 
+    /** Fail-safe: gerçek aday verisi açıkça izin verilmedikçe yalnız sentetik kabul edilir. */
     public ApplicationIntakeService(
             ApplicationStore store, TenantId publicTenantId, Clock clock, SecureRandom random) {
+        this(store, publicTenantId, clock, random, false);
+    }
+
+    /**
+     * @param realCandidateDataAllowed ortam politikası gerçek(çi) aday verisine izin veriyor mu
+     *        (prod'da bu değer makine tarafından {@code false}'a kilitlidir; bkz. app-boot
+     *        candidate-data politikası)
+     */
+    public ApplicationIntakeService(
+            ApplicationStore store, TenantId publicTenantId, Clock clock, SecureRandom random,
+            boolean realCandidateDataAllowed) {
         if (publicTenantId == null || publicTenantId.value() == null
                 || publicTenantId.value().isBlank()) {
             throw new IllegalArgumentException("publicTenantId zorunlu");
@@ -147,6 +160,7 @@ public final class ApplicationIntakeService {
         this.publicTenantId = publicTenantId;
         this.clock = clock;
         this.random = random;
+        this.realCandidateDataAllowed = realCandidateDataAllowed;
     }
 
     public Outcome<List<JobPosting>> listPublishedJobs() {
@@ -434,8 +448,10 @@ public final class ApplicationIntakeService {
         if (!between(value.fullName(), 2, 160)) return invalid("fullName 2..160 karakter olmalı");
         if (!between(value.email(), 3, 254) || !EMAIL.matcher(value.email()).matches())
             return invalid("email geçersiz");
-        if (!value.email().endsWith(".test"))
-            return invalid("G0 kilidi: yalnız sentetik .test e-posta kabul edilir");
+        // Ortam politikası: prod'da makine tarafından sentetik-yalnız'a kilitlidir;
+        // test/dev'de owner beyanıyla gerçek(çi) veri açılabilir (bkz. candidate-data politikası).
+        if (!realCandidateDataAllowed && !value.email().endsWith(".test"))
+            return invalid("Bu ortam yalnız sentetik .test e-posta kabul eder");
         if (!between(value.phone(), 7, 40)) return invalid("phone 7..40 karakter olmalı");
         if (!between(value.city(), 2, 120)) return invalid("city 2..120 karakter olmalı");
         if (!validOptionalHttpUrl(value.linkedIn()) || !validOptionalHttpUrl(value.portfolio()))
