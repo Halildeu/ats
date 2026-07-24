@@ -6,6 +6,56 @@ One-time pre-production DBA action that transfers ownership of every schema-publ
 
 Fixes #176 (P0-FULLATS-DB-01).
 
+## Before any of this: roles must exist first (#202)
+
+On a **clean install** the chain cannot reach V16 on its own. Three migrations provision
+roles — V1 (`ats_app`), V4 (`ats_governance_writer`), V16 (`ats_migrator`) — each guarded by
+`IF NOT EXISTS`. The guard means an install works *iff the roles already exist*; otherwise
+the runner needs `CREATEROLE`, which the deployment identity (`ats_app`) deliberately does
+not have. Existing environments only work because their roles were created out of band.
+
+So provision the roles once, with a privileged principal, **before the application's first
+migration run**:
+
+```sql
+-- as postgres (superuser), on the target cluster
+CREATE ROLE ats_app NOLOGIN;               -- skip any that already exist
+CREATE ROLE ats_governance_writer NOLOGIN;
+CREATE ROLE ats_migrator NOLOGIN;
+
+-- Creating the role is NOT enough. V16 runs
+--   ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator ...
+-- and Postgres requires the caller to be a *member* of that role to alter its defaults.
+-- Without this grant the chain stops one step later, at
+--   ERROR: permission denied to change default privileges
+GRANT ats_migrator TO <migration-runner>;  -- e.g. ats_app
+```
+
+Then let the application start; Flyway applies V1..V16 normally, and this runbook's
+ownership transfer becomes possible.
+
+### How this fails if you skip it
+
+It does not look like a failure. Observed on k3d-test, 2026-07-24:
+
+```
+Migration of schema "public" to version "16 - migrator role least privilege" failed!
+SQLSTATE 42501: permission denied to create role
+  Where: CREATE ROLE ats_migrator NOLOGIN
+```
+
+The pod crash-looped for **14 hours** while the previous ReplicaSet kept serving —
+Endpoints populated, health checks green, no alert from anything watching the service
+itself. A `KubeReplicaSetSplit` alert on the *rollout* is what surfaced it. If a deploy
+seems to have "not taken effect", check for a second ReplicaSet stuck at `ready=0` before
+looking anywhere else.
+
+The prerequisite is enforced in CI by
+`MigrationRoleProvisioningPrerequisiteTest`: one case proves a least-privilege runner is
+stopped when the roles are absent, the other proves this exact remedy discharges it. Note
+that the migrations themselves cannot carry the fix — they are applied everywhere and
+Flyway validates checksums on start, so editing an applied file breaks existing installs.
+
 ## When to run
 
 Before the first production activation (real candidate PII, GA cutover) — never on a live customer database. Idempotent on drilled non-prod databases; safe to re-run.
