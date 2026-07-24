@@ -226,9 +226,32 @@ class ApplicationIntakeServiceTest {
         assertEquals("acik", store.command.publicHandle());
     }
 
+    @Test
+    void non_production_policy_accepts_real_candidate_email() {
+        CapturingStore store = new CapturingStore();
+        var out = serviceAllowingRealData(store).submit(
+                "acik", "urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS,
+                new ApplicationIntakeService.Submission(
+                        " Deniz ", "Deniz@Sirket.COM", "+905550000000", "İstanbul", null, null,
+                        "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans",
+                        List.of("Ürün"), null, ApplicationIntakeService.NOTICE_VERSION,
+                        NOW.toString(), NOW.toString()));
+
+        assertTrue(out.isOk(),
+                "test/dev ortam politikasında gerçek e-posta ile başvuru kabul edilir");
+        assertEquals("deniz@sirket.com", store.command.submission().email(),
+                "gerçek e-posta da normalize edilir; yalnız sentetik kısıtı kalkar");
+    }
+
     private static ApplicationIntakeService service(ApplicationStore store) {
         return new ApplicationIntakeService(store, new TenantId("test-tenant"),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom());
+    }
+
+    /** Non-prod ortam politikası (prod'da bu bayrak makine tarafından kilitlidir). */
+    private static ApplicationIntakeService serviceAllowingRealData(ApplicationStore store) {
+        return new ApplicationIntakeService(store, new TenantId("test-tenant"),
+                Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(), true);
     }
 
     private static ApplicationIntakeService.Submission submission() {

@@ -13,12 +13,12 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 @ConfigurationProperties(prefix = "ats")
 public record AppProperties(
         Db db, Ai ai, Security security, Ingest ingest, Retention retention,
-        ResumeImport resumeImport, ObjectStore objectStore) {
+        ResumeImport resumeImport, ObjectStore objectStore, CandidateData candidateData) {
 
     @ConstructorBinding
     public AppProperties {
         if (resumeImport == null) {
-            resumeImport = new ResumeImport(true, true, 10_485_760, 20, 2);
+            resumeImport = new ResumeImport(true, 10_485_760, 20, 2);
         }
         if (objectStore == null) {
             throw new IllegalStateException(
@@ -26,17 +26,82 @@ public record AppProperties(
                     + " — fail-closed: G0 object-store kararı yokken yalnız açık in-memory-dev"
                     + " beyanı kabul edilir");
         }
+        if (candidateData == null) {
+            // Fail-safe: konfig verilmediyse en kısıtlayıcı mod (sentetik-yalnız + prod).
+            candidateData = new CandidateData(null, null);
+        }
     }
 
     /** Source-compatible constructor for existing composition tests/callers (no ResumeImport/ObjectStore). */
     public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention) {
-        this(db, ai, security, ingest, retention, null, new ObjectStore("in-memory-dev"));
+        this(db, ai, security, ingest, retention, null, new ObjectStore("in-memory-dev"), null);
     }
 
     /** Source-compatible constructor for main baseline (with ResumeImport only). */
     public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention,
                          ResumeImport resumeImport) {
-        this(db, ai, security, ingest, retention, resumeImport, new ObjectStore("in-memory-dev"));
+        this(db, ai, security, ingest, retention, resumeImport, new ObjectStore("in-memory-dev"), null);
+    }
+
+    /** Source-compatible constructor before candidate-data policy became explicit. */
+    public AppProperties(Db db, Ai ai, Security security, Ingest ingest, Retention retention,
+                         ResumeImport resumeImport, ObjectStore objectStore) {
+        this(db, ai, security, ingest, retention, resumeImport, objectStore, null);
+    }
+
+    /**
+     * Aday verisi politikası — ortam-parametrik, prod'da makine tarafından kilitli.
+     *
+     * <p>KVKK/PII yükümlülüğü şirketten şirkete ve ortamdan ortama değiştiği için bu
+     * politika sabit tek-mod değildir: test/dev ortamlarında gerçek(çi) aday verisiyle
+     * uçtan uca doğrulama açılabilir. Production'da ise {@code real-allowed} beyanı
+     * <strong>boot'u düşürür</strong> — gerçek aday PII'sinin prod aktivasyonu
+     * Legal/DPO owner gate'indedir ve config ile gevşetilemez.
+     *
+     * <p>Fail-safe default: değer verilmezse {@code synthetic-only} + {@code prod}.
+     * Yani konfig unutulan/yanlış render edilen bir ortam en kısıtlayıcı moda düşer.
+     */
+    public record CandidateData(String mode, String environment) {
+        public static final String MODE_SYNTHETIC_ONLY = "synthetic-only";
+        public static final String MODE_REAL_ALLOWED = "real-allowed";
+        public static final String ENV_PROD = "prod";
+
+        private static final java.util.Set<String> MODES =
+                java.util.Set.of(MODE_SYNTHETIC_ONLY, MODE_REAL_ALLOWED);
+        private static final java.util.Set<String> ENVIRONMENTS =
+                java.util.Set.of(ENV_PROD, "test", "dev");
+
+        public CandidateData {
+            mode = (mode == null || mode.isBlank()) ? MODE_SYNTHETIC_ONLY : mode.trim();
+            environment = (environment == null || environment.isBlank())
+                    ? ENV_PROD : environment.trim();
+            if (!MODES.contains(mode)) {
+                throw new IllegalStateException(
+                        "ats.candidate-data.mode kapalı küme " + MODES + "; verilen: " + mode);
+            }
+            if (!ENVIRONMENTS.contains(environment)) {
+                throw new IllegalStateException(
+                        "ats.candidate-data.environment kapalı küme " + ENVIRONMENTS
+                        + "; verilen: " + environment);
+            }
+            if (MODE_REAL_ALLOWED.equals(mode) && ENV_PROD.equals(environment)) {
+                throw new IllegalStateException(
+                        "Production ortamında gerçek aday verisi kapalıdır (fail-closed):"
+                        + " ats.candidate-data.mode=real-allowed yalnız non-prod ortam beyanıyla"
+                        + " kullanılabilir. Gerçek aday PII'sinin production aktivasyonu"
+                        + " Legal/DPO owner gate'indedir.");
+            }
+        }
+
+        /** CV import ve başvuru formu yalnız sentetik {@code .test} veri kabul eder. */
+        public boolean syntheticOnly() {
+            return MODE_SYNTHETIC_ONLY.equals(mode);
+        }
+
+        /** Gerçek(çi) aday verisi kabul edilir — yalnız non-prod ortamda mümkündür. */
+        public boolean realCandidateDataAllowed() {
+            return MODE_REAL_ALLOWED.equals(mode);
+        }
     }
 
     /**
@@ -55,10 +120,12 @@ public record AppProperties(
         }
     }
 
-    /** Candidate CV import remains synthetic-only until named privacy/security activation gates. */
+    /**
+     * CV import kapasite sınırları. Sentetik-yalnız kısıtı burada DEĞİL,
+     * {@link CandidateData} tek otoritesindedir (tek-source-of-truth).
+     */
     public record ResumeImport(
             boolean enabled,
-            boolean syntheticOnly,
             int maxUploadBytes,
             int maxPages,
             int maxConcurrentParses) {
@@ -76,10 +143,6 @@ public record AppProperties(
             if (maxConcurrentParses > 8) {
                 throw new IllegalStateException(
                         "ats.resume-import.max-concurrent-parses <= 8 olmalı");
-            }
-            if (enabled && !syntheticOnly) {
-                throw new IllegalStateException(
-                        "Gerçek CV aktivasyonu bu source slice'ta kapalıdır; synthetic-only=true zorunlu");
             }
         }
     }
