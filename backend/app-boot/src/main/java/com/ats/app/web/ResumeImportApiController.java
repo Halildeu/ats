@@ -87,11 +87,27 @@ class ResumeImportApiController {
             int page, double x, double y, double width, double height,
             double confidence, String parserVersion) {}
 
+    /**
+     * #218: bir bolumden gruplanan TEK kayit. Alan adlari jenerik: ayni sekil hem
+     * deneyimi (unvan/sirket) hem egitimi (okul/bolum) tasir; iki paralel sekil iki
+     * ayri sapma yolu acardi. {@code subtitle} guvenilir sinyal yoksa BOS kalir.
+     */
+    @Schema(name = "ResumeProposedEntry",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ProposedEntryDto(
+            String title, String subtitle, String dateText, String description) {}
+
+    /**
+     * @param proposedEntries #218 yapisal kayitlar. BOS ise gruplama yok ya da
+     *     guvenilir degildi; tuketici {@code proposedValue}'ya (tek blob) duser.
+     *     Coklu deneyim/egitim bu alan olmadan tek karta yigiliyordu.
+     */
     @Schema(name = "ResumeProposalResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ProposalDto(
             String field, String proposedValue, String candidateValue,
-            String state, int version, ProvenanceDto provenance) {}
+            String state, int version, ProvenanceDto provenance,
+            List<ProposedEntryDto> proposedEntries) {}
 
     @Schema(name = "ResumeImportResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -104,9 +120,15 @@ class ResumeImportApiController {
 
     @Schema(name = "CandidateDraftResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    /**
+     * @param entries #218 alan basina yapisal kayitlar. Anahtar YOKSA o alan icin
+     *     gruplama yok ve tuketici {@code fields}'a duser. Aday oneriyi DUZENLEDIYSE
+     *     anahtar hic gelmez: onun metni tek otoritedir.
+     */
     record DraftDto(
             String draftId, String importId, int version,
-            Map<String, String> fields, String createdAt) {}
+            Map<String, String> fields, String createdAt,
+            Map<String, List<ProposedEntryDto>> entries) {}
 
     @Schema(name = "ResumeImportConfirmResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -356,15 +378,24 @@ class ResumeImportApiController {
                 value.field().apiName(), value.proposedValue(), value.candidateValue(),
                 value.state().name(), value.version(), new ProvenanceDto(
                         p.page(), p.x(), p.y(), p.width(), p.height(), p.confidence(),
-                        p.parserVersion()));
+                        p.parserVersion()),
+                value.proposedEntries().stream()
+                        .map(ResumeImportApiController::proposedEntryDto).toList());
     }
 
     private static DraftDto draftDto(ResumeDraft value) {
         Map<String, String> fields = new java.util.LinkedHashMap<>();
         value.fields().forEach((field, fieldValue) -> fields.put(field.apiName(), fieldValue));
+        Map<String, List<ProposedEntryDto>> entries = new java.util.LinkedHashMap<>();
+        value.entries().forEach((field, list) -> entries.put(field.apiName(),
+                list.stream().map(ResumeImportApiController::proposedEntryDto).toList()));
         return new DraftDto(
                 value.draftId(), value.importId(), value.version(), Map.copyOf(fields),
-                value.createdAt());
+                value.createdAt(), Map.copyOf(entries));
+    }
+
+    private static ProposedEntryDto proposedEntryDto(ResumeImportService.ProposedEntry e) {
+        return new ProposedEntryDto(e.title(), e.subtitle(), e.dateText(), e.description());
     }
 
     private static ResponseEntity<?> ok(Object body) {
