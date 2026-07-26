@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeImportService.ImportState;
 import com.ats.application.ResumeImportService.ProposalDraft;
+import com.ats.application.ResumeImportService.ProposedEntry;
 import com.ats.application.ResumeImportService.ProposalState;
 import com.ats.application.ResumeImportService.Provenance;
 import com.ats.application.ResumeImportService.ResumeField;
@@ -29,6 +30,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.Map;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -275,6 +277,107 @@ class PostgresResumeImportStoreTest {
                 TENANT, JOB, "urun-yoneticisi", importId, access, key, requestDigest,
                 "candidate-resume-import-v1", NOW, "2026-07-18T12:05:00Z",
                 "2026-07-18T12:10:00Z", NOW);
+    }
+
+    @Test
+    void structured_entries_survive_proposal_to_confirmed_draft() throws Exception {
+        // #218: sahip raporu "birden fazla deneyim tek karta yigiliyor". Ayristirici
+        // artik kayitlari gruplayip yayinliyor, ama zincirin HER halkasi tasimadan
+        // form yine blob'u okur. Bu test zincirin tamamini kanitlar:
+        //   oneri (JSONB) -> secim -> onaylanmis taslak (JSONB) -> ResumeDraft
+        String importId = "ri_" + "G".repeat(24);
+        // Hex ZORUNLU: candidate_access_digest ~ '^[0-9a-f]{64}'. "g" hex degil
+        // ve create 23514 check_violation ile fail-closed dondu.
+        String access = "1a".repeat(32);
+        store.create(create(importId, access, "create-key-g0000001", "a1".repeat(32)))
+                .asOptional().orElseThrow();
+
+        var entries = List.of(
+                new ProposedEntry("Kidemli Kalite Muhendisi", "", "2019 - 2023", "Sistemi kurdu"),
+                new ProposedEntry("Kalite Uzmani", "", "2015 - 2019", "Denetim yurutttu"));
+        Provenance p = new Provenance(1, 0, 0, 595, 842, 0.95, "parser-v9");
+        var attached = reserveAndAttach(new AttachCommand(
+                importId, access, 0, "upload-key-g0000001", "a2".repeat(32), 1,
+                "parser-v9", 2, 0, "2026-07-18T12:11:00Z"),
+                List.of(
+                        new ProposalDraft(ResumeField.EXPERIENCE, "birlesik blob", p, entries),
+                        // Girdisiz alan: NULL yazilmali, '[]' DEGIL.
+                        new ProposalDraft(ResumeField.EMAIL, "deniz@example.test", p)));
+        assertEquals(AttachState.ATTACHED, attached.state());
+
+        var experience = attached.resumeImport().proposals().stream()
+                .filter(x -> x.field() == ResumeField.EXPERIENCE).findFirst().orElseThrow();
+        assertEquals(2, experience.proposedEntries().size(), "oneri girdileri okunmali");
+        assertEquals("Kidemli Kalite Muhendisi", experience.proposedEntries().get(0).title());
+        assertEquals("2019 - 2023", experience.proposedEntries().get(0).dateText());
+        var email = attached.resumeImport().proposals().stream()
+                .filter(x -> x.field() == ResumeField.EMAIL).findFirst().orElseThrow();
+        assertTrue(email.proposedEntries().isEmpty(), "girdisiz alan bos kalmali");
+
+        // Sutun NULL olmali: '[]' "gruplandi, sonuc bos" derdi ve okuyucuyu yanlis
+        // yonlendirirdi. Iki farkli gercek tek degere indirilmemeli.
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT field_key, proposed_entries IS NULL AS bos"
+                                + " FROM ats_resume_proposal WHERE import_id=? ORDER BY field_key")) {
+            ps.setString(1, importId);
+            Map<String, Boolean> nullness = new java.util.LinkedHashMap<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) nullness.put(rs.getString("field_key"), rs.getBoolean("bos"));
+            }
+            assertEquals(Boolean.TRUE, nullness.get("EMAIL"), "girdisiz alan NULL olmali");
+            assertEquals(Boolean.FALSE, nullness.get("EXPERIENCE"));
+        }
+
+        store.updateField(new FieldCommand(importId, access, ResumeField.EXPERIENCE,
+                ProposalState.ACCEPTED, null, 1, "2026-07-18T12:12:00Z"))
+                .asOptional().orElseThrow();
+        var confirmed = store.confirm(new ConfirmCommand(
+                importId, access, 2, "2026-07-18T12:13:00Z")).asOptional().orElseThrow();
+        assertEquals(ConfirmState.CONFIRMED, confirmed.state());
+
+        var draftEntries = confirmed.draft().entries().get(ResumeField.EXPERIENCE);
+        assertNotNull(draftEntries, "kabul edilen alanin girdileri taslaga gecmeli");
+        assertEquals(2, draftEntries.size());
+        assertEquals("Kalite Uzmani", draftEntries.get(1).title());
+
+        // Tekrar okuma da tasimali: form taslagi ayri istekte cekiyor.
+        var loaded = store.findConfirmedDraft(
+                TENANT, JOB, access, importId, 0, "2026-07-18T12:13:00Z")
+                .asOptional().orElseThrow();
+        assertEquals(2, loaded.entries().get(ResumeField.EXPERIENCE).size(),
+                "taslak yeniden okunurken girdiler kaybolmamali");
+        assertEquals("Kidemli Kalite Muhendisi",
+                loaded.entries().get(ResumeField.EXPERIENCE).get(0).title());
+    }
+
+    @Test
+    void an_edited_field_carries_no_entries_so_the_candidate_edit_stays_authoritative()
+            throws Exception {
+        // Aday metni DUZENLEDIYSE eski kayitlar artik o metni tarif etmiyor. Onlari
+        // forma kart olarak basmak adayin duzenlemesini SESSIZCE ezerdi.
+        String importId = "ri_" + "H".repeat(24);
+        String access = "2b".repeat(32);
+        store.create(create(importId, access, "create-key-h0000001", "b1".repeat(32)))
+                .asOptional().orElseThrow();
+        Provenance p = new Provenance(1, 0, 0, 595, 842, 0.95, "parser-v9");
+        reserveAndAttach(new AttachCommand(
+                importId, access, 0, "upload-key-h0000001", "b2".repeat(32), 1,
+                "parser-v9", 2, 0, "2026-07-18T12:11:00Z"),
+                List.of(new ProposalDraft(ResumeField.EXPERIENCE, "birlesik blob", p, List.of(
+                        new ProposedEntry("Kidemli Kalite Muhendisi", "", "2019 - 2023", ""),
+                        new ProposedEntry("Kalite Uzmani", "", "2015 - 2019", "")))));
+
+        store.updateField(new FieldCommand(importId, access, ResumeField.EXPERIENCE,
+                ProposalState.EDITED, "Adayin kendi yazdigi metin", 1, "2026-07-18T12:12:00Z"))
+                .asOptional().orElseThrow();
+        var confirmed = store.confirm(new ConfirmCommand(
+                importId, access, 2, "2026-07-18T12:13:00Z")).asOptional().orElseThrow();
+
+        assertEquals("Adayin kendi yazdigi metin",
+                confirmed.draft().fields().get(ResumeField.EXPERIENCE));
+        assertNull(confirmed.draft().entries().get(ResumeField.EXPERIENCE),
+                "duzenlenen alan girdi tasimamali: adayin metni tek otorite");
     }
 
     private static List<ProposalDraft> proposals() {

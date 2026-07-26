@@ -119,7 +119,55 @@ public final class ResumeImportService implements AutoCloseable {
             double confidence,
             String parserVersion) {}
 
-    public record ProposalDraft(ResumeField field, String value, Provenance provenance) {}
+    /**
+     * #218 — bir bölüm içindeki TEK kayıt önerisi.
+     *
+     * <p>Deneyim ve eğitim CV'de birden fazla kayıt içerir; ayrıştırıcı bunları tek
+     * metne birleştirdiği için formda tek karta yığılıyordu. Kayıtlar burada yapısal
+     * taşınır. Alan adları bilinçli olarak <strong>jenerik</strong>: aynı şekil hem
+     * deneyimi (unvan/şirket) hem eğitimi (okul/bölüm) taşır ve eşleme tek yerde
+     * yapılır — iki paralel şekil iki ayrı sapma yolu açardı.
+     *
+     * <p>{@code subtitle} ve {@code dateText} güvenilir sinyal yoksa BOŞ kalır.
+     * Tahminle doldurmak, adayın sonra düzeltmek zorunda kalacağı yanlış veriyi
+     * forma yazmak olurdu — boş bırakmak dürüst olan.
+     */
+    public record ProposedEntry(
+            String title, String subtitle, String dateText, String description) {
+
+        public ProposedEntry {
+            title = trimToEmptyEntry(title);
+            subtitle = trimToEmptyEntry(subtitle);
+            dateText = trimToEmptyEntry(dateText);
+            description = trimToEmptyEntry(description);
+        }
+
+        public boolean blank() {
+            return title.isEmpty() && subtitle.isEmpty() && dateText.isEmpty()
+                    && description.isEmpty();
+        }
+    }
+
+    private static String trimToEmptyEntry(String value) {
+        return value == null ? "" : value.strip();
+    }
+
+    /**
+     * @param entries #218 yapısal kayıtlar. Gruplama güvenilir değilse BOŞ kalır ve
+     *     tüketici {@code value}'ya (bugünkü tek blob) düşer — sessiz bozulma yok.
+     */
+    public record ProposalDraft(
+            ResumeField field, String value, Provenance provenance, List<ProposedEntry> entries) {
+
+        public ProposalDraft {
+            entries = entries == null ? List.of()
+                    : entries.stream().filter(e -> !e.blank()).toList();
+        }
+
+        public ProposalDraft(ResumeField field, String value, Provenance provenance) {
+            this(field, value, provenance, List.of());
+        }
+    }
 
     public record ResumeProposal(
             ResumeField field,
@@ -127,7 +175,21 @@ public final class ResumeImportService implements AutoCloseable {
             String candidateValue,
             ProposalState state,
             int version,
-            Provenance provenance) {}
+            Provenance provenance,
+            List<ProposedEntry> proposedEntries) {
+
+        public ResumeProposal {
+            proposedEntries = proposedEntries == null ? List.of()
+                    : List.copyOf(proposedEntries);
+        }
+
+        /** Girdi listesi eklenmeden yazılmış çağrı yerleri için geri uyum. */
+        public ResumeProposal(
+                ResumeField field, String proposedValue, String candidateValue,
+                ProposalState state, int version, Provenance provenance) {
+            this(field, proposedValue, candidateValue, state, version, provenance, List.of());
+        }
+    }
 
     public record ResumeImport(
             TenantId tenantId,
@@ -154,14 +216,29 @@ public final class ResumeImportService implements AutoCloseable {
         }
     }
 
+    /**
+     * @param entries #218 alan başına yapısal kayıtlar. Yalnız aday öneriyi
+     *     DÜZENLEMEDEN kabul ettiyse dolu olur: metni düzenlediyse onun düzenlemesi
+     *     tek otoritedir ve eski kayıtlar artık o metni tarif etmez. Boşsa tüketici
+     *     {@code fields}'a (tek blob) düşer — bugünkü davranış.
+     */
     public record ResumeDraft(
             String draftId,
             String importId,
             int version,
             Map<ResumeField, String> fields,
-            String createdAt) {
+            String createdAt,
+            Map<ResumeField, List<ProposedEntry>> entries) {
         public ResumeDraft {
             fields = fields == null ? Map.of() : Map.copyOf(fields);
+            entries = entries == null ? Map.of() : Map.copyOf(entries);
+        }
+
+        /** Girdi listesi eklenmeden yazılmış çağrı yerleri için geri uyum. */
+        public ResumeDraft(
+                String draftId, String importId, int version,
+                Map<ResumeField, String> fields, String createdAt) {
+            this(draftId, importId, version, fields, createdAt, Map.of());
         }
     }
 

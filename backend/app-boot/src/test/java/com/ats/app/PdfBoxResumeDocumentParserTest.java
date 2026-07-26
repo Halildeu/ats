@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeDocumentParser.ParseResult;
+import com.ats.application.ResumeImportService;
 import com.ats.application.ResumeImportService.ResumeField;
 import com.ats.kernel.Outcome;
 import java.io.ByteArrayOutputStream;
@@ -334,6 +335,200 @@ class PdfBoxResumeDocumentParserTest {
         content.newLineAtOffset(x, y);
         content.showText(text);
         content.endText();
+    }
+
+    /**
+     * #218 — ölçülen kayıt-başı tipografisini taklit eden CV. Gerçek CV'lerde kayıt
+     * başı satırlar KALIN ve gövdeden ~%15 büyük, bölümün sol kenarında; madde
+     * satırları normal ve girintili.
+     *
+     * @param spec her satır {@code "x|punto|kalınMı|metin"} biçiminde
+     */
+    private static byte[] typedPdf(String... spec) throws Exception {
+        try (PDDocument document = new PDDocument();
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                float y = 760;
+                for (String row : spec) {
+                    String[] parts = row.split("\\|", 4);
+                    float x = Float.parseFloat(parts[0]);
+                    float size = Float.parseFloat(parts[1]);
+                    boolean bold = Boolean.parseBoolean(parts[2]);
+                    content.beginText();
+                    content.setFont(new PDType1Font(
+                            bold ? FontName.HELVETICA_BOLD : FontName.HELVETICA), size);
+                    content.newLineAtOffset(x, y);
+                    content.showText(parts[3]);
+                    content.endText();
+                    y -= 18;
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    private static List<ResumeImportService.ProposedEntry> entriesFor(
+            byte[] pdf, ResumeField field) {
+        Outcome<ParseResult> outcome = new PdfBoxResumeDocumentParser().parse(pdf, 10);
+        assertTrue(outcome.isOk(), "parse basarili olmali");
+        return ((Outcome.Ok<ParseResult>) outcome).value().proposals().stream()
+                .filter(p -> p.field() == field)
+                .findFirst()
+                .map(ResumeImportService.ProposalDraft::entries)
+                .orElse(List.of());
+    }
+
+    @Test
+    void multiple_experiences_become_separate_entries_not_one_blob() throws Exception {
+        // Sahip raporu: "birden fazla deneyim olunca tek deneyim gibi atıyor".
+        // Ölçüm: gerçek CV'de kayıt başı satır KALIN + gövdeden büyük + sol kenarda;
+        // madde satırı normal + girintili. Sinyal satır geometrisinde, birleştirilmiş
+        // metinde yok — bu yüzden bölme ayrıştırıcıda yapılmak ZORUNDA.
+        byte[] pdf = typedPdf(
+                "48|10|false|EXPERIENCE",
+                "48|11.5|true|Kidemli Kalite Muhendisi",
+                "48|10|false|Ornek Sanayi AS 2019 - 2023",
+                "57|10|false|Kalite sistemini kurdu",
+                "48|11.5|true|Kalite Uzmani",
+                "48|10|false|Baska Sanayi AS 2015 - 2019",
+                "57|10|false|Denetimleri yuruttu");
+
+        List<ResumeImportService.ProposedEntry> entries =
+                entriesFor(pdf, ResumeField.EXPERIENCE);
+        assertEquals(2, entries.size(), "iki pozisyon iki kayit olmali: " + entries);
+        assertEquals("Kidemli Kalite Muhendisi", entries.get(0).title());
+        assertEquals("Kalite Uzmani", entries.get(1).title());
+        // Tarih satiri aciklamadan AYRILMALI: forma tarih alanina gidecek.
+        assertTrue(entries.get(0).dateText().contains("2019 - 2023"),
+                "tarih metni ayrilmali: " + entries.get(0));
+        assertTrue(entries.get(0).description().contains("Kalite sistemini kurdu"));
+        assertFalse(entries.get(0).description().contains("Kalite Uzmani"),
+                "ikinci kaydin basligi birinci kayda sizmamali");
+        // Sirket sinyali olcumde ayirt edilemedi; tahmin etmek yerine BOS kalir.
+        assertEquals("", entries.get(0).subtitle());
+    }
+
+    @Test
+    void multiple_educations_become_separate_entries() throws Exception {
+        // Gercek CV olcumu: iki egitim kaydi 4.8pt farkli x'te basliyor (97.3 / 102.1)
+        // ama madde girintisi 9.4pt. Tolerans ikisinin ARASINDA olmali, yoksa ya
+        // ikinci kayit kacar ya maddeler kayit sanilir.
+        byte[] pdf = typedPdf(
+                "100|10|false|EDUCATION",
+                "102|11.5|true|Ornek Universitesi",
+                "102|10|false|Cevre Muhendisligi",
+                "97|11.5|true|Ornek Lisesi",
+                "97|10|false|Fen");
+
+        List<ResumeImportService.ProposedEntry> entries = entriesFor(pdf, ResumeField.EDUCATION);
+        assertEquals(2, entries.size(), "iki egitim iki kayit olmali: " + entries);
+        assertEquals("Ornek Universitesi", entries.get(0).title());
+        assertEquals("Ornek Lisesi", entries.get(1).title());
+    }
+
+    @Test
+    void a_single_record_publishes_no_entries_so_the_blob_stays_authoritative()
+            throws Exception {
+        // Tek kayit icin yapisal liste yayinlamak tuketiciye yanlis bir "gruplama
+        // basarili" sinyali verirdi. Bugunun tek-blob davranisi fallback KALIR.
+        byte[] pdf = typedPdf(
+                "48|10|false|EXPERIENCE",
+                "48|11.5|true|Kidemli Kalite Muhendisi",
+                "48|10|false|Ornek Sanayi AS 2019 - 2023",
+                "57|10|false|Kalite sistemini kurdu");
+
+        assertTrue(entriesFor(pdf, ResumeField.EXPERIENCE).isEmpty(),
+                "tek kayitta yapisal liste bos kalmali");
+    }
+
+    @Test
+    void an_all_emphasised_section_falls_back_instead_of_making_one_card_per_line()
+            throws Exception {
+        // Bolumun TAMAMI kalinsa sinyal ayirt etmiyor. Satir basina kart uretmek,
+        // tek blob kartindan KOTU olurdu (~5 cop kart). Fallback tek blob.
+        byte[] pdf = typedPdf(
+                "48|10|false|EXPERIENCE",
+                "48|11.5|true|Kidemli Kalite Muhendisi",
+                "48|11.5|true|Ornek Sanayi AS 2019 - 2023",
+                "48|11.5|true|Kalite sistemini kurdu");
+
+        assertTrue(entriesFor(pdf, ResumeField.EXPERIENCE).isEmpty(),
+                "her satir kalinsa gruplama yapilmamali");
+    }
+
+    @Test
+    void a_right_column_fragment_does_not_start_a_new_record() throws Exception {
+        // Gercek CV olcumu: deneyim bolumunde x=414.9'da da KALIN bir satir var
+        // (sag kolon parcasi, ayni kaydin devami). Yalniz "kalin" kurali onu ikinci
+        // kayit sayip tek pozisyonu ikiye bolerdi. Sol kenar sarti bu yuzden var.
+        byte[] pdf = typedPdf(
+                "54|10|false|EXPERIENCE",
+                "415|11.5|true|Ornek Sanayi AS",
+                "54|11.5|true|Kidemli Kalite Muhendisi",
+                "434|10|false|Ocak 2019 - Aralik 2023",
+                "54|10|false|Kalite sistemini kurdu",
+                "54|11.5|true|Kalite Uzmani",
+                "54|10|false|Denetimleri yuruttu");
+
+        List<ResumeImportService.ProposedEntry> entries =
+                entriesFor(pdf, ResumeField.EXPERIENCE);
+        assertEquals(2, entries.size(),
+                "sag kolon parcasi ucuncu kayit uretmemeli: " + entries);
+        // Ilk sinirdan ONCEKI satir atilmaz, ilk kayda eklenir: veri kaybi yanlis
+        // gruplamadan kotudur.
+        assertTrue(entries.get(0).title().contains("Ornek Sanayi AS")
+                        || entries.get(0).description().contains("Ornek Sanayi AS"),
+                "ilk sinirdan onceki satir korunmali: " + entries.get(0));
+    }
+
+    @Test
+    void entries_never_carry_text_from_a_page_the_citation_cannot_prove() throws Exception {
+        // Blob, sayfa degisince eklemeyi REDDEDER: bir oneri tek sayfa+bbox alintisi
+        // tasir. Girdi listesi ayni kurala tabi olmali. Bu filtreyi ilk yazimda
+        // atlamistim ve olcum yakaladi: blob 2078 karakterken kayitlar ~4400
+        // karakter tasiyordu, yani 2. sayfa icerigi 1. sayfa alintisi altinda
+        // yayinlaniyordu.
+        byte[] pdf = twoPageTypedPdf();
+        List<ResumeImportService.ProposedEntry> entries =
+                entriesFor(pdf, ResumeField.EXPERIENCE);
+        String joined = entries.toString();
+        assertFalse(joined.contains("IkinciSayfaKaydi"),
+                "ikinci sayfa icerigi birinci sayfa alintisi altinda yayinlanmamali: " + joined);
+    }
+
+    private static byte[] twoPageTypedPdf() throws Exception {
+        try (PDDocument document = new PDDocument();
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            String[][] pages = {
+                {"48|10|false|EXPERIENCE", "48|11.5|true|BirinciKayit",
+                 "48|10|false|Ornek AS 2019 - 2023", "48|11.5|true|IkinciKayit",
+                 "48|10|false|Baska AS 2015 - 2019"},
+                {"48|10|false|EXPERIENCE", "48|11.5|true|IkinciSayfaKaydi",
+                 "48|10|false|Ucuncu AS 2010 - 2015"}};
+            for (String[] spec : pages) {
+                PDPage page = new PDPage();
+                document.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    float y = 760;
+                    for (String row : spec) {
+                        String[] parts = row.split("\\|", 4);
+                        content.beginText();
+                        content.setFont(new PDType1Font(Boolean.parseBoolean(parts[2])
+                                ? FontName.HELVETICA_BOLD : FontName.HELVETICA),
+                                Float.parseFloat(parts[1]));
+                        content.newLineAtOffset(Float.parseFloat(parts[0]), y);
+                        content.showText(parts[3]);
+                        content.endText();
+                        y -= 18;
+                    }
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        }
     }
 
     @Test

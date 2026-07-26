@@ -2,6 +2,7 @@ package com.ats.app;
 
 import com.ats.application.ResumeDocumentParser;
 import com.ats.application.ResumeImportService.ProposalDraft;
+import com.ats.application.ResumeImportService.ProposedEntry;
 import com.ats.application.ResumeImportService.Provenance;
 import com.ats.application.ResumeImportService.ResumeField;
 import com.ats.kernel.Outcome;
@@ -33,12 +34,41 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * aynı sürümü raporlarsa kanıt geriye izlenemez. Ayrıştırma davranışını
      * değiştiren her PR bunu bump ETMEK ZORUNDA. (#208 bump'sız gitti: canlı
      * ölçümde v6 davranışı v5 diye raporlandı.)
+     *
+     * <p>v9 (#218): deneyim/eğitim bölümleri artık yapısal KAYIT listesi de
+     * yayınlıyor; davranış değiştiği için sürüm de değişti.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v8";
+    static final String VERSION = "pdfbox-3.0.5-rules-v9";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
     private static final Pattern PHONE = Pattern.compile("(?:\\+?\\d[\\d ()-]{6,}\\d)");
+    /**
+     * Tarih sinyalleri. Kayıt sınırı adayı olarak ölçülür — hangisinin gerçekten
+     * ayırt ettiği ölçümle belirlenir, varsayımla değil.
+     *
+     * <p>Ayırıcı olarak kısa çizgi, en-tire, em-tire ve "–" varyantları ile Türkçe
+     * "Halen"/"Devam"/"Günümüz" ve İngilizce "Present"/"Current" kabul edilir:
+     * gerçek CV'lerde bitiş tarihi çoğu zaman yıl değil bu kelimelerdir.
+     */
+    private static final Pattern YEAR_RANGE = Pattern.compile(
+            "(?:19|20)\\d{2}\\s*[-–—/]\\s*(?:(?:19|20)\\d{2}|"
+                    + "[Hh]alen|[Dd]evam(?:\\s+ediyor)?|[Gg]ünümüz|[Pp]resent|[Cc]urrent|"
+                    + "[Nn]ow|\\.{2,})");
+    private static final Pattern SINGLE_YEAR = Pattern.compile("(?<!\\d)(?:19|20)\\d{2}(?!\\d)");
+    /**
+     * Kayıt-başı eşikleri. Ölçülen değerler: kayıt başı satırların punto oranı
+     * 1.13–1.17, gövde 1.00 → 1.05 eşiği ikisini ayırır. Sol kenar toleransı 6pt:
+     * ölçümde aynı bölümün iki kaydı 97.3 ve 102.1'de başlıyor (4.8pt fark), ama
+     * madde girintisi 9.4pt — tolerans ikisinin arasında olmalı.
+     */
+    private static final double RECORD_FONT_RATIO = 1.05;
+    private static final double RECORD_LEFT_TOLERANCE = 6.0;
+    private static final double LEFT_EDGE_BUCKET = 3.0;
+    private static final Pattern MONTH_NAME = Pattern.compile(
+            "(?i)\\b(?:ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|"
+                    + "eylül|eylul|ekim|kasım|kasim|aralık|aralik|"
+                    + "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\b");
     private static final Map<String, ResumeField> LABELS = labels();
     /** Uzun etiket önce denenir: "work experience" > "experience". */
     private static final List<Map.Entry<String, ResumeField>> LABELS_BY_LENGTH =
@@ -165,6 +195,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
             PositionedTextStripper stripper = new PositionedTextStripper();
             Map<ResumeField, LocatedValue> values = new LinkedHashMap<>();
+            // #218: blob'un yanında bölüm SATIRLARI de tutulur. Kayıt sınırı sinyali
+            // satır geometrisinde (kalınlık, punto, x) — birleştirilmiş metinde yok.
+            // Blob üretimi aynen korunur: yapısal gruplama başarısız olursa tüketici
+            // bugünkü davranışa düşer.
+            Map<ResumeField, List<TextLine>> sectionLines = new LinkedHashMap<>();
             int protectedSuppressed = 0;
             int extractedCharacters = 0;
 
@@ -181,7 +216,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 for (int index = 0; index < columns.size(); index++) {
                     // İki akış varsa ikincisi yan çubuktur (splitIntoColumns sırası).
                     boolean sidebar = columns.size() > 1 && index == columns.size() - 1;
-                    PageResult pageResult = parsePage(columns.get(index), values, sidebar);
+                    PageResult pageResult =
+                            parsePage(columns.get(index), values, sectionLines, sidebar);
                     protectedSuppressed += pageResult.protectedSuppressed();
                 }
                 if (page == 1) proposeFullNameFromHeader(lines, values);
@@ -193,7 +229,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 proposals.add(new ProposalDraft(
                         entry.getKey(), located.value(),
                         new Provenance(located.page(), located.x(), located.y(),
-                                located.width(), located.height(), located.confidence(), VERSION)));
+                                located.width(), located.height(), located.confidence(), VERSION),
+                        proposedEntries(entry.getKey(), sectionLines.get(entry.getKey()),
+                                located.page())));
             }
             return Outcome.ok(new ParseResult(
                     proposals, pageCount, protectedSuppressed, 0, VERSION));
@@ -243,7 +281,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     }
 
     private static PageResult parsePage(
-            List<TextLine> lines, Map<ResumeField, LocatedValue> values, boolean sidebar) {
+            List<TextLine> lines, Map<ResumeField, LocatedValue> values,
+            Map<ResumeField, List<TextLine>> sectionLines, boolean sidebar) {
         ResumeField active = null;
         boolean headingJustOpened = false;
         int protectedSuppressed = 0;
@@ -295,6 +334,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             headingJustOpened = false;
             if (active != null) {
                 putOrAppend(values, active, sanitize(line, active), source, 0.92);
+                // #218: aynı satır blob'a da, kayıt gruplaması için de gider. Tek
+                // kaynaktan beslenmesi şart — ayrı yollar iki farklı gerçek üretir.
+                if (active == ResumeField.EXPERIENCE || active == ResumeField.EDUCATION) {
+                    sectionLines.computeIfAbsent(active, key -> new ArrayList<>())
+                            .add(new TextLine(line, source.page(), source.x(), source.y(),
+                                    source.width(), source.height(), source.fontSize(),
+                                    source.bold()));
+                }
             }
         }
 
@@ -502,6 +549,305 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     }
                 }
             }
+        }
+        return out.toString();
+    }
+
+    /**
+     * #218 — gruplanan kayıtları yapısal öneriye çevirir.
+     *
+     * <p>Yalnız deneyim ve eğitim için çalışır; diğer alanlar tek değerdir.
+     * Gruplama <strong>tek</strong> kayıt bulduysa boş liste döner: tek kayıt,
+     * bugünkü blob davranışının ta kendisidir ve yapısal liste olarak göndermek
+     * tüketiciye yanlış bir "gruplama başarılı" sinyali verirdi.
+     *
+     * <p>Kayıt içinde: ilk satır başlık (unvan/okul), tarih deseni bulunan İLK satır
+     * tarih metni, kalanlar açıklama. {@code subtitle} (şirket/bölüm) BOŞ bırakılır —
+     * ölçümde ayırt edici bir sinyal bulunamadı; tahmin etmek adayın düzeltmek
+     * zorunda kalacağı yanlış veri üretirdi.
+     *
+     * <p>YALNIZ {@code citationPage} satırları kullanılır. Blob da aynı kuralla
+     * kurulur ({@code putOrAppend} sayfa değişince eklemeyi reddeder): bir öneri tek
+     * sayfa+bbox alıntısı taşır ve o alıntı başka sayfadaki metni kanıtlayamaz.
+     * Filtrelemeyi atladığımda ölçüm anında yakaladı — blob 2078 karakterken kayıtlar
+     * ~4400 karakter taşıyordu, yani 2. sayfa içeriği 1. sayfa alıntısı altında
+     * yayınlanıyordu. Çok sayfaya yayılan bölüm sınırlaması blob'da da var; bu
+     * değişiklik onu genişletmiyor, tutarlı kalıyor.
+     */
+    private static List<ProposedEntry> proposedEntries(
+            ResumeField field, List<TextLine> lines, int citationPage) {
+        if (field != ResumeField.EXPERIENCE && field != ResumeField.EDUCATION) return List.of();
+        if (lines == null || lines.isEmpty()) return List.of();
+        List<TextLine> cited = lines.stream().filter(l -> l.page() == citationPage).toList();
+        if (cited.isEmpty()) return List.of();
+        List<List<TextLine>> records = groupSectionRecords(cited);
+        if (records.size() < 2) return List.of();
+
+        List<ProposedEntry> entries = new ArrayList<>();
+        for (List<TextLine> record : records) {
+            String title = record.isEmpty() ? "" : record.get(0).text();
+            String dateText = "";
+            List<String> description = new ArrayList<>();
+            for (int i = 1; i < record.size(); i++) {
+                String text = record.get(i).text();
+                if (dateText.isEmpty()
+                        && (YEAR_RANGE.matcher(text).find() || SINGLE_YEAR.matcher(text).find())) {
+                    dateText = text;
+                    continue;
+                }
+                description.add(text);
+            }
+            entries.add(new ProposedEntry(title, "", dateText, String.join("\n", description)));
+        }
+        return List.copyOf(entries);
+    }
+
+    /**
+     * #218 — bölüm satırlarını KAYITLARA böler.
+     *
+     * <p>Sinyal ölçümle seçildi, varsayımla değil. Gerçek CV'lerde deneyim/eğitim
+     * bölümündeki her kaydın ilk satırı <strong>kalın veya gövdeden büyük</strong>
+     * ve <strong>bölümün baskın sol kenarında</strong> başlıyor:
+     *
+     * <pre>
+     * CV-A deneyim: oran=1.13 kalın=true  girinti=0.0   ← kayıt başı (×3)
+     *               oran=1.00 kalın=false yılAralığı=true
+     *               oran=1.00 kalın=false girinti=9.4   ← madde, kayıt başı DEĞİL
+     * CV-B eğitim:  oran=1.17 kalın=true  x=102.1       ← kayıt başı
+     *               oran=1.17 kalın=true  x= 97.3       ← kayıt başı (2. kayıt)
+     * </pre>
+     *
+     * <p>Sol kenar şartı zorunlu: CV-B'nin deneyim bölümünde x=414.9'da da kalın bir
+     * satır var (sağ kolon parçası, aynı kaydın devamı). Yalnız "kalın" kuralı onu
+     * ikinci kayıt sayıp tek pozisyonu ikiye bölerdi.
+     *
+     * <p>Sinyal güvenilmezse <strong>tek kayıt</strong> döner — yani bugünkü tek-blob
+     * davranışı fallback'tir. Satır sonuna göre bölmek yasak: ölçüm, blob'da kayıt
+     * sınırı sinyali olmadığını gösterdi (0 boş satır, 0 çift-newline) ve satır bazlı
+     * bölme 1-2 gerçek kayıttan ~5 çöp kart üretirdi.
+     */
+    static List<List<TextLine>> groupSectionRecords(List<TextLine> sectionLines) {
+        if (sectionLines.size() < 2) return List.of(sectionLines);
+        double[] fonts = sectionLines.stream().mapToDouble(TextLine::fontSize).sorted().toArray();
+        double bodyFont = fonts[fonts.length / 2];
+        double leftEdge = modalLeftEdge(sectionLines);
+
+        List<Integer> starts = new ArrayList<>();
+        for (int i = 0; i < sectionLines.size(); i++) {
+            TextLine line = sectionLines.get(i);
+            boolean emphasised = line.bold()
+                    || (bodyFont > 0 && line.fontSize() > bodyFont * RECORD_FONT_RATIO);
+            if (emphasised && Math.abs(line.x() - leftEdge) <= RECORD_LEFT_TOLERANCE) {
+                starts.add(i);
+            }
+        }
+        // İki sınırdan az: bölecek bir şey yok. Her satır sınır: sinyal ayırt
+        // etmiyor (ör. bölümün tamamı kalın) — ikisinde de tek kayıt dönülür,
+        // sessizce çöp kart üretmek yerine bugünkü davranış korunur.
+        if (starts.size() < 2 || starts.size() == sectionLines.size()) {
+            return List.of(sectionLines);
+        }
+
+        List<List<TextLine>> records = new ArrayList<>();
+        for (int s = 0; s < starts.size(); s++) {
+            // İlk sınırdan ÖNCEKİ satırlar atılmaz, ilk kayda eklenir: veri kaybı
+            // yanlış gruplamadan kötüdür (CV-B deneyiminde sağ kolon parçası
+            // ilk sınırdan önce geliyor).
+            int from = s == 0 ? 0 : starts.get(s);
+            int to = s + 1 < starts.size() ? starts.get(s + 1) : sectionLines.size();
+            records.add(List.copyOf(sectionLines.subList(from, to)));
+        }
+        return List.copyOf(records);
+    }
+
+    /**
+     * Bölümün baskın sol kenarı. Salt minimum x, tek bir sola kaçmış satıra
+     * duyarlıdır; bu yüzden satırlar {@value #LEFT_EDGE_BUCKET}pt kovalara
+     * yuvarlanır ve en kalabalık kovanın en küçük x'i kullanılır. Eşitlikte
+     * daha soldaki kova kazanır.
+     */
+    private static double modalLeftEdge(List<TextLine> lines) {
+        Map<Long, Integer> counts = new LinkedHashMap<>();
+        Map<Long, Double> minima = new LinkedHashMap<>();
+        for (TextLine line : lines) {
+            long bucket = Math.round(line.x() / LEFT_EDGE_BUCKET);
+            counts.merge(bucket, 1, Integer::sum);
+            minima.merge(bucket, line.x(), Math::min);
+        }
+        long best = counts.entrySet().stream()
+                .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed()
+                        .thenComparing(Map.Entry.comparingByKey()))
+                .findFirst().map(Map.Entry::getKey).orElse(0L);
+        return minima.getOrDefault(best, 0.0);
+    }
+
+    /**
+     * #218 TEŞHİS — kayıt SINIRI sinyalini ölçer. Satır metnini basmaz (PII);
+     * yalnız bölüm içindeki her satır için önceki satıra göre y-boşluğu, gövdeye
+     * göre punto oranı, kalınlık, girinti ve tarih-deseni eşleşmesini basar.
+     *
+     * <p>Neden gerekli: blob'da (`\n` ile birleştirilmiş metin) kayıt sınırı
+     * sinyali YOK — ölçüldü (0 boş satır, 0 çift-newline, 0 satır-başı yıl).
+     * Sinyal ayrıştırıcıda, satır geometrisinde. Kural yazmadan önce hangi
+     * sinyalin gerçekten ayırt ettiğini görmek gerekiyor.
+     *
+     * <p>Yalnız teşhis testinden çağrılır; üretim akışında kullanılmaz.
+     */
+    static String diagnoseSections(byte[] pdfBytes) throws IOException {
+        StringBuilder out = new StringBuilder();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PositionedTextStripper stripper = new PositionedTextStripper();
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                List<TextLine> lines = stripper.extract(document, page);
+                List<List<TextLine>> columns = splitIntoColumns(lines);
+                double[] sorted = lines.stream().mapToDouble(TextLine::fontSize).sorted().toArray();
+                double body = sorted.length == 0 ? 0 : sorted[sorted.length / 2];
+                for (int c = 0; c < columns.size(); c++) {
+                    List<TextLine> col = columns.get(c);
+                    boolean sidebar = columns.size() > 1 && c == columns.size() - 1;
+                    double colMinX = col.stream().mapToDouble(TextLine::x).min().orElse(0);
+                    ResumeField active = null;
+                    TextLine previous = null;
+                    for (TextLine source : col) {
+                        String t = source.text().replaceAll("\\s+", " ").trim();
+                        if (t.isEmpty()) continue;
+                        ResumeField section = headingField(t, normalizeLabel(t));
+                        if (section != null) {
+                            active = section;
+                            previous = null;
+                            out.append(String.format("s%d akış%d BÖLÜM=%s%n", page, c, section));
+                            continue;
+                        }
+                        if (sidebar && looksLikeHeading(t)) {
+                            active = null;
+                            previous = null;
+                            continue;
+                        }
+                        if (active != ResumeField.EXPERIENCE && active != ResumeField.EDUCATION) {
+                            continue;
+                        }
+                        double gap = previous == null ? -1 : source.y() - previous.y();
+                        out.append(String.format(
+                                "  s%d boşluk=%6.2f oran=%.2f kalın=%-5s x=%5.1f sağ=%5.1f "
+                                        + "girinti=%5.1f uzun=%-3d yılAralığı=%-5s tekYıl=%-5s "
+                                        + "ayVar=%-5s%n",
+                                source.page(), gap, body == 0 ? 0 : source.fontSize() / body,
+                                source.bold(), source.x(), source.x() + source.width(),
+                                source.x() - colMinX, t.length(),
+                                YEAR_RANGE.matcher(t).find(), SINGLE_YEAR.matcher(t).find(),
+                                MONTH_NAME.matcher(t).find()));
+                        previous = source;
+                    }
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * #218 TEŞHİS — gruplamanın ÜRETTİĞİ kayıt sayısını basar. Kabul sinyali:
+     * kayıt sayısı bölümdeki tarih-satırı sayısıyla tutmalı (her pozisyonun bir
+     * tarih satırı olur). Metin basılmaz.
+     */
+    static String diagnoseGrouping(byte[] pdfBytes) throws IOException {
+        StringBuilder out = new StringBuilder();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PositionedTextStripper stripper = new PositionedTextStripper();
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                List<TextLine> lines = stripper.extract(document, page);
+                List<List<TextLine>> columns = splitIntoColumns(lines);
+                for (int c = 0; c < columns.size(); c++) {
+                    List<TextLine> col = columns.get(c);
+                    boolean sidebar = columns.size() > 1 && c == columns.size() - 1;
+                    ResumeField active = null;
+                    List<TextLine> bucket = new ArrayList<>();
+                    for (TextLine source : col) {
+                        String t = source.text().replaceAll("\\s+", " ").trim();
+                        if (t.isEmpty()) continue;
+                        ResumeField section = headingField(t, normalizeLabel(t));
+                        boolean closes = section != null || (sidebar && looksLikeHeading(t));
+                        if (closes) {
+                            flushGroupingDiagnostic(out, page, c, active, bucket);
+                            bucket = new ArrayList<>();
+                            active = section;
+                            continue;
+                        }
+                        if (active == ResumeField.EXPERIENCE || active == ResumeField.EDUCATION) {
+                            bucket.add(source);
+                        }
+                    }
+                    flushGroupingDiagnostic(out, page, c, active, bucket);
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    private static void flushGroupingDiagnostic(
+            StringBuilder out, int page, int column, ResumeField field, List<TextLine> bucket) {
+        if (field == null || bucket.isEmpty()) return;
+        if (field != ResumeField.EXPERIENCE && field != ResumeField.EDUCATION) return;
+        long dateLines = bucket.stream()
+                .filter(l -> YEAR_RANGE.matcher(l.text()).find()
+                        || SINGLE_YEAR.matcher(l.text()).find())
+                .count();
+        List<List<TextLine>> records = groupSectionRecords(bucket);
+        out.append(String.format("s%d akış%d %s satır=%d tarihSatırı=%d KAYIT=%d boyut=%s%n",
+                page, column, field, bucket.size(), dateLines, records.size(),
+                records.stream().map(r -> String.valueOf(r.size())).toList()));
+    }
+
+    /**
+     * #213 TEŞHİS — sözlüğe girmeyen BAŞLIK adaylarını, metnini basmadan tanımlar.
+     *
+     * <p>Başlık metni kişisel veri değildir (bölüm etiketi), ama disiplini bozmamak
+     * için gene de basılmaz: onun yerine satırın hangi bilinen kökleri içerdiği
+     * boolean olarak raporlanır. Sözlüğe hangi girdinin eksik olduğunu bulmak için
+     * bu yeterli.
+     */
+    private static final Map<String, String> HEADING_PROBE_TOKENS = Map.ofEntries(
+            Map.entry("DENEY", "deneyim"), Map.entry("TECRUBE", "tecrübe"),
+            Map.entry("EGIT", "eğitim"), Map.entry("OKUL", "okul"),
+            Map.entry("UNIVERS", "üniversite"), Map.entry("LISANS", "lisans"),
+            Map.entry("STAJ", "staj"), Map.entry("SERTIF", "sertifika"),
+            Map.entry("YETKIN", "yetkinlik"), Map.entry("BECERI", "beceri"),
+            Map.entry("YETENEK", "yetenek"), Map.entry("DIL", "dil"),
+            Map.entry("HAKKIMDA", "hakkımda"), Map.entry("OZET", "özet"),
+            Map.entry("PROFIL", "profil"), Map.entry("PROJE", "proje"),
+            Map.entry("REFERANS", "referans"), Map.entry("ILETISIM", "iletişim"),
+            Map.entry("KISISEL", "kişisel"), Map.entry("BILGI", "bilgi"),
+            Map.entry("KURS", "kurs"), Map.entry("IS", "iş"));
+
+    static String diagnoseUnknownHeadings(byte[] pdfBytes) throws IOException {
+        StringBuilder out = new StringBuilder();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PositionedTextStripper stripper = new PositionedTextStripper();
+            int characters = 0;
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                List<TextLine> lines = stripper.extract(document, page);
+                characters += lines.stream().mapToInt(l -> l.text().length()).sum();
+                for (TextLine line : lines) {
+                    String t = line.text().replaceAll("\\s+", " ").trim();
+                    if (t.isEmpty()) continue;
+                    String norm = normalizeLabel(t);
+                    if (headingField(t, norm) != null) {
+                        out.append(String.format("s%d BİLİNEN=%s%n", page, headingField(t, norm)));
+                        continue;
+                    }
+                    if (!looksLikeHeading(t)) continue;
+                    String ascii = norm.toUpperCase(java.util.Locale.ROOT)
+                            .replace('İ', 'I').replace('Ş', 'S').replace('Ğ', 'G')
+                            .replace('Ü', 'U').replace('Ö', 'O').replace('Ç', 'C')
+                            .replace('I', 'I');
+                    List<String> hits = HEADING_PROBE_TOKENS.entrySet().stream()
+                            .filter(e -> ascii.contains(e.getKey()))
+                            .map(Map.Entry::getValue).sorted().toList();
+                    out.append(String.format("s%d BİLİNMEYEN uzun=%-3d kökler=%s%n",
+                            page, t.length(), hits.isEmpty() ? "[hiçbiri]" : hits));
+                }
+            }
+            out.append(String.format("toplamKarakter=%d sayfa=%d%n",
+                    characters, document.getNumberOfPages()));
         }
         return out.toString();
     }

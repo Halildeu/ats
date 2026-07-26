@@ -1,6 +1,7 @@
 package com.ats.persistence;
 
 import com.ats.application.ApplicationIntakeService;
+import com.ats.application.ResumeImportService;
 import com.ats.kernel.JsonCodec;
 import com.ats.kernel.JsonValue;
 import com.ats.kernel.Outcome;
@@ -124,6 +125,43 @@ final class Pg {
             out.add(new ApplicationIntakeService.EducationEntry(
                     f.get("school"), f.get("degree"), f.get("field"),
                     f.get("startYear"), f.get("endYear"), f.get("description")));
+        }
+        return out;
+    }
+
+    /**
+     * #218: ayrıştırıcının gruplayıp yayınladığı kayıt önerileri. Boş alan
+     * yazılmaz ({@link #putIfPresent}), yani eksik anahtar normal durumdur.
+     */
+    static String proposedEntriesToJson(List<ResumeImportService.ProposedEntry> entries) {
+        List<JsonValue> items = new ArrayList<>();
+        for (var e : entries) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            putIfPresent(row, "title", e.title());
+            putIfPresent(row, "subtitle", e.subtitle());
+            putIfPresent(row, "dateText", e.dateText());
+            putIfPresent(row, "description", e.description());
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    /**
+     * #218: {@code NULL} ile boş dizi AYNI ŞEY DEĞİL. {@code NULL} "bu öneri
+     * gruplamadan önce yazıldı ya da gruplama güvenilir değildi" demektir ve
+     * tüketici tek-blob davranışına düşer; boş dizi ise "gruplandı, sonuç boş"
+     * anlamına gelirdi ve o durum hiç yazılmaz. Bu yüzden {@code null} girdi
+     * sessizce boş listeye çevrilmez — çağıran ayrımı görsün diye boş liste
+     * döner ama sütun okunurken null kontrolü çağırana bırakılır.
+     */
+    static List<ResumeImportService.ProposedEntry> proposedEntriesFromJson(String json)
+            throws SQLException {
+        if (json == null) return List.of();
+        List<ResumeImportService.ProposedEntry> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            Map<String, String> f = entryFields(item);
+            out.add(new ResumeImportService.ProposedEntry(
+                    f.get("title"), f.get("subtitle"), f.get("dateText"), f.get("description")));
         }
         return out;
     }
