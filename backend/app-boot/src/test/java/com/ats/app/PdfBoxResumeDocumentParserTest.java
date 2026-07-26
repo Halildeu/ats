@@ -1,5 +1,6 @@
 package com.ats.app;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -9,6 +10,8 @@ import com.ats.application.ResumeDocumentParser.ParseResult;
 import com.ats.application.ResumeImportService.ResumeField;
 import com.ats.kernel.Outcome;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -88,6 +91,79 @@ class PdfBoxResumeDocumentParserTest {
                 .mapToDouble(p -> p.provenance().confidence())
                 .findFirst().orElseThrow();
         assertTrue(confidence < 0.90, "sezgisel isim onerisi dusuk guvenle gelmeli: " + confidence);
+    }
+
+    @Test
+    void a_gutter_sized_gap_splits_the_line_into_two_columns() {
+        // #204 kok neden, gercek CV'den olculdu: ana kolon "...COACH" 30.2'de
+        // biter, yan cubuk "EDUCATION" 451.1'de baslar; aradaki 144.8pt oluk
+        // glifsizdir. Bolmezsek yan cubuk basligi ana kolona yapisir.
+        Glyphs line = Glyphs.of("MAIN", 30.2, 9.4).gap(144.8).then("SIDE", 9.4);
+
+        List<int[]> ranges = PdfBoxResumeDocumentParser.columnRanges(
+                line.textLength(), line.xs(), line.widths());
+
+        assertEquals(2, ranges.size(), "oluk iki kolona bolunmeli");
+        assertArrayEquals(new int[] {0, 4}, ranges.get(0));
+        assertArrayEquals(new int[] {4, 8}, ranges.get(1));
+    }
+
+    @Test
+    void ordinary_word_spacing_never_splits_a_line() {
+        // Olcum (gercek CV, 115 satir): kelime arasi bosluklar <= 8pt, kolon
+        // olugu >= 144.8pt. Esik bu iki kume arasinda; normal satir bolunmez.
+        Glyphs line = Glyphs.of("WORD", 30.0, 9.4).gap(8.0).then("NEXT", 9.4);
+
+        List<int[]> ranges = PdfBoxResumeDocumentParser.columnRanges(
+                line.textLength(), line.xs(), line.widths());
+
+        assertEquals(1, ranges.size(), "kelime araligi bolme uretmemeli");
+    }
+
+    @Test
+    void a_synthetic_word_separator_disables_splitting_fail_safe() {
+        // PDFBox glif olmayan yere ayirici ekleyebilir; o zaman metin uzunlugu
+        // glif sayisindan buyuktur ve indeksle dilimlemek metni bozar.
+        Glyphs line = Glyphs.of("MAIN", 30.2, 9.4).gap(144.8).then("SIDE", 9.4);
+
+        List<int[]> ranges = PdfBoxResumeDocumentParser.columnRanges(
+                line.textLength() + 1, line.xs(), line.widths());
+
+        assertEquals(1, ranges.size(), "1:1 olmayan satirda bolme YAPILMAMALI");
+        assertArrayEquals(new int[] {0, 8}, ranges.get(0));
+    }
+
+    /** Tek satirlik glif akisi kurar: her karakter kendi x/genisligiyle. */
+    private record Glyphs(List<Double> x, List<Double> w, double cursor) {
+        static Glyphs of(String text, double startX, double advance) {
+            return new Glyphs(new ArrayList<>(), new ArrayList<>(), startX).then(text, advance);
+        }
+
+        Glyphs then(String text, double advance) {
+            double at = cursor;
+            for (int i = 0; i < text.length(); i++) {
+                x.add(at);
+                w.add(advance);
+                at += advance;
+            }
+            return new Glyphs(x, w, at);
+        }
+
+        Glyphs gap(double points) {
+            return new Glyphs(x, w, cursor + points);
+        }
+
+        int textLength() {
+            return x.size();
+        }
+
+        double[] xs() {
+            return x.stream().mapToDouble(Double::doubleValue).toArray();
+        }
+
+        double[] widths() {
+            return w.stream().mapToDouble(Double::doubleValue).toArray();
+        }
     }
 
     private Map<ResumeField, String> parse(byte[] pdf) {
