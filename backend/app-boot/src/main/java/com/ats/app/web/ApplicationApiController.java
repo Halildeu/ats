@@ -344,7 +344,14 @@ class ApplicationApiController {
     record RecruiterApplicationDto(
             String publicRef, String jobSlug, String jobTitle, String fullName, String email,
             String phone, String city, String linkedIn, String portfolio, String summary,
-            String experience, String education, List<String> skills, String note,
+            String experience, String education,
+            // #215 C: yapısal girdiler İK'ya da açılır. Eski tek-string alanlar KALIR —
+            // girdisiz gönderilmiş eski başvurular ve türetilmiş metne bakan export/DSAR
+            // yüzeyleri bozulmasın. Girdi listesi BOŞ olabilir; o zaman metin tek otoritedir.
+            List<ExperienceEntryBody> experienceEntries,
+            List<EducationEntryBody> educationEntries,
+            String languages, String certifications,
+            List<String> skills, String note,
             @Schema(allowableValues = {
                     "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
                     "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
@@ -621,7 +628,14 @@ class ApplicationApiController {
         return new RecruiterApplicationDto(
                 app.publicRef(), app.jobSlug(), app.jobTitle(), app.fullName(), app.email(),
                 app.phone(), app.city(), app.linkedIn(), app.portfolio(), app.summary(),
-                app.experience(), app.education(), app.skills(), app.note(), app.status().name(),
+                app.experience(), app.education(),
+                app.experienceEntries().stream().map(e -> new ExperienceEntryBody(
+                        e.title(), e.company(), e.startDate(), e.endDate(), e.description())).toList(),
+                app.educationEntries().stream().map(e -> new EducationEntryBody(
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
+                        e.description())).toList(),
+                app.languages(), app.certifications(),
+                app.skills(), app.note(), app.status().name(),
                 app.version(), app.createdAt(), app.updatedAt());
     }
 

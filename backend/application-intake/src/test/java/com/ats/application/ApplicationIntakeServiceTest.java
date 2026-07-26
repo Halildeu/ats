@@ -340,7 +340,15 @@ class ApplicationIntakeServiceTest {
                     value.publicRef(), "job", value.jobSlug(), "Ürün Yöneticisi",
                     value.submission().fullName(), value.submission().email(), value.submission().phone(),
                     value.submission().city(), null, null, value.submission().summary(),
-                    value.submission().experience(), value.submission().education(),
+                    // #215 C: sahte store, gerçek store gibi TÜRETİLMİŞ metni ve yapısal
+                    // girdileri birlikte yansıtır. `experience()` ham alanı okumak, aday
+                    // yalnız girdi gönderdiğinde boş dönerdi ve test gerçek davranışı
+                    // temsil etmezdi (gerçek store `effectiveExperience()` yazıyor).
+                    value.submission().effectiveExperience(),
+                    value.submission().effectiveEducation(),
+                    value.submission().experienceEntries(),
+                    value.submission().educationEntries(),
+                    value.submission().languages(), value.submission().certifications(),
                     value.submission().skills(), null, ApplicationStatus.SUBMITTED, 0,
                     value.submission().noticeVersion(), value.submission().noticeAcceptedAt(),
                     value.submission().accuracyConfirmedAt(),

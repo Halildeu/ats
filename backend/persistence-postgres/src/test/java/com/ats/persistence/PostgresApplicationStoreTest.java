@@ -12,6 +12,7 @@ import com.ats.application.ApplicationStatus;
 import com.ats.application.ApplicationStore;
 import com.ats.application.ApplicationStore.ApplicationPage;
 import com.ats.application.ApplicationStore.CandidateStatusView;
+import com.ats.application.CandidateApplication;
 import com.ats.application.ApplicationStore.RecruiterApplicationSummary;
 import com.ats.application.ApplicationStore.SubmitCommand;
 import com.ats.application.ApplicationStore.SubmitResult;
@@ -283,6 +284,73 @@ class PostgresApplicationStoreTest {
         return new SubmitCommand(
                 TENANT, HANDLE, SLUG, publicRef, candidateAccessDigest,
                 idempotencyKey, requestDigest, submission(fullName), NOW);
+    }
+
+    @Test
+    void structured_entries_survive_the_round_trip_to_the_recruiter_view() {
+        // #215 C: girdiler #215 A'dan beri YAZILIYORDU ama hiç geri OKUNMUYORDU —
+        // İK tek parça türetilmiş metin görüyordu. Bu test okuma yolunu gerçek
+        // PostgreSQL'e karşı kanıtlar; JSONB'yi elle kurup okumak, yazma ile okuma
+        // arasındaki şekil uyuşmazlığını gizlerdi.
+        String publicRef = "app_" + "E".repeat(24);
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, publicRef, "5".repeat(64), "app-submit-key-05",
+                "d5".repeat(32), structuredSubmission(), NOW)).asOptional().orElseThrow();
+
+        CandidateApplication app = applications.findRecruiterApplication(TENANT, publicRef)
+                .asOptional().orElseThrow().application();
+
+        assertEquals(2, app.experienceEntries().size(), "iki deneyim girdisi geri okunmalı");
+        assertEquals("Ürün Uzmanı", app.experienceEntries().get(0).title());
+        assertEquals("Örnek Teknoloji", app.experienceEntries().get(0).company());
+        // Yazma tarafı boş alanı hiç yazmaz (putIfPresent); okuma tarafı bunu boş
+        // dizeye çevirmeli, null'a değil — record'un sözleşmesi trimToEmpty.
+        assertEquals("", app.experienceEntries().get(1).description());
+        assertEquals(1, app.educationEntries().size());
+        assertEquals("Örnek Üniversitesi", app.educationEntries().get(0).school());
+        assertEquals("Türkçe, İngilizce", app.languages());
+        assertEquals("ISO 45001", app.certifications());
+        // Eski tek-string alan burada NULL: türetme SERVİS katmanında yapılır
+        // (`ApplicationIntakeService.normalizeAndValidate` → `effectiveExperience()`),
+        // bu test ise store'a DOĞRUDAN yazar ve store çağıranın verdiğini saklar.
+        // İlk hâlinde burada "türetilmiş olmalı" diye assert etmiştim; test bunu
+        // NPE ile yakaladı — iddia yanlış katmandaydı. Türetme uçtan uca canlıda
+        // kanıtlandı (ats#216: yapısal gönderim 201 + eski kolon dolu, DB'den doğrulandı).
+        assertNull(app.experience(), "store türetme yapmaz; çağıranın verdiğini saklar");
+    }
+
+    @Test
+    void an_application_submitted_without_entries_reads_back_with_empty_lists() {
+        // Geri uyum: girdisiz gönderilen eski başvuru okunurken patlamamalı ve
+        // liste null değil BOŞ dönmeli — İK görünümü null kontrolü yapmak zorunda kalmasın.
+        String publicRef = "app_" + "F".repeat(24);
+        applications.submit(command(publicRef, "6".repeat(64), "app-submit-key-06",
+                "d7".repeat(32), "Girdisiz Aday")).asOptional().orElseThrow();
+
+        CandidateApplication app = applications.findRecruiterApplication(TENANT, publicRef)
+                .asOptional().orElseThrow().application();
+
+        assertTrue(app.experienceEntries().isEmpty());
+        assertTrue(app.educationEntries().isEmpty());
+        assertEquals("Sentetik deneyim", app.experience(), "eski tek-string alan otorite kalır");
+    }
+
+    private static Submission structuredSubmission() {
+        return new Submission(
+                "Yapısal Aday", "yapisal@example.test", "+905550000001", "İstanbul",
+                null, null, "Yapısal girdi okuma yolunu doğrulayan sentetik özet",
+                // Tek-string alanlar BİLEREK boş: backend bunları girdilerden türetmeli.
+                null, null,
+                List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW, NOW, null, null,
+                List.of(
+                        new ApplicationIntakeService.ExperienceEntry(
+                                "Ürün Uzmanı", "Örnek Teknoloji", "2022", "Devam", "Keşif"),
+                        new ApplicationIntakeService.ExperienceEntry(
+                                "Analist", "Demo", "2020", "2022", null)),
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "YBS", "2016", "2020", null)),
+                "Türkçe, İngilizce", "ISO 45001");
     }
 
     private static Submission submission(String fullName) {

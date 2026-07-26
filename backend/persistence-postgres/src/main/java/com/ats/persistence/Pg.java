@@ -74,6 +74,60 @@ final class Pg {
         return JsonCodec.canonical(new JsonValue.JsonArray(items));
     }
 
+    /**
+     * #215 C: JSONB girdilerini okur. Alan YOKSA boş dize verilir — record'un
+     * compact constructor'ı `trimToEmpty` uyguladığı için yazma tarafı zaten boş
+     * alanı hiç yazmıyor (`putIfPresent`), yani eksik anahtar normal durumdur.
+     * Beklenmeyen ŞEKİL (dizi değil, öğe nesne değil) sessizce yutulmaz: okuma
+     * fail eder, çünkü İK'ya eksik veri göstermek yanlış veri göstermekten iyi değil.
+     */
+    private static Map<String, String> entryFields(JsonValue item) throws SQLException {
+        if (!(item instanceof JsonValue.JsonObject obj)) {
+            throw new SQLException("jsonb girdi nesnesi bekleniyordu");
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (var e : obj.values().entrySet()) {
+            if (e.getValue() instanceof JsonValue.JsonString str) out.put(e.getKey(), str.value());
+        }
+        return out;
+    }
+
+    private static List<JsonValue> entryItems(String json) throws SQLException {
+        try {
+            if (json == null || json.isBlank()) return List.of();
+            if (!(JsonCodec.parse(json) instanceof JsonValue.JsonArray arr)) {
+                throw new SQLException("jsonb array bekleniyordu");
+            }
+            return arr.items();
+        } catch (JsonCodec.JsonCodecException e) {
+            throw new SQLException("jsonb parse edilemedi: " + e.getMessage());
+        }
+    }
+
+    static List<ApplicationIntakeService.ExperienceEntry> experienceEntriesFromJson(String json)
+            throws SQLException {
+        List<ApplicationIntakeService.ExperienceEntry> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            Map<String, String> f = entryFields(item);
+            out.add(new ApplicationIntakeService.ExperienceEntry(
+                    f.get("title"), f.get("company"), f.get("startDate"),
+                    f.get("endDate"), f.get("description")));
+        }
+        return out;
+    }
+
+    static List<ApplicationIntakeService.EducationEntry> educationEntriesFromJson(String json)
+            throws SQLException {
+        List<ApplicationIntakeService.EducationEntry> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            Map<String, String> f = entryFields(item);
+            out.add(new ApplicationIntakeService.EducationEntry(
+                    f.get("school"), f.get("degree"), f.get("field"),
+                    f.get("startYear"), f.get("endYear"), f.get("description")));
+        }
+        return out;
+    }
+
     static List<String> stringsFromJson(String json) throws SQLException {
         try {
             if (!(JsonCodec.parse(json) instanceof JsonValue.JsonArray arr)) {
