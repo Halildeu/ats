@@ -1098,7 +1098,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 SELECT a.tenant_id, a.application_id::text, a.public_ref, a.job_id,
                        j.slug, j.title, a.full_name, a.email, a.phone, a.city,
                        a.linkedin_url, a.portfolio_url, a.professional_summary,
-                       a.experience, a.education, a.skills::text, a.note, a.status,
+                       a.experience, a.education,
+                       a.experience_entries::text, a.education_entries::text,
+                       a.languages, a.certifications,
+                       a.skills::text, a.note, a.status,
                        a.version, a.notice_version, a.notice_accepted_at,
                        a.accuracy_confirmed_at, a.created_at, a.updated_at
                   FROM ats_application a
@@ -1135,6 +1138,9 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 rs.getString("phone"), rs.getString("city"), rs.getString("linkedin_url"),
                 rs.getString("portfolio_url"), rs.getString("professional_summary"),
                 rs.getString("experience"), rs.getString("education"),
+                Pg.experienceEntriesFromJson(rs.getString("experience_entries")),
+                Pg.educationEntriesFromJson(rs.getString("education_entries")),
+                rs.getString("languages"), rs.getString("certifications"),
                 Pg.stringsFromJson(rs.getString("skills")), rs.getString("note"),
                 ApplicationStatus.valueOf(rs.getString("status")), rs.getInt("version"),
                 rs.getString("notice_version"), iso(rs, "notice_accepted_at"),

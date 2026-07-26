@@ -23,6 +23,17 @@ public record CandidateApplication(
         String summary,
         String experience,
         String education,
+        /**
+         * #215 C: yapısal girdiler artık OKUMA yolunda da var. Aday #215 B'den beri
+         * bunları gönderiyor ve V17 kolonlarına yazılıyordu, ama hiç geri
+         * okunmuyordu — İK tek parça metin görüyordu. Eski tek-string alanlar
+         * KALDI: girdisiz gönderilmiş eski başvurular ve türetilmiş metne bakan
+         * export/DSAR yüzeyleri bozulmasın.
+         */
+        List<ApplicationIntakeService.ExperienceEntry> experienceEntries,
+        List<ApplicationIntakeService.EducationEntry> educationEntries,
+        String languages,
+        String certifications,
         List<String> skills,
         String note,
         ApplicationStatus status,
@@ -35,5 +46,7 @@ public record CandidateApplication(
 
     public CandidateApplication {
         skills = skills == null ? List.of() : List.copyOf(skills);
+        experienceEntries = experienceEntries == null ? List.of() : List.copyOf(experienceEntries);
+        educationEntries = educationEntries == null ? List.of() : List.copyOf(educationEntries);
     }
 }
