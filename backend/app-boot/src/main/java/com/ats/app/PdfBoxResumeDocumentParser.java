@@ -28,7 +28,13 @@ import org.apache.pdfbox.text.TextPosition;
  */
 public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
-    static final String VERSION = "pdfbox-3.0.5-rules-v5";
+    /**
+     * Her öneri bu dizeyi provenance olarak taşır; iki farklı çıkarım davranışı
+     * aynı sürümü raporlarsa kanıt geriye izlenemez. Ayrıştırma davranışını
+     * değiştiren her PR bunu bump ETMEK ZORUNDA. (#208 bump'sız gitti: canlı
+     * ölçümde v6 davranışı v5 diye raporlandı.)
+     */
+    static final String VERSION = "pdfbox-3.0.5-rules-v6";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
