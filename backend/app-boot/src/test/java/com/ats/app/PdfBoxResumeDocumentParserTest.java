@@ -23,6 +23,84 @@ class PdfBoxResumeDocumentParserTest {
     private final PdfBoxResumeDocumentParser parser = new PdfBoxResumeDocumentParser();
 
     @Test
+    void decorated_section_headings_are_recognized_without_swallowing_content() throws Exception {
+        // #204 canlı vakası: gerçek CV'ler etiketleri süsler. Tam-eşitlik sözlüğü
+        // bunları kaçırınca bölüm hiç açılmıyor ve içerik bir önceki alana yığılıyordu
+        // (ölçüm: skills alanına 1822 karakterlik deneyim metni).
+        byte[] pdf = pdf(
+                "HAMIDE ORNEK",
+                "ornek.aday@example.test",
+                "EXECUTIVE PROFILE",
+                "Kurumsal HSE yoneticisi ve donusum kocu.",
+                "PROFESSIONAL EXPERIENCE",
+                "CORPORATE HEAD OF HSE - Ornek Global - 2021-2023",
+                "EXECUTIVE COMPETENCIES",
+                "Risk yonetimi, denetim, saha guvenligi",
+                "CERTIFICATIONS & TRAINING",
+                "Bureau Veritas ISO 45001 Lead Auditor");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.SUMMARY), "EXECUTIVE PROFILE -> summary");
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE), "PROFESSIONAL EXPERIENCE -> experience");
+        assertTrue(fields.containsKey(ResumeField.SKILLS), "EXECUTIVE COMPETENCIES -> skills");
+        assertTrue(fields.containsKey(ResumeField.CERTIFICATIONS), "CERTIFICATIONS & TRAINING -> certifications");
+        // Asıl regresyon: deneyim metni beceriler alanına sızmamalı.
+        assertFalse(fields.get(ResumeField.SKILLS).contains("CORPORATE HEAD OF HSE"),
+                "deneyim icerigi skills alanina sizmamali");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("CORPORATE HEAD OF HSE"));
+    }
+
+    @Test
+    void sentence_containing_a_label_word_is_not_treated_as_a_heading() throws Exception {
+        // Gevşek contains eşleşmesi bu satırı CITY başlığı sanıyordu; başlık-şekli
+        // guard'ı (kısa + buyuk-harf agirlikli) yanlış pozitifi keser.
+        byte[] pdf = pdf(
+                "EXPERIENCE",
+                "Delivered City and Darica projects on schedule.",
+                "Managed certificates issued by Bureau Veritas.");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.CITY), "cumle CITY basligi sayilmamali");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("City and Darica"),
+                "cumle aktif bolumun icerigi olarak kalmali");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("certificates"),
+                "certificates gecen cumle de bolum degistirmemeli");
+    }
+
+    @Test
+    void unlabelled_header_name_is_proposed_with_low_confidence() throws Exception {
+        // CV'lerde isim "Ad Soyad:" etiketiyle gelmez; ilk sayfanin ust basligidir.
+        byte[] pdf = pdf(
+                "HAMIDE ORNEK",
+                "ornek.aday@example.test",
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertEquals("HAMIDE ORNEK", fields.get(ResumeField.FULL_NAME));
+        double confidence = result.proposals().stream()
+                .filter(p -> p.field() == ResumeField.FULL_NAME)
+                .mapToDouble(p -> p.provenance().confidence())
+                .findFirst().orElseThrow();
+        assertTrue(confidence < 0.90, "sezgisel isim onerisi dusuk guvenle gelmeli: " + confidence);
+    }
+
+    private Map<ResumeField, String> parse(byte[] pdf) {
+        return parseResult(pdf).proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+    }
+
+    private ParseResult parseResult(byte[] pdf) {
+        return ((Outcome.Ok<ParseResult>) assertInstanceOf(
+                Outcome.Ok.class, parser.parse(pdf, 20))).value();
+    }
+
+    @Test
     void extracts_only_allowlisted_fields_with_page_provenance_and_suppresses_protected() throws Exception {
         byte[] pdf = pdf(
                 "Ad Soyad: Deniz Yilmaz",
