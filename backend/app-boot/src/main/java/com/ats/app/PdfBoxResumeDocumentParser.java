@@ -587,19 +587,63 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         for (List<TextLine> record : records) {
             String title = record.isEmpty() ? "" : record.get(0).text();
             String dateText = "";
+            String subtitle = "";
             List<String> description = new ArrayList<>();
             for (int i = 1; i < record.size(); i++) {
                 String text = record.get(i).text();
-                if (dateText.isEmpty()
-                        && (YEAR_RANGE.matcher(text).find() || SINGLE_YEAR.matcher(text).find())) {
-                    dateText = text;
-                    continue;
+                if (dateText.isEmpty()) {
+                    DateLine parsed = splitDateLine(text);
+                    if (parsed != null) {
+                        dateText = parsed.dateText();
+                        subtitle = parsed.remainder();
+                        continue;
+                    }
                 }
                 description.add(text);
             }
-            entries.add(new ProposedEntry(title, "", dateText, String.join("\n", description)));
+            entries.add(
+                    new ProposedEntry(title, subtitle, dateText, String.join("\n", description)));
         }
         return List.copyOf(entries);
+    }
+
+    private record DateLine(String dateText, String remainder) {}
+
+    /**
+     * #218 düzeltme — tarih satırı yalnız tarih DEĞİL.
+     *
+     * <p>Canlı tarayıcı kabulünde ölçüldü: satır gerçekte
+     * {@code "Ornek Sanayi AS 2019 - 2023"} biçiminde geliyor, yani şirket adını da
+     * taşıyor. Satırın tamamını {@code dateText} olarak vermek, formda başlangıç
+     * tarihi alanına <strong>"Ornek Sanayi AS 2019"</strong> yazdırdı — yanlış veri.
+     * Birim testim bunu kaçırdı çünkü fixture'ı ideal hâlde ({@code "2019 - 2023"})
+     * yazmıştım; gerçek satır yapısına göre değil.
+     *
+     * <p>Bu yüzden tarih aralığı satırdan ÇIKARILIR ve kalan metin {@code subtitle}
+     * olur — şirket/bölüm alanının zaten boş kaldığı yer tam burasıydı, yani aynı
+     * düzeltme iki eksiği birden kapatır.
+     *
+     * @return tarih deseni yoksa {@code null}
+     */
+    private static DateLine splitDateLine(String text) {
+        Matcher range = YEAR_RANGE.matcher(text);
+        if (range.find()) {
+            return new DateLine(range.group(), stripAround(text, range.start(), range.end()));
+        }
+        Matcher single = SINGLE_YEAR.matcher(text);
+        if (single.find()) {
+            return new DateLine(single.group(), stripAround(text, single.start(), single.end()));
+        }
+        return null;
+    }
+
+    /** Tarih aralığının dışında kalan metni birleştirir; ayırıcı noktalama kırpılır. */
+    private static String stripAround(String text, int from, int to) {
+        String left = text.substring(0, from);
+        String right = text.substring(to);
+        String joined = (left + " " + right).replaceAll("\\s+", " ").trim();
+        // Bas/son ayirici noktalama ("|", ",", "-", "·") tarih cikinca ORTADA kalir.
+        return joined.replaceAll("^[|,;:\\-–—·•\\s]+", "").replaceAll("[|,;:\\-–—·•\\s]+$", "");
     }
 
     /**
