@@ -94,6 +94,91 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     @Test
+    void a_form_label_is_never_proposed_as_the_candidate_name() throws Exception {
+        // Canlı bulgu (sahip bildirimi 2026-07-26, kariyer.net CV'si): zorunlu ad
+        // alanina "Calismak Istedigi Iller :" dolmustu. Sebep: looksLikeHeading iki
+        // nokta ile biten satiri KOSULSUZ baslik sayar (bolum tespiti icin dogru),
+        // bu da buyuk-harf olcutunu atlatip ETIKETI ad adayi yapiyordu. Bos kalmasi
+        // yanlis dolmasindan iyidir; dogru adi bulmak tipografi isi (#213).
+        byte[] pdf = pdf(
+                "Calismak Istedigi Iller :",
+                "Istanbul, Kocaeli",
+                "ornek.aday@example.test",
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.FULL_NAME),
+                "iki nokta tasiyan satir ad adayi olmamali, geldi: "
+                        + fields.get(ResumeField.FULL_NAME));
+    }
+
+    @Test
+    void a_colon_free_uppercase_header_is_still_proposed_as_the_name() throws Exception {
+        // Daraltmanin caliaan vakayi bozmadigini ayrica sabitler: iki nokta yasagi
+        // yalnizca etiket-sekilli satiri keser, gercek ad basligini kesmez.
+        byte[] pdf = pdf(
+                "HAMIDE ORNEK",
+                "Dogum Tarihi : 01 Ocak 1990",
+                "ornek.aday@example.test",
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022");
+
+        assertEquals("HAMIDE ORNEK", parse(pdf).get(ResumeField.FULL_NAME));
+    }
+
+    @Test
+    void a_singular_turkish_certificate_heading_opens_its_own_section() throws Exception {
+        // Ek toleransi tek yone calisir: satir token'i sozluk etiketini UZATABILIR,
+        // kisaltamaz. Sozlukte yalniz cogul "sertifikalar" vardi; gercek CV
+        // "SERTIFIKA BILGILERI" yaziyordu, bolum hic acilmadi ve sertifikalar
+        // DILLER alanina yutuldu (olcum: languages 645c, certifications yok).
+        byte[] pdf = pdf(
+                "HAMIDE ORNEK",
+                "ornek.aday@example.test",
+                "YABANCI DIL",
+                "Ingilizce Ileri",
+                "SERTIFIKA BILGILERI",
+                "OHSAS 18001 Lead Auditor Certificate");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.CERTIFICATIONS),
+                "SERTIFIKA BILGILERI -> certifications");
+        assertTrue(fields.get(ResumeField.CERTIFICATIONS).contains("OHSAS 18001"));
+        assertFalse(fields.getOrDefault(ResumeField.LANGUAGES, "").contains("OHSAS 18001"),
+                "sertifika icerigi diller alanina sizmamali");
+    }
+
+    @Test
+    void computer_skills_open_the_skills_section_but_a_degree_name_does_not() throws Exception {
+        // "bilgisayar bilgileri" kariyer.net'in beceri basligi. COK KELIMELI olarak
+        // eklendi: tek basina "bilgisayar" ek toleransiyla "BILGISAYAR
+        // MUHENDISLIGI" satirini da yakalar ve egitim bolumunu kapatirdi. Bu test
+        // tam o guvenlik iddiasini olcer, iki yonlu.
+        byte[] withSkillsHeading = pdf(
+                "HAMIDE ORNEK",
+                "ornek.aday@example.test",
+                "BILGISAYAR BILGILERI",
+                "Excel, Autocad");
+        assertTrue(parse(withSkillsHeading).containsKey(ResumeField.SKILLS),
+                "BILGISAYAR BILGILERI -> skills");
+
+        byte[] withDegreeName = pdf(
+                "HAMIDE ORNEK",
+                "ornek.aday@example.test",
+                "EGITIM",
+                "BILGISAYAR MUHENDISLIGI",
+                "Ornek Universitesi 2020");
+        Map<ResumeField, String> fields = parse(withDegreeName);
+        assertFalse(fields.containsKey(ResumeField.SKILLS),
+                "bolum adi beceri bolumu acmamali, acti: " + fields.get(ResumeField.SKILLS));
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("BILGISAYAR MUHENDISLIGI"),
+                "bolum adi egitim iceriginde kalmali");
+    }
+
+    @Test
     void a_gutter_sized_gap_splits_the_line_into_two_columns() {
         // #204 kok neden, gercek CV'den olculdu: ana kolon "...COACH" 30.2'de
         // biter, yan cubuk "EDUCATION" 451.1'de baslar; aradaki 144.8pt oluk
