@@ -34,7 +34,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * değiştiren her PR bunu bump ETMEK ZORUNDA. (#208 bump'sız gitti: canlı
      * ölçümde v6 davranışı v5 diye raporlandı.)
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v7";
+    static final String VERSION = "pdfbox-3.0.5-rules-v8";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -512,6 +512,15 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * Ad-soyad sezgisi (#204): CV'lerde isim etiketli değil, ilk sayfanın en üstündeki
      * başlık satırıdır. Düşük güvenle önerilir — aday onaylar veya düzeltir.
      * Rakam, '@' ya da bilinen bölüm etiketi içeren satır aday değildir.
+     *
+     * <p>#213a: iki nokta içeren satır aday DEĞİLDİR. {@link #looksLikeHeading} iki
+     * nokta ile biten satırı koşulsuz başlık sayar (bölüm tespiti için doğru: bir
+     * form etiketi gerçekten bölüm başlatır) — ama bu, büyük-harf ölçütünü atlattığı
+     * için ad-soyad sezgisine ETİKETİ aday yapıyordu. Canlı bulgu (kariyer.net CV'si,
+     * sahip bildirimi 2026-07-26): FULL_NAME="Çalışmak İstediği İller :" — zorunlu
+     * alan boş kalmadı, YANLIŞ doldu, ki bu daha kötüsü. İki nokta tam olarak "bu bir
+     * etikettir" sinyalidir; hiçbir insan adı iki nokta taşımaz. `Etiket : değer`
+     * biçimi zaten INLINE yolunda çözülür ve o yol buradan önce koşar.
      */
     private static void proposeFullNameFromHeader(
             List<TextLine> pageLines, Map<ResumeField, LocatedValue> values) {
@@ -523,6 +532,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     String text = line.text().replaceAll("\\s+", " ").strip();
                     if (text.isEmpty() || text.length() > MAX_HEADING_CHARS) return false;
                     if (text.indexOf('@') >= 0 || text.matches(".*\\d.*")) return false;
+                    if (text.indexOf(':') >= 0 || text.indexOf('：') >= 0) return false;
                     if (!looksLikeHeading(text)) return false;
                     String normalized = normalizeLabel(text);
                     if (normalized.isEmpty() || isProtected(normalized)) return false;
@@ -583,9 +593,20 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         add(labels, ResumeField.SUMMARY, "ozet", "profil", "hakkimda", "summary", "profile");
         add(labels, ResumeField.EXPERIENCE, "deneyim", "is deneyimi", "experience", "work experience");
         add(labels, ResumeField.EDUCATION, "egitim", "education");
-        add(labels, ResumeField.SKILLS, "beceriler", "yetkinlikler", "skills", "competencies");
+        // #213a: "bilgisayar bilgileri" kariyer.net'in beceri bölümü başlığı. ÇOK
+        // KELİMELİ eklendi, çünkü tek başına "bilgisayar" ek toleransıyla
+        // "BİLGİSAYAR MÜHENDİSLİĞİ" satırını da yakalar ve eğitim bölümünü kapatırdı.
+        add(labels, ResumeField.SKILLS, "beceriler", "yetkinlikler", "skills", "competencies",
+                "bilgisayar bilgileri", "bilgisayar bilgisi");
         add(labels, ResumeField.LANGUAGES, "diller", "yabanci dil", "languages");
-        add(labels, ResumeField.CERTIFICATIONS, "sertifikalar", "certifications", "certificates");
+        // #213a: TEKİL "sertifika" eklendi. Ek toleransı yalnız tek yöne çalışır —
+        // satır token'ı sözlük etiketini UZATABİLİR, kısaltamaz. CV'de "SERTİFİKA
+        // BİLGİLERİ" yazıyordu; sözlükte yalnız çoğul "sertifikalar" olduğu için
+        // eşleşmedi, bölüm hiç açılmadı ve sertifikalar DİLLER alanına yutuldu
+        // (ölçüm: languages 645c, certifications hiç yok). Tekil eklenince ek
+        // toleransı "SERTİFİKALARIM"ı da kapsar.
+        add(labels, ResumeField.CERTIFICATIONS, "sertifika", "sertifikalar", "certifications",
+                "certificates");
         return Map.copyOf(labels);
     }
 
