@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.DoubleStream;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -27,7 +28,7 @@ import org.apache.pdfbox.text.TextPosition;
  */
 public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
-    static final String VERSION = "pdfbox-3.0.5-rules-v3";
+    static final String VERSION = "pdfbox-3.0.5-rules-v5";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -45,14 +46,67 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final double HEADING_UPPERCASE_RATIO = 0.70;
     private static final int HEADER_LINES_SCANNED = 10;
     private static final double FULL_NAME_CONFIDENCE = 0.60;
-    /** İki kolonlu yerleşim testi: her yaka satırların en az bu oranını taşımalı. */
-    private static final double MIN_COLUMN_SHARE = 0.15;
+    /** Yan çubuk satırı içerik genişliğinin bu oranından sonra BAŞLAR. */
+    private static final double SIDEBAR_START_SHARE = 0.60;
+    /** Yan çubuk satırı dardır; ana kolon satırları geniştir. */
+    private static final double SIDEBAR_MAX_WIDTH_SHARE = 0.25;
+    private static final int MIN_LINES_FOR_SIDEBAR_SPLIT = 8;
+    private static final int MIN_SIDEBAR_LINES = 3;
+    /**
+     * PDFBox aynı taban hizasındaki iki kolonu TEK satır olarak yayar; ayırıcı
+     * sentetiktir, gliflerde boşluk karakteri yoktur. Ölçüm (gerçek CV, 115
+     * satır): satır-içi boşluklar ya &lt;= 8pt (kelime arası) ya &gt;= 144.8pt
+     * (kolon oluğu) — arada hiçbir değer yok. Eşik bu boşluğun ortasında durur,
+     * yani tek bir belgeye ayarlanmış değil.
+     */
+    private static final double COLUMN_GAP_MIN_PT = 36.0;
+    /** Mutlak eşiğe ek: boşluk, satırın tipik glif ilerlemesinin katı olmalı. */
+    private static final double COLUMN_GAP_ADVANCE_FACTOR = 6.0;
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
             "uyruk", "milliyet", "din", "saglik", "engellilik", "sendika",
             "tc kimlik no", "t c kimlik no", "kimlik no", "ucret beklentisi",
             "maas beklentisi", "fotograf", "referans", "referanslar",
             "adres", "tam adres", "posta kodu");
+
+    /**
+     * Aynı taban hizasındaki iki kolon PDFBox'tan TEK satır olarak gelebilir
+     * ("HEAD OF HSE ... COACH" + "EDUCATION"); oluk glifsizdir. Bölmezsek yan
+     * çubuk başlığı ana kolon metnine yapışır: başlık ya hiç açılmaz (EDUCATION
+     * kaybolur) ya da yanlış yerde açılıp sonrasını yutar (CERTIFICATIONS 3561c).
+     *
+     * <p>Saf tutuldu: PDFBox'ın kelime ayırıcısı gömülü fonta göre değiştiği
+     * için karar bu seviyede doğrulanır, PDF baytları üzerinden değil.
+     *
+     * <p>PDFBox glif olmayan yere sentetik ayırıcı ekleyebilir; o zaman metin ile
+     * glif sayısı 1:1 değildir ve indeksle dilimlemek metni bozar. Bu durumda
+     * BÖLMEYİZ — fail-safe, bölme öncesi davranışa göre regresyon üretmez.
+     *
+     * @return {@code [başlangıç, bitiş)} glif aralıkları; bölme yoksa tek aralık
+     */
+    static List<int[]> columnRanges(int textLength, double[] xs, double[] widths) {
+        List<int[]> whole = List.of(new int[] {0, xs.length});
+        if (textLength != xs.length || xs.length != widths.length) return whole;
+        double gutter = Math.max(COLUMN_GAP_MIN_PT, COLUMN_GAP_ADVANCE_FACTOR * median(widths));
+        List<int[]> ranges = new ArrayList<>();
+        int start = 0;
+        double previousEnd = Double.NaN;
+        for (int i = 0; i < xs.length; i++) {
+            if (i > start && xs[i] - previousEnd >= gutter) {
+                ranges.add(new int[] {start, i});
+                start = i;
+            }
+            previousEnd = xs[i] + widths[i];
+        }
+        if (ranges.isEmpty()) return whole;
+        ranges.add(new int[] {start, xs.length});
+        return ranges;
+    }
+
+    private static double median(double[] values) {
+        double[] positive = DoubleStream.of(values).filter(value -> value > 0).sorted().toArray();
+        return positive.length == 0 ? 0 : positive[positive.length / 2];
+    }
 
     private record TextLine(
             String text, int page, double x, double y, double width, double height) {}
@@ -118,66 +172,41 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private record PageResult(int protectedSuppressed) {}
 
     /**
-     * İki kolonlu yerleşim ayrımı (#204). Tek kolon varsayımı, sağ kenar-çubuğu olan
-     * CV'lerde bölüm sınırlarını bozar: y-sıralı akışta sağ kolon başlığı sol kolonun
-     * ortasında belirir ve sonraki tüm sol-kolon içeriği yanlış alana yazılır.
+     * Yan çubuk ayrımı (#204). Tek akış varsayımı, sağ kenar-çubuğu olan CV'lerde
+     * bölüm sınırlarını bozar: y-sıralı akışta yan çubuk başlığı ana kolonun ortasında
+     * belirir ve sonraki tüm ana-kolon içeriği yanlış alana yazılır (canlı ölçüm:
+     * skills alanına 1822 karakterlik deneyim metni).
      *
-     * <p>Karma yerleşim (tam-genişlik başlık + yan çubuk) gerçek CV'lerde kuraldır;
-     * oluğu kesen satır bulununca bölmeyi tümden reddetmek yan çubuk başlığının ana
-     * kolonu yutmasına izin veriyordu. Bu yüzden sayfa <strong>üç akışa</strong> ayrılır
-     * ve her akış kendi bölüm durumuyla işlenir: oluğu kesen tam-genişlik satırlar,
-     * sol kolon, sağ kolon.
+     * <p>Ayırt edici <strong>satır başlangıcıdır</strong>, genişlik değil: gerçek
+     * PDFBox akışında ana kolon satırları yan çubuğun x aralığına kadar uzanır
+     * (x=30 w=537), bu yüzden oluk-tabanlı bölme çöker. Yan çubuk ise dardır ve
+     * sayfanın sağından başlar (x=451 w=46..103).
      *
-     * <p>Bölme yalnız her iki yaka da satırların {@link #MIN_COLUMN_SHARE} oranını
-     * taşıdığında yapılır; aksi halde sayfa tek akıştır (tek kolonlu CV'ler bozulmaz).
+     * <p>Yeterli sayıda yan-çubuk satırı yoksa sayfa tek akıştır — tek kolonlu CV'ler
+     * bozulmaz.
      */
     private static List<List<TextLine>> splitIntoColumns(List<TextLine> lines) {
-        if (lines.size() < 8) return List.of(lines);
+        if (lines.size() < MIN_LINES_FOR_SIDEBAR_SPLIT) return List.of(lines);
         double minX = lines.stream().mapToDouble(TextLine::x).min().orElse(0);
         double maxRight = lines.stream().mapToDouble(l -> l.x() + l.width()).max().orElse(0);
-        if (maxRight - minX <= 0) return List.of(lines);
+        double contentWidth = maxRight - minX;
+        if (contentWidth <= 0) return List.of(lines);
 
-        int bestCrossing = Integer.MAX_VALUE;
-        double bestGutter = Double.NaN;
-        for (int step = 30; step <= 70; step += 2) {
-            double gutter = minX + (maxRight - minX) * (step / 100.0);
-            int crossing = 0;
-            int left = 0;
-            int right = 0;
-            for (TextLine line : lines) {
-                double lineRight = line.x() + line.width();
-                if (line.x() < gutter - 2 && lineRight > gutter + 2) crossing++;
-                else if (lineRight <= gutter) left++;
-                else if (line.x() >= gutter) right++;
-            }
-            double share = lines.size() * MIN_COLUMN_SHARE;
-            if (left >= share && right >= share && crossing < bestCrossing) {
-                bestCrossing = crossing;
-                bestGutter = gutter;
-            }
-        }
-        if (Double.isNaN(bestGutter)) return List.of(lines);
-        final double gutter = bestGutter;
+        // Ayırt edici SATIR BAŞLANGICI, genişlik değil. Gerçek PDFBox akışında ana
+        // kolon satırları yan çubuğun x aralığına kadar uzanıyor (x=30 w=537), bu
+        // yüzden "oluğu kimse kesmez" varsayımı çöküyordu. Yan çubuk ise dar ve
+        // sayfanın sağ tarafından BAŞLIYOR (x=451 w=46..103).
+        double sidebarStart = minX + contentWidth * SIDEBAR_START_SHARE;
+        double sidebarMaxWidth = contentWidth * SIDEBAR_MAX_WIDTH_SHARE;
+        List<TextLine> sidebar = lines.stream()
+                .filter(l -> l.x() >= sidebarStart && l.width() <= sidebarMaxWidth).toList();
+        if (sidebar.size() < MIN_SIDEBAR_LINES) return List.of(lines);
+        List<TextLine> main = lines.stream().filter(l -> !sidebar.contains(l)).toList();
+        if (main.size() < MIN_SIDEBAR_LINES) return List.of(lines);
 
-        // Üç akış: tam-genişlik (oluğu kesen) / sol / sağ. Karma yerleşimlerde
-        // (tam-genişlik başlık + yan çubuk) oluğu kesen satırların varlığı yüzünden
-        // bölmeyi tümden reddetmek, yan çubuk başlığının ana kolon içeriğini yutmasına
-        // izin veriyordu. Canlı ölçüm: skills alanı 1822 karakterlik deneyim metni
-        // taşıyordu; üç akışla 266 karaktere düşüp sızıntı bitiyor, experience 721 ->
-        // 2621 karaktere çıkıyor ve education/languages bölümleri geri geliyor.
-        List<TextLine> fullWidth = lines.stream()
-                .filter(l -> l.x() < gutter - 2 && l.x() + l.width() > gutter + 2).toList();
-        List<TextLine> leftColumn = lines.stream()
-                .filter(l -> l.x() + l.width() <= gutter).toList();
-        List<TextLine> rightColumn = lines.stream()
-                .filter(l -> l.x() >= gutter).toList();
-        if (leftColumn.isEmpty() || rightColumn.isEmpty()) return List.of(lines);
-
-        List<List<TextLine>> streams = new ArrayList<>();
-        if (!fullWidth.isEmpty()) streams.add(fullWidth);
-        streams.add(leftColumn);
-        streams.add(rightColumn);
-        return List.copyOf(streams);
+        // Ana akış önce: bölüm başlıkları ve içeriği kendi akışında kalır; yan çubuk
+        // başlığı (ör. COMPETENCIES) artık ana kolonun deneyim metnini yutamaz.
+        return List.of(main, sidebar);
     }
 
     private static PageResult parsePage(
@@ -305,11 +334,29 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         @Override
         protected void writeString(String text, List<TextPosition> positions) throws IOException {
             if (text == null || text.isBlank() || positions == null || positions.isEmpty()) return;
+            for (int[] range : columnRanges(text, positions)) {
+                emit(text, positions, range[0], range[1]);
+            }
+        }
+
+        private static List<int[]> columnRanges(String text, List<TextPosition> positions) {
+            double[] xs = new double[positions.size()];
+            double[] widths = new double[positions.size()];
+            for (int i = 0; i < positions.size(); i++) {
+                xs[i] = positions.get(i).getXDirAdj();
+                widths[i] = positions.get(i).getWidthDirAdj();
+            }
+            return PdfBoxResumeDocumentParser.columnRanges(text.length(), xs, widths);
+        }
+
+        private void emit(String text, List<TextPosition> positions, int from, int to) {
+            String value = text.substring(from, to).strip();
+            if (value.isEmpty()) return;
             double left = Double.POSITIVE_INFINITY;
             double top = Double.POSITIVE_INFINITY;
             double right = Double.NEGATIVE_INFINITY;
             double bottom = Double.NEGATIVE_INFINITY;
-            for (TextPosition position : positions) {
+            for (TextPosition position : positions.subList(from, to)) {
                 double x = position.getXDirAdj();
                 double y = position.getYDirAdj();
                 left = Math.min(left, x);
@@ -319,7 +366,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
             double width = Math.max(0.1, right - left);
             double height = Math.max(0.1, bottom - top);
-            lines.add(new TextLine(text, page, Math.max(0, left), Math.max(0, top), width, height));
+            lines.add(new TextLine(value, page, Math.max(0, left), Math.max(0, top), width, height));
         }
     }
 
