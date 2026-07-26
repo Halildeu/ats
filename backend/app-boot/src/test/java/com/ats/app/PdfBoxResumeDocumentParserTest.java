@@ -166,6 +166,91 @@ class PdfBoxResumeDocumentParserTest {
         }
     }
 
+    @Test
+    void unknown_sidebar_heading_closes_the_section_but_a_job_title_does_not() throws Exception {
+        // #208 olcumu (gercek CV): "baslik seklinde ama sozlukte yok" satirlarin
+        // ana kolondakiler IS UNVANI (HSE MANAGER, SITE CHIEF) -> bolumu kapatmak
+        // deneyimi yok eder. Yan cubuktakiler ise gercek bolum basligi
+        // (AWARD, SECTOR EXPOSURE) -> kapatmazsak bir onceki alanin sonuna yapisir.
+        byte[] pdf = sidebarPdf(
+                new String[] {
+                    "PROFESSIONAL EXPERIENCE",
+                    "HSE MANAGER",
+                    "Ornek Global - 2021-2023 saha guvenligi yonetimi",
+                    "Denetim ve saha risk yonetimi yurutuldu.",
+                    "SITE CHIEF",
+                    "Ornek Insaat - 2019-2021 santiye guvenligi",
+                },
+                new String[] {"EDUCATION", "B.Sc. Geology", "AWARD", "Best Manager"});
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("HSE MANAGER"),
+                "ana kolondaki is unvani deneyimde kalmali: " + fields.get(ResumeField.EXPERIENCE));
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Ornek Global"),
+                "unvandan sonraki icerik kaybolmamali");
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("Geology"));
+        assertFalse(fields.get(ResumeField.EDUCATION).contains("AWARD"),
+                "bilinmeyen yan cubuk basligi egitime yapismamali: "
+                        + fields.get(ResumeField.EDUCATION));
+        assertFalse(fields.get(ResumeField.EDUCATION).contains("Best Manager"),
+                "kapanan bolumden sonraki icerik de egitime gitmemeli");
+    }
+
+    @Test
+    void a_wrapped_sidebar_heading_does_not_close_the_section_it_just_opened() throws Exception {
+        // Olcumde certifications 467c -> EKSIK olmustu: "CERTIFICATIONS &" basligi
+        // ikinci satira "TRAINING" olarak sariyor ve devam satiri bolumu hemen
+        // kapatiyordu. Sarma satiri yutulur, bolum acik kalir.
+        byte[] pdf = sidebarPdf(
+                new String[] {
+                    "PROFESSIONAL EXPERIENCE",
+                    "HSE MANAGER",
+                    "Ornek Global - 2021-2023 saha guvenligi yonetimi",
+                    "Denetim ve saha risk yonetimi yurutuldu.",
+                    "SITE CHIEF",
+                },
+                new String[] {"CERTIFICATIONS &", "TRAINING", "ISO 45001 Lead Auditor"});
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.CERTIFICATIONS),
+                "sarilmis baslik bolumu kapatmamali");
+        assertTrue(fields.get(ResumeField.CERTIFICATIONS).contains("ISO 45001"),
+                "sertifika icerigi alinmali: " + fields.get(ResumeField.CERTIFICATIONS));
+    }
+
+    /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
+    private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
+        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                float y = 760;
+                for (String line : main) {
+                    writeAt(content, 30, y, line);
+                    y -= 16;
+                }
+                y = 760;
+                for (String line : side) {
+                    writeAt(content, 451, y, line);
+                    y -= 16;
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    private static void writeAt(PDPageContentStream content, float x, float y, String text)
+            throws Exception {
+        content.beginText();
+        content.setFont(new PDType1Font(FontName.HELVETICA), 9);
+        content.newLineAtOffset(x, y);
+        content.showText(text);
+        content.endText();
+    }
+
     private Map<ResumeField, String> parse(byte[] pdf) {
         return parseResult(pdf).proposals().stream()
                 .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
