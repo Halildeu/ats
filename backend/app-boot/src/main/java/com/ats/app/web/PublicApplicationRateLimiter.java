@@ -45,9 +45,22 @@ final class PublicApplicationRateLimiter {
         this.limit = limit;
     }
 
-    synchronized boolean allow(String remoteAddress, String jobSlug) {
+    synchronized boolean allow(String remoteAddress, String bucketName) {
+        return allow(remoteAddress, bucketName, limit);
+    }
+
+    /**
+     * Kova başına ayrı bütçe. Aynı kimlik yüzeyinin okuma ve mutasyon uçları
+     * aynı sayıda denemeyi hak etmiyor: portal bir yenilemede üç okuma yapar,
+     * geri çekme ise terminal tek işlemdir. Tek global bütçe ikisini birbirine
+     * bağlar — okuma bütçesi mutasyonu, mutasyon bütçesi okumayı tüketirdi.
+     *
+     * @param bucketLimit bu kova için üst sınır; çağıran uç sabitinden gelir
+     */
+    synchronized boolean allow(String remoteAddress, String bucketName, int bucketLimit) {
+        if (bucketLimit < 1) throw new IllegalArgumentException("kova sınırı en az 1 olmalı");
         Instant now = clock.instant();
-        String key = sha256((remoteAddress == null ? "unknown" : remoteAddress) + "|" + jobSlug);
+        String key = sha256((remoteAddress == null ? "unknown" : remoteAddress) + "|" + bucketName);
         if (!buckets.containsKey(key) && buckets.size() >= MAX_BUCKETS) {
             buckets.entrySet().removeIf(e -> !now.isBefore(e.getValue().startedAt().plus(WINDOW)));
             if (buckets.size() >= MAX_BUCKETS) return false;
@@ -57,7 +70,7 @@ final class PublicApplicationRateLimiter {
                 ? new Bucket(now, 1)
                 : new Bucket(current.startedAt(), current.count() + 1);
         buckets.put(key, result);
-        return result.count() <= limit;
+        return result.count() <= bucketLimit;
     }
 
     private static String sha256(String value) {
