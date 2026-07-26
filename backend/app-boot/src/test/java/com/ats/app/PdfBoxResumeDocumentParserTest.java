@@ -402,13 +402,19 @@ class PdfBoxResumeDocumentParserTest {
         assertEquals("Kidemli Kalite Muhendisi", entries.get(0).title());
         assertEquals("Kalite Uzmani", entries.get(1).title());
         // Tarih satiri aciklamadan AYRILMALI: forma tarih alanina gidecek.
-        assertTrue(entries.get(0).dateText().contains("2019 - 2023"),
-                "tarih metni ayrilmali: " + entries.get(0));
+        // VE tarih ARALIGI satirdan cikarilmali: canli kabulde olculdu, gercek satir
+        // "Ornek Sanayi AS 2019 - 2023" geliyor ve satirin tamamini dateText yapmak
+        // forma "Ornek Sanayi AS 2019" yazdirdi. Ilk fixture'imi ideal hâlde
+        // ("2019 - 2023") yazdigim icin kacirmisti.
+        assertEquals("2019 - 2023", entries.get(0).dateText(),
+                "yalniz tarih araligi alinmali: " + entries.get(0));
+        // Tarih cikinca kalan metin sirket adidir; subtitle'in bos kaldigi yer burasi.
+        assertEquals("Ornek Sanayi AS", entries.get(0).subtitle(),
+                "tarih disi kalan metin subtitle olmali: " + entries.get(0));
         assertTrue(entries.get(0).description().contains("Kalite sistemini kurdu"));
         assertFalse(entries.get(0).description().contains("Kalite Uzmani"),
                 "ikinci kaydin basligi birinci kayda sizmamali");
-        // Sirket sinyali olcumde ayirt edilemedi; tahmin etmek yerine BOS kalir.
-        assertEquals("", entries.get(0).subtitle());
+        assertEquals("Baska Sanayi AS", entries.get(1).subtitle());
     }
 
     @Test
