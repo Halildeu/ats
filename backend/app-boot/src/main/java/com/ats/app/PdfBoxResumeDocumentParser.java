@@ -34,7 +34,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * değiştiren her PR bunu bump ETMEK ZORUNDA. (#208 bump'sız gitti: canlı
      * ölçümde v6 davranışı v5 diye raporlandı.)
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v6";
+    static final String VERSION = "pdfbox-3.0.5-rules-v7";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -49,7 +49,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final int MAX_HEADING_CHARS = 48;
     private static final int MAX_HEADING_TOKENS = 6;
     private static final int MIN_HEADING_LETTERS = 3;
-    private static final double HEADING_UPPERCASE_RATIO = 0.70;
+    /** Ek toleranslı eşleşme yalnız bu uzunluktan sonra açılır. */
+    private static final int MIN_SUFFIX_TOLERANT_LABEL = 5;
     private static final int HEADER_LINES_SCANNED = 10;
     private static final double FULL_NAME_CONFIDENCE = 0.60;
     /** Yan çubuk satırı içerik genişliğinin bu oranından sonra BAŞLAR. */
@@ -68,12 +69,26 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final double COLUMN_GAP_MIN_PT = 36.0;
     /** Mutlak eşiğe ek: boşluk, satırın tipik glif ilerlemesinin katı olmalı. */
     private static final double COLUMN_GAP_ADVANCE_FACTOR = 6.0;
+    /**
+     * Korumalı etiketler. Tek kelimelik girdiler YALNIZ tam eşleşmeyle tetiklenir;
+     * önek eşleşmesi (etiket + boşluk + kalanı) yalnız çok kelimeli, yani yeterince
+     * belirli girdiler için açılır.
+     *
+     * <p>Sebep ölçüldü: liste bare "saglik" içeriyordu ve önek eşleşmesiyle meşru
+     * iş unvanlarını siliyordu — `Sağlık Emniyet Çevre Koordinatörü` sağlık verisi
+     * sanılıp bastırılıyor, adayın deneyimi kayboluyordu. Türkçe'de "Sağlık"
+     * sayısız unvanda geçer (İş Sağlığı ve Güvenliği Uzmanı, Sağlık Teknikeri).
+     * Korunması gereken şey adayın SAĞLIK DURUMU'dur, "sağlık" kelimesi değil;
+     * o yüzden çok kelimeli biçimler açıkça listelendi.
+     */
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
-            "uyruk", "milliyet", "din", "saglik", "engellilik", "sendika",
+            "uyruk", "milliyet", "din", "sendika", "engellilik",
+            "saglik", "saglik durumu", "saglik bilgisi", "saglik bilgileri",
+            "saglik raporu", "kronik hastalik", "engellilik durumu",
             "tc kimlik no", "t c kimlik no", "kimlik no", "ucret beklentisi",
             "maas beklentisi", "fotograf", "referans", "referanslar",
-            "adres", "tam adres", "posta kodu");
+            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu");
 
     /**
      * Aynı taban hizasındaki iki kolon PDFBox'tan TEK satır olarak gelebilir
@@ -417,6 +432,20 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * </ol>
      * Uzun etiket önce denenir ("work experience" &gt; "experience").
      */
+    /**
+     * Türkçe başlıklar ek alır: `İŞ DENEYİMLERİ`, `EĞİTİM BİLGİLERİ`,
+     * `Becerilerim`. Tam-token eşitliği bunları kaçırıyordu — ölçüm: kariyer.net
+     * CV'sinde `deneyimleri` sözlükteki `deneyimi` ile eşleşmediği için EN ÖNEMLİ
+     * alan (iş deneyimi) hiç çıkmıyordu.
+     *
+     * <p>Ek toleransı yalnız etiket 5+ karakterse açılır; kısa etiketlerde
+     * ("isim", "ozet") önek eşleşmesi yanlış pozitif üretirdi.
+     */
+    private static boolean tokenMatches(String token, String label) {
+        if (token.equals(label)) return true;
+        return label.length() >= MIN_SUFFIX_TOLERANT_LABEL && token.startsWith(label);
+    }
+
     private static ResumeField headingField(String rawLine, String normalizedHeading) {
         if (!looksLikeHeading(rawLine)) return null;
         ResumeField exact = LABELS.get(normalizedHeading);
@@ -430,7 +459,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             for (int i = 0; i + label.length <= tokens.length; i++) {
                 boolean hit = true;
                 for (int j = 0; j < label.length; j++) {
-                    if (!tokens[i + j].equals(label[j])) { hit = false; break; }
+                    if (!tokenMatches(tokens[i + j], label[j])) { hit = false; break; }
                 }
                 if (hit) return entry.getValue();
             }
@@ -439,21 +468,44 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     }
 
     /** Kısa + büyük-harf ağırlıklı ya da iki nokta ile biten satır: başlık adayı. */
+    /**
+     * Başlık mı, içerik cümlesi mi?
+     *
+     * <p>%70 büyük-harf ölçütü KORUNDU. Gevşetmeyi denedim ve ölçüm reddetti:
+     * mixed-case başlıkları kabul etmek çalışan vakayı bozdu (HSE CV 9/10 -> 5/10)
+     * ve kazanılan alanlar yanlış değer taşıdı (EDUCATION="27000 Gaziantep",
+     * FULL_NAME="Youtube içerik üreticisi"). Gerçek Türkçe CV'lerdeki mixed-case
+     * başlık sorunu ayrı ve daha büyük bir iş: o düzenler iki kolonlu ve
+     * etiket-üstte-değer-altta yapıda; kolon-farkında bölüm yönetimi gerekiyor.
+     *
+     * <p>Eklenen tek şey değer/tarih filtresi: cümle noktalaması, e-posta ve
+     * rakam-ağırlıklı satırlar ("Eyl 2018 - Tem 2018", "05316672899") başlık
+     * sayılmaz. Bu, gevşetme değil daraltmadır.
+     */
     private static boolean looksLikeHeading(String rawLine) {
         String text = rawLine.strip();
         if (text.endsWith(":") || text.endsWith("：")) return true;
         text = text.replaceAll("[:：]\\s*$", "").strip();
         if (text.isEmpty() || text.length() > MAX_HEADING_CHARS) return false;
+        // Cümle sonu noktalaması → içerik. Eski uppercase guard'ın asıl koruduğu
+        // yanlış pozitifler bunlardı ("Managed certificates issued by … Veritas.").
+        if (text.endsWith(".") || text.endsWith("!") || text.endsWith("?")) return false;
+        if (text.indexOf('@') >= 0) return false;
+        if (text.split("\\s+").length > MAX_HEADING_TOKENS) return false;
         int letters = 0;
-        int upper = 0;
+        int digits = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (!Character.isLetter(c)) continue;
-            letters++;
-            if (Character.isUpperCase(c)) upper++;
+            if (Character.isLetter(c)) letters++;
+            else if (Character.isDigit(c)) digits++;
         }
         if (letters < MIN_HEADING_LETTERS) return false;
-        return (double) upper / letters >= HEADING_UPPERCASE_RATIO;
+        if (digits > letters) return false;
+        int upper = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isLetter(text.charAt(i)) && Character.isUpperCase(text.charAt(i))) upper++;
+        }
+        return (double) upper / letters >= 0.70;
     }
 
     /**
@@ -489,9 +541,28 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 });
     }
 
+    /**
+     * Korumalı alan tespiti ETİKETLERE uygulanır, içerik cümlelerine değil.
+     *
+     * <p>Önceki hâli "satır bu kelimeyle başlıyorsa koru" idi ve gerçek Türkçe
+     * CV'de meşru iş unvanlarını siliyordu: `Sağlık Emniyet Çevre Koordinatörü …`
+     * satırı "saglik " ile başladığı için sağlık verisi sanılıp bastırılıyor,
+     * aktif bölüm kapanıyor ve adayın DENEYİMİ kayboluyordu (ölçüm: kariyer.net
+     * CV'sinde 10 satır bastırılmış, deneyim 35 karaktere düşmüş).
+     *
+     * <p>Etiket kısa olur. Uzunluk/token sınırı başlık sınırlarıyla aynı tutuldu:
+     * `Adres Bilgileri`, `Doğum Tarihi 01 Kasım 2000` gibi etiket/etiket+değer
+     * satırları korunmaya devam eder; 7+ tokenlı unvan/cümle satırları içeriktir.
+     * Bu daraltma yalnız uzunluk eksenindedir — korumalı etiket listesi aynı.
+     */
     private static boolean isProtected(String normalizedLabel) {
+        boolean labelShaped = normalizedLabel.length() <= MAX_HEADING_CHARS
+                && normalizedLabel.split(" ").length <= MAX_HEADING_TOKENS;
         return PROTECTED_LABELS.stream().anyMatch(label ->
-                normalizedLabel.equals(label) || normalizedLabel.startsWith(label + " "));
+                normalizedLabel.equals(label)
+                        || (labelShaped
+                                && label.indexOf(' ') >= 0
+                                && normalizedLabel.startsWith(label + " ")));
     }
 
     private static String normalizeLabel(String value) {

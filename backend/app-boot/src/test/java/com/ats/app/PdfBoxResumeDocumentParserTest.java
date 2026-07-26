@@ -251,6 +251,96 @@ class PdfBoxResumeDocumentParserTest {
         content.endText();
     }
 
+    @Test
+    void turkish_suffixed_headings_match_the_singular_label() throws Exception {
+        // Gercek kariyer.net CV'si olcumu: baslik "IS DENEYIMLERI" geliyor, sozlukte
+        // "deneyim" var. Tam-token esitligi "deneyimleri" != "deneyimi" dedigi icin
+        // EN ONEMLI alan (deneyim) hic cikmiyordu. Ek almis bicim de eslesmeli.
+        byte[] pdf = pdf(
+                "IS DENEYIMLERI",
+                "Kalite Guvence Uzmani - Ornek Rafineri - 2019",
+                "EGITIM BILGILERI",
+                "Ornek Universitesi Cevre Muhendisligi - 2006",
+                "SERTIFIKALARIM",
+                "ISO 45001 Lead Auditor");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "IS DENEYIMLERI -> experience (cogul ek toleransi)");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Kalite Guvence"));
+        assertTrue(fields.containsKey(ResumeField.EDUCATION), "EGITIM BILGILERI -> education");
+        assertTrue(fields.containsKey(ResumeField.CERTIFICATIONS),
+                "SERTIFIKALARIM -> certifications (iyelik eki)");
+    }
+
+    @Test
+    void suffix_tolerance_never_fires_on_a_short_label() throws Exception {
+        // Ek toleransi yalnizca 5+ karakter etiketlerde acilir; aksi halde
+        // "ISIMLENDIRME" gibi satirlar isim alani basligi sanilirdi. Iddia
+        // davranissal: bolum DEGISMEMELI, icerik aktif alanda kalmali.
+        byte[] pdf = pdf(
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022",
+                "ISIMLENDIRME KURALLARI",
+                "Kod icinde tutarli adlandirma uygulandi");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("ISIMLENDIRME KURALLARI"),
+                "onek eslesmesi acilmamali; satir icerik olarak kalmali");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("adlandirma"),
+                "sonraki icerik de ayni bolumde kalmali");
+    }
+
+    @Test
+    void a_job_title_containing_saglik_is_not_suppressed_as_health_data() throws Exception {
+        // Olcum (gercek kariyer.net CV'si): korumali etiket listesinde bare
+        // "saglik" vardi ve onek eslesmesiyle mesru IS UNVANINI siliyordu.
+        // "Saglik Emniyet Cevre Koordinatoru" bastirilinca aktif bolum kapaniyor
+        // ve adayin DENEYIMI kayboluyordu (10 satir bastirilmis, deneyim 35c).
+        byte[] pdf = pdf(
+                "IS DENEYIMLERI",
+                "Saglik Emniyet Cevre Koordinatoru",
+                "Ornek Rafineri - 2019 - Devam Ediyor");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Saglik Emniyet Cevre"),
+                "mesru is unvani saglik verisi sayilmamali: "
+                        + fields.get(ResumeField.EXPERIENCE));
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Ornek Rafineri"),
+                "unvandan sonraki satir da ayni bolumde kalmali");
+        assertEquals(0, result.protectedSuppressed(), "bu belgede korumali etiket yok");
+    }
+
+    @Test
+    void real_protected_labels_stay_suppressed() throws Exception {
+        // Yukaridaki daraltma yalnizca kesinlik icindir; gercek korumali
+        // etiketler ve etiket+deger satirlari bastirilmaya devam eder.
+        byte[] pdf = pdf(
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022",
+                "Saglik Durumu",
+                "Kronik rahatsizlik yok",
+                "Dogum Tarihi 01 Kasim 2000",
+                "Adres Bilgileri",
+                "Ornek mahalle Ornek sokak");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        String all = String.join(" || ", fields.values());
+        assertFalse(all.contains("Kronik"), "saglik durumu degeri hicbir alana gitmemeli: " + all);
+        assertFalse(all.contains("01 Kasim 2000"), "dogum tarihi sizmamali: " + all);
+        assertFalse(all.contains("Ornek mahalle"), "adres sizmamali: " + all);
+        assertTrue(result.protectedSuppressed() >= 3,
+                "uc korumali etiket de sayilmali: " + result.protectedSuppressed());
+    }
+
     private Map<ResumeField, String> parse(byte[] pdf) {
         return parseResult(pdf).proposals().stream()
                 .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
