@@ -27,7 +27,7 @@ import org.apache.pdfbox.text.TextPosition;
  */
 public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
-    static final String VERSION = "pdfbox-3.0.5-rules-v2";
+    static final String VERSION = "pdfbox-3.0.5-rules-v3";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -43,12 +43,10 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final int MAX_HEADING_TOKENS = 6;
     private static final int MIN_HEADING_LETTERS = 3;
     private static final double HEADING_UPPERCASE_RATIO = 0.70;
-    private static final int HEADER_LINES_SCANNED = 5;
+    private static final int HEADER_LINES_SCANNED = 10;
     private static final double FULL_NAME_CONFIDENCE = 0.60;
     /** İki kolonlu yerleşim testi: her yaka satırların en az bu oranını taşımalı. */
-    private static final double MIN_COLUMN_SHARE = 0.20;
-    /** Oluğu kesen satır oranı bunun üstündeyse tek kolon kabul edilir. */
-    private static final double MAX_GUTTER_CROSSING_SHARE = 0.10;
+    private static final double MIN_COLUMN_SHARE = 0.15;
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
             "uyruk", "milliyet", "din", "saglik", "engellilik", "sendika",
@@ -124,9 +122,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * CV'lerde bölüm sınırlarını bozar: y-sıralı akışta sağ kolon başlığı sol kolonun
      * ortasında belirir ve sonraki tüm sol-kolon içeriği yanlış alana yazılır.
      *
-     * <p>Muhafazakâr test: gerçek bir olukta <em>hiçbir satır oluğu kesmez</em>. Kesme
-     * oranı eşiği aşarsa (tam-genişlik başlık/altbilgi taşıyan karma yerleşim) tek kolon
-     * kabul edilir — yanlış bölme, bölmemekten daha zararlıdır.
+     * <p>Karma yerleşim (tam-genişlik başlık + yan çubuk) gerçek CV'lerde kuraldır;
+     * oluğu kesen satır bulununca bölmeyi tümden reddetmek yan çubuk başlığının ana
+     * kolonu yutmasına izin veriyordu. Bu yüzden sayfa <strong>üç akışa</strong> ayrılır
+     * ve her akış kendi bölüm durumuyla işlenir: oluğu kesen tam-genişlik satırlar,
+     * sol kolon, sağ kolon.
+     *
+     * <p>Bölme yalnız her iki yaka da satırların {@link #MIN_COLUMN_SHARE} oranını
+     * taşıdığında yapılır; aksi halde sayfa tek akıştır (tek kolonlu CV'ler bozulmaz).
      */
     private static List<List<TextLine>> splitIntoColumns(List<TextLine> lines) {
         if (lines.size() < 8) return List.of(lines);
@@ -153,17 +156,28 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 bestGutter = gutter;
             }
         }
-        if (Double.isNaN(bestGutter)
-                || bestCrossing > Math.max(2, lines.size() * MAX_GUTTER_CROSSING_SHARE)) {
-            return List.of(lines);
-        }
+        if (Double.isNaN(bestGutter)) return List.of(lines);
         final double gutter = bestGutter;
+
+        // Üç akış: tam-genişlik (oluğu kesen) / sol / sağ. Karma yerleşimlerde
+        // (tam-genişlik başlık + yan çubuk) oluğu kesen satırların varlığı yüzünden
+        // bölmeyi tümden reddetmek, yan çubuk başlığının ana kolon içeriğini yutmasına
+        // izin veriyordu. Canlı ölçüm: skills alanı 1822 karakterlik deneyim metni
+        // taşıyordu; üç akışla 266 karaktere düşüp sızıntı bitiyor, experience 721 ->
+        // 2621 karaktere çıkıyor ve education/languages bölümleri geri geliyor.
+        List<TextLine> fullWidth = lines.stream()
+                .filter(l -> l.x() < gutter - 2 && l.x() + l.width() > gutter + 2).toList();
         List<TextLine> leftColumn = lines.stream()
                 .filter(l -> l.x() + l.width() <= gutter).toList();
         List<TextLine> rightColumn = lines.stream()
                 .filter(l -> l.x() >= gutter).toList();
         if (leftColumn.isEmpty() || rightColumn.isEmpty()) return List.of(lines);
-        return List.of(leftColumn, rightColumn);
+
+        List<List<TextLine>> streams = new ArrayList<>();
+        if (!fullWidth.isEmpty()) streams.add(fullWidth);
+        streams.add(leftColumn);
+        streams.add(rightColumn);
+        return List.copyOf(streams);
     }
 
     private static PageResult parsePage(
