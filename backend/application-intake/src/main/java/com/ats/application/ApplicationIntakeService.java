@@ -595,8 +595,8 @@ public final class ApplicationIntakeService {
         if (!validOptionalHttpUrl(value.linkedIn()) || !validOptionalHttpUrl(value.portfolio()))
             return invalid("linkedIn/portfolio yalnız http veya https olmalı");
         if (!between(value.summary(), 10, 4000)) return invalid("summary 10..4000 karakter olmalı");
-        // #215: girdi sayısı ve alan uzunlukları sınırlı — ödeme yapılmayan herkese açık
-        // uçtur, sınırsız tekrar payload şişirir (bkz. platform-web#898 payload bounds).
+        // #215: girdi sayısı ve alan uzunlukları sınırlı. Bu uç kimlik doğrulaması
+        // olmadan herkese açıktır; sınırsız tekrar tek istekte payload şişirir.
         if (value.experienceEntries().size() > MAX_ENTRIES)
             return invalid("experience en fazla " + MAX_ENTRIES + " girdi olmalı");
         if (value.educationEntries().size() > MAX_ENTRIES)
