@@ -68,6 +68,65 @@ public final class ApplicationIntakeService {
             ApplicationStatus.REJECTED, Set.of(),
             ApplicationStatus.WITHDRAWN, Set.of());
 
+    /**
+     * #215: bir iş deneyimi girdisi. Aday formda bunları çoğaltır (LinkedIn/kariyer.net
+     * modeli). Tarihler serbest metin: CV'ler "Eyl 2018 - Tem 2018", "Temmuz 2019 -
+     * Devam Ediyor", "2019-2023" gibi çok farklı biçimler kullanıyor ve bunları tek bir
+     * tarih tipine zorlamak adayın yazdığını kaybetmek olur.
+     */
+    public record ExperienceEntry(
+            String title,
+            String company,
+            String startDate,
+            String endDate,
+            String description) {
+
+        public ExperienceEntry {
+            title = trimToEmpty(title);
+            company = trimToEmpty(company);
+            startDate = trimToEmpty(startDate);
+            endDate = trimToEmpty(endDate);
+            description = trimToEmpty(description);
+        }
+
+        /** Boş girdi kaydedilmez; aday satır ekleyip doldurmadan gönderebilir. */
+        public boolean blank() {
+            return title.isEmpty() && company.isEmpty() && startDate.isEmpty()
+                    && endDate.isEmpty() && description.isEmpty();
+        }
+    }
+
+    /** #215: bir eğitim girdisi. Tarih gerekçesi {@link ExperienceEntry} ile aynı. */
+    public record EducationEntry(
+            String school,
+            String degree,
+            String field,
+            String startYear,
+            String endYear,
+            String description) {
+
+        public EducationEntry {
+            school = trimToEmpty(school);
+            degree = trimToEmpty(degree);
+            field = trimToEmpty(field);
+            startYear = trimToEmpty(startYear);
+            endYear = trimToEmpty(endYear);
+            description = trimToEmpty(description);
+        }
+
+        public boolean blank() {
+            return school.isEmpty() && degree.isEmpty() && field.isEmpty()
+                    && startYear.isEmpty() && endYear.isEmpty() && description.isEmpty();
+        }
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    /** #215: herkese açık uçta tekrar sayısı sınırlı. */
+    private static final int MAX_ENTRIES = 30;
+
     public record Submission(
             String fullName,
             String email,
@@ -84,10 +143,58 @@ public final class ApplicationIntakeService {
             String noticeAcceptedAt,
             String accuracyConfirmedAt,
             String resumeImportId,
-            Integer resumeDraftVersion) {
+            Integer resumeDraftVersion,
+            List<ExperienceEntry> experienceEntries,
+            List<EducationEntry> educationEntries,
+            String languages,
+            String certifications) {
 
         public Submission {
             skills = skills == null ? List.of() : List.copyOf(skills);
+            // Boş satırlar atılır: form "satır ekle" düğmesi doldurulmamış girdi bırakabilir.
+            experienceEntries = experienceEntries == null ? List.of()
+                    : experienceEntries.stream().filter(e -> !e.blank()).toList();
+            educationEntries = educationEntries == null ? List.of()
+                    : educationEntries.stream().filter(e -> !e.blank()).toList();
+        }
+
+        /**
+         * Genişlet/daralt geçişi: yapısal girdiler geldiyse eski tek-string alanları
+         * onlardan türetiriz. Böylece İK görünümü, export ve DSAR yüzeyleri aynı içeriği
+         * görmeye devam eder ve backend ile frontend'i aynı anda deploy etmek gerekmez.
+         */
+        public String effectiveExperience() {
+            if (experienceEntries.isEmpty()) return experience;
+            return experienceEntries.stream().map(e -> {
+                StringBuilder sb = new StringBuilder();
+                if (!e.title().isEmpty()) sb.append(e.title());
+                if (!e.company().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.company());
+                String span = dateSpan(e.startDate(), e.endDate());
+                if (!span.isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(span);
+                if (!e.description().isEmpty()) sb.append(sb.isEmpty() ? "" : "\n").append(e.description());
+                return sb.toString();
+            }).collect(java.util.stream.Collectors.joining("\n\n"));
+        }
+
+        public String effectiveEducation() {
+            if (educationEntries.isEmpty()) return education;
+            return educationEntries.stream().map(e -> {
+                StringBuilder sb = new StringBuilder();
+                if (!e.school().isEmpty()) sb.append(e.school());
+                if (!e.degree().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.degree());
+                if (!e.field().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.field());
+                String span = dateSpan(e.startYear(), e.endYear());
+                if (!span.isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(span);
+                if (!e.description().isEmpty()) sb.append(sb.isEmpty() ? "" : "\n").append(e.description());
+                return sb.toString();
+            }).collect(java.util.stream.Collectors.joining("\n\n"));
+        }
+
+        private static String dateSpan(String from, String to) {
+            if (from.isEmpty() && to.isEmpty()) return "";
+            if (from.isEmpty()) return to;
+            if (to.isEmpty()) return from;
+            return from + " - " + to;
         }
 
         /** Source-compatible manual-only submission constructor. */
@@ -109,6 +216,30 @@ public final class ApplicationIntakeService {
             this(fullName, email, phone, city, linkedIn, portfolio, summary, experience,
                     education, skills, note, noticeVersion, noticeAcceptedAt,
                     accuracyConfirmedAt, null, null);
+        }
+
+        /** Yapısal girdiler eklenmeden önceki 16-argümanlı çağrılar bozulmasın. */
+        public Submission(
+                String fullName,
+                String email,
+                String phone,
+                String city,
+                String linkedIn,
+                String portfolio,
+                String summary,
+                String experience,
+                String education,
+                List<String> skills,
+                String note,
+                String noticeVersion,
+                String noticeAcceptedAt,
+                String accuracyConfirmedAt,
+                String resumeImportId,
+                Integer resumeDraftVersion) {
+            this(fullName, email, phone, city, linkedIn, portfolio, summary, experience,
+                    education, skills, note, noticeVersion, noticeAcceptedAt,
+                    accuracyConfirmedAt, resumeImportId, resumeDraftVersion,
+                    List.of(), List.of(), null, null);
         }
     }
 
@@ -441,10 +572,17 @@ public final class ApplicationIntakeService {
         Submission value = new Submission(
                 trim(raw.fullName()), lower(trim(raw.email())), trim(raw.phone()), trim(raw.city()),
                 trimToNull(raw.linkedIn()), trimToNull(raw.portfolio()), trim(raw.summary()),
-                trim(raw.experience()), trim(raw.education()), normalizeSkills(raw.skills()),
+                // #215 genişlet/daralt: yapısal girdi geldiyse eski tek-string alan ondan
+                // türetilir; gelmediyse adayın yazdığı string aynen kalır. Böylece İK
+                // görünümü/export/DSAR yüzeyleri her iki gönderim biçiminde de aynı içeriği
+                // görür ve iki tarafı aynı anda deploy etmek gerekmez.
+                trim(raw.effectiveExperience()), trim(raw.effectiveEducation()),
+                normalizeSkills(raw.skills()),
                 trimToNull(raw.note()), trim(raw.noticeVersion()), trim(raw.noticeAcceptedAt()),
                 trim(raw.accuracyConfirmedAt()), trimToNull(raw.resumeImportId()),
-                raw.resumeDraftVersion());
+                raw.resumeDraftVersion(),
+                raw.experienceEntries(), raw.educationEntries(),
+                trimToNull(raw.languages()), trimToNull(raw.certifications()));
         if (!between(value.fullName(), 2, 160)) return invalid("fullName 2..160 karakter olmalı");
         if (!between(value.email(), 3, 254) || !EMAIL.matcher(value.email()).matches())
             return invalid("email geçersiz");
@@ -457,6 +595,28 @@ public final class ApplicationIntakeService {
         if (!validOptionalHttpUrl(value.linkedIn()) || !validOptionalHttpUrl(value.portfolio()))
             return invalid("linkedIn/portfolio yalnız http veya https olmalı");
         if (!between(value.summary(), 10, 4000)) return invalid("summary 10..4000 karakter olmalı");
+        // #215: girdi sayısı ve alan uzunlukları sınırlı. Bu uç kimlik doğrulaması
+        // olmadan herkese açıktır; sınırsız tekrar tek istekte payload şişirir.
+        if (value.experienceEntries().size() > MAX_ENTRIES)
+            return invalid("experience en fazla " + MAX_ENTRIES + " girdi olmalı");
+        if (value.educationEntries().size() > MAX_ENTRIES)
+            return invalid("education en fazla " + MAX_ENTRIES + " girdi olmalı");
+        for (ExperienceEntry entry : value.experienceEntries()) {
+            if (entry.title().length() > 160 || entry.company().length() > 160
+                    || entry.startDate().length() > 40 || entry.endDate().length() > 40
+                    || entry.description().length() > 4000)
+                return invalid("experience girdi alan uzunluğu geçersiz");
+        }
+        for (EducationEntry entry : value.educationEntries()) {
+            if (entry.school().length() > 160 || entry.degree().length() > 160
+                    || entry.field().length() > 160 || entry.startYear().length() > 40
+                    || entry.endYear().length() > 40 || entry.description().length() > 4000)
+                return invalid("education girdi alan uzunluğu geçersiz");
+        }
+        if (value.languages() != null && value.languages().length() > 2000)
+            return invalid("languages en fazla 2000 karakter olmalı");
+        if (value.certifications() != null && value.certifications().length() > 4000)
+            return invalid("certifications en fazla 4000 karakter olmalı");
         if (!between(value.experience(), 1, 8000)) return invalid("experience 1..8000 karakter olmalı");
         if (!between(value.education(), 1, 4000)) return invalid("education 1..4000 karakter olmalı");
         if (value.skills().isEmpty() || value.skills().size() > 50

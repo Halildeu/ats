@@ -123,6 +123,27 @@ class ApplicationApiController {
         return ResponseEntity.ok(jobDto(((Outcome.Ok<JobPosting>) out).value()));
     }
 
+    /** #215: tek bir iş deneyimi girdisi. Tarihler serbest metin — CV biçimleri çok çeşitli. */
+    @Schema(name = "ApplicationExperienceEntry",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ExperienceEntryBody(
+            @Schema(maxLength = 160) String title,
+            @Schema(maxLength = 160) String company,
+            @Schema(maxLength = 40) String startDate,
+            @Schema(maxLength = 40) String endDate,
+            @Schema(maxLength = 4000) String description) {}
+
+    /** #215: tek bir eğitim girdisi. */
+    @Schema(name = "ApplicationEducationEntry",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record EducationEntryBody(
+            @Schema(maxLength = 160) String school,
+            @Schema(maxLength = 160) String degree,
+            @Schema(maxLength = 160) String field,
+            @Schema(maxLength = 40) String startYear,
+            @Schema(maxLength = 40) String endYear,
+            @Schema(maxLength = 4000) String description) {}
+
     @Schema(name = "ApplicationSubmitRequest",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record SubmitBody(
@@ -133,9 +154,17 @@ class ApplicationApiController {
             String linkedIn,
             String portfolio,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String summary,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String experience,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String education,
+            // #215 genişlet/daralt: artık ZORUNLU DEĞİL. Yeni istemci yapısal
+            // experienceEntries/educationEntries gönderir ve backend eski tek-string
+            // alanı ondan türetir; eski istemci string göndermeye devam eder. İkisinden
+            // en az biri gerekli — doğrulama türetilmiş değer üzerinde koşar.
+            String experience,
+            String education,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<String> skills,
+            @Schema(maxLength = 30) List<ExperienceEntryBody> experienceEntries,
+            @Schema(maxLength = 30) List<EducationEntryBody> educationEntries,
+            @Schema(maxLength = 2000) String languages,
+            @Schema(maxLength = 4000) String certifications,
             String note,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
@@ -177,7 +206,9 @@ class ApplicationApiController {
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
-                body.resumeImportId(), body.resumeDraftVersion());
+                body.resumeImportId(), body.resumeDraftVersion(),
+                experienceEntries(body), educationEntries(body),
+                body.languages(), body.certifications());
         return submit(service.submit(
                 jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -206,7 +237,9 @@ class ApplicationApiController {
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
-                body.resumeImportId(), body.resumeDraftVersion());
+                body.resumeImportId(), body.resumeDraftVersion(),
+                experienceEntries(body), educationEntries(body),
+                body.languages(), body.certifications());
         return submit(service.submit(
                 publicHandle, jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -636,5 +669,22 @@ class ApplicationApiController {
                         .toList(),
                 evaluation.summary(), evaluation.predecessorEvaluationId(),
                 evaluation.revision(), evaluation.createdAt());
+    }
+
+    /** #215: HTTP gövdesindeki girdileri servis kaydına çevirir; null güvenli. */
+    private static List<ApplicationIntakeService.ExperienceEntry> experienceEntries(SubmitBody body) {
+        if (body.experienceEntries() == null) return List.of();
+        return body.experienceEntries().stream()
+                .map(e -> new ApplicationIntakeService.ExperienceEntry(
+                        e.title(), e.company(), e.startDate(), e.endDate(), e.description()))
+                .toList();
+    }
+
+    private static List<ApplicationIntakeService.EducationEntry> educationEntries(SubmitBody body) {
+        if (body.educationEntries() == null) return List.of();
+        return body.educationEntries().stream()
+                .map(e -> new ApplicationIntakeService.EducationEntry(
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(), e.description()))
+                .toList();
     }
 }

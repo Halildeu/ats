@@ -844,9 +844,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
                      linkedin_url, portfolio_url, professional_summary, experience, education,
                      skills, note, status, version, candidate_access_digest, notice_version,
                      notice_accepted_at, accuracy_confirmed_at, application_source,
-                     resume_import_id, created_at, updated_at)
+                     resume_import_id, created_at, updated_at,
+                     experience_entries, education_entries, languages, certifications)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'SUBMITTED', 0,
-                        ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
@@ -862,7 +863,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setString(i++, resumeBinding.source());
             ps.setString(i++, resumeBinding.importId());
             ps.setTimestamp(i++, timestamp(command.occurredAt()));
-            ps.setTimestamp(i, timestamp(command.occurredAt()));
+            ps.setTimestamp(i++, timestamp(command.occurredAt()));
+            // #215 genişletme: yapısal girdiler eski TEXT kolonlarının YANINA yazılır.
+            // Eski kolonlar Submission.effectiveExperience()/-Education() ile türetilmiş
+            // metni taşır, yani İK görünümü ve export'lar bu turda hiç değişmez.
+            ps.setString(i++, Pg.experienceEntriesToJson(s.experienceEntries()));
+            ps.setString(i++, Pg.educationEntriesToJson(s.educationEntries()));
+            ps.setString(i++, s.languages());
+            ps.setString(i, s.certifications());
             ps.executeUpdate();
         }
     }

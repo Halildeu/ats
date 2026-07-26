@@ -1,12 +1,15 @@
 package com.ats.persistence;
 
+import com.ats.application.ApplicationIntakeService;
 import com.ats.kernel.JsonCodec;
 import com.ats.kernel.JsonValue;
 import com.ats.kernel.Outcome;
 import com.ats.kernel.OutcomeCode;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** slice-8b adapter ortak yardımcıları (paket-içi). */
@@ -21,6 +24,46 @@ final class Pg {
 
     static String newKey(String interviewId, String prefix) {
         return interviewId + "/" + prefix + "-" + UUID.randomUUID();
+    }
+
+    /**
+     * #215: yapısal deneyim girdileri kanonik JSON dizisine. Boş alanlar yazılmaz —
+     * aday yalnız unvan girdiyse satır {"title": "..."} olur, beş boş anahtar taşımaz.
+     */
+    static String experienceEntriesToJson(
+            List<ApplicationIntakeService.ExperienceEntry> entries) {
+        List<JsonValue> items = new ArrayList<>();
+        for (var e : entries) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            putIfPresent(row, "title", e.title());
+            putIfPresent(row, "company", e.company());
+            putIfPresent(row, "startDate", e.startDate());
+            putIfPresent(row, "endDate", e.endDate());
+            putIfPresent(row, "description", e.description());
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    /** #215: yapısal eğitim girdileri; gerekçe {@link #experienceEntriesToJson} ile aynı. */
+    static String educationEntriesToJson(
+            List<ApplicationIntakeService.EducationEntry> entries) {
+        List<JsonValue> items = new ArrayList<>();
+        for (var e : entries) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            putIfPresent(row, "school", e.school());
+            putIfPresent(row, "degree", e.degree());
+            putIfPresent(row, "field", e.field());
+            putIfPresent(row, "startYear", e.startYear());
+            putIfPresent(row, "endYear", e.endYear());
+            putIfPresent(row, "description", e.description());
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    private static void putIfPresent(Map<String, JsonValue> row, String key, String value) {
+        if (value != null && !value.isEmpty()) row.put(key, JsonValue.of(value));
     }
 
     static String stringsToJson(List<String> values) {
