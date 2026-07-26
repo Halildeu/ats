@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -145,7 +146,7 @@ class MigrationRoleProvisioningPrerequisiteTest {
         DataSource deployer = asDeployer(PROVISIONED);
         Flyway.configure().dataSource(deployer).load().migrate();
 
-        assertEquals("16", latestAppliedVersion(deployer),
+        assertEquals(highestMigrationOnClasspath(), latestAppliedVersion(deployer),
                 "the whole chain must apply once the prerequisite is discharged");
         assertFalse(flag(deployer, "SELECT has_schema_privilege('ats_app','public','CREATE')"),
                 "V16 invariant still holds under a least-privilege runner");
@@ -169,5 +170,26 @@ class MigrationRoleProvisioningPrerequisiteTest {
             sb.append(c).append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * The claim under test is "the chain ran to its end", not "the chain is exactly N long".
+     * Pinning the literal made every new migration fail this test for no safety gain, so the
+     * expectation is derived from the migrations actually on the classpath.
+     */
+    private static String highestMigrationOnClasspath() throws Exception {
+        java.net.URL dir = MigrationRoleProvisioningPrerequisiteTest.class
+                .getClassLoader().getResource("db/migration");
+        assertNotNull(dir, "db/migration must be on the test classpath");
+        java.io.File[] files = new java.io.File(dir.toURI()).listFiles();
+        assertNotNull(files, "db/migration must be readable");
+        int highest = 0;
+        for (java.io.File f : files) {
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile("^V(\\d+)__").matcher(f.getName());
+            if (m.find()) highest = Math.max(highest, Integer.parseInt(m.group(1)));
+        }
+        assertTrue(highest > 0, "no V<n>__ migration found on the classpath");
+        return String.valueOf(highest);
     }
 }

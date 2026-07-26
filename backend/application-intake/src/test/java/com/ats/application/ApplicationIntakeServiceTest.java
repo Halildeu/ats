@@ -254,6 +254,60 @@ class ApplicationIntakeServiceTest {
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(), true);
     }
 
+    @Test
+    void structured_entries_derive_the_legacy_single_string_fields() {
+        // #215 genislet/daralt: yeni istemci yalniz yapisal girdi gonderir. Eski tek-string
+        // alanlar backend'de ondan turetilir; boylece IK gorunumu, export ve DSAR yuzeyleri
+        // ayni icerigi gormeye devam eder ve iki tarafi ayni anda deploy etmek gerekmez.
+        var submission = new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday",
+                null, null, List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry(
+                        "Ürün Yöneticisi", "Örnek Teknoloji", "2022", "Devam", "Keşif ve yol haritası")),
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "Endüstri Mühendisliği", "2016", "2020", "")),
+                "Türkçe - ana dil", "ISO 45001");
+
+        String experience = submission.effectiveExperience();
+        assertTrue(experience.contains("Ürün Yöneticisi"), experience);
+        assertTrue(experience.contains("Örnek Teknoloji"), experience);
+        assertTrue(experience.contains("2022 - Devam"), experience);
+        assertTrue(experience.contains("Keşif ve yol haritası"), experience);
+        assertTrue(submission.effectiveEducation().contains("Örnek Üniversitesi"));
+        assertEquals("Türkçe - ana dil", submission.languages());
+    }
+
+    @Test
+    void a_legacy_string_submission_keeps_its_own_text() {
+        // Eski istemci yapisal girdi gondermez; yazdigi metin AYNEN kalmali.
+        var submission = submission();
+
+        assertTrue(submission.experienceEntries().isEmpty());
+        assertEquals("Beş yıl deneyim", submission.effectiveExperience());
+        assertEquals("Lisans", submission.effectiveEducation());
+    }
+
+    @Test
+    void blank_repeated_rows_are_dropped_before_validation() {
+        // Form "satir ekle" dugmesi doldurulmamis girdi birakabilir; bos satir kaydedilmez.
+        var submission = new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", null, "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry("Ürün Yöneticisi", "", "", "", ""),
+                        new ApplicationIntakeService.ExperienceEntry("", "", "", "", ""),
+                        new ApplicationIntakeService.ExperienceEntry(null, null, null, null, null)),
+                List.of(), null, null);
+
+        assertEquals(1, submission.experienceEntries().size(),
+                "yalniz dolu satir kalmali: " + submission.experienceEntries());
+        assertEquals("Ürün Yöneticisi", submission.effectiveExperience());
+    }
+
     private static ApplicationIntakeService.Submission submission() {
         return new ApplicationIntakeService.Submission(
                 " Deniz ", "DENIZ@EXAMPLE.TEST", "+905550000000", "İstanbul", null, null,
