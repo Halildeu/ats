@@ -147,8 +147,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 // #204: iki kolonlu CV'lerde y-sıralı akış kolonları harmanlar ve bölüm
                 // sınırları çöker (sağ kolon başlığı sol kolon içeriğini yutar). Gerçek
                 // oluk varsa her kolon kendi içinde, kendi bölüm durumuyla işlenir.
-                for (List<TextLine> column : splitIntoColumns(lines)) {
-                    PageResult pageResult = parsePage(column, values);
+                List<List<TextLine>> columns = splitIntoColumns(lines);
+                for (int index = 0; index < columns.size(); index++) {
+                    // İki akış varsa ikincisi yan çubuktur (splitIntoColumns sırası).
+                    boolean sidebar = columns.size() > 1 && index == columns.size() - 1;
+                    PageResult pageResult = parsePage(columns.get(index), values, sidebar);
                     protectedSuppressed += pageResult.protectedSuppressed();
                 }
                 if (page == 1) proposeFullNameFromHeader(lines, values);
@@ -210,8 +213,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     }
 
     private static PageResult parsePage(
-            List<TextLine> lines, Map<ResumeField, LocatedValue> values) {
+            List<TextLine> lines, Map<ResumeField, LocatedValue> values, boolean sidebar) {
         ResumeField active = null;
+        boolean headingJustOpened = false;
         int protectedSuppressed = 0;
 
         for (TextLine source : lines) {
@@ -242,8 +246,23 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             ResumeField section = headingField(line, heading);
             if (section != null) {
                 active = section;
+                headingJustOpened = true;
                 continue;
             }
+            // #208: sözlükte olmayan ama başlık şeklinde olan satır. Ölçüm (gerçek
+            // CV): ana kolonda bunlar İŞ UNVANI (HSE MANAGER, SITE CHIEF, CORPORATE
+            // HEAD OF HSE) — bölümü kapatmak deneyimi yok ederdi. Yan çubukta ise
+            // hepsi gerçek bölüm başlığı (AWARD, TRAINING, SECTOR EXPOSURE) ve
+            // kapatmazsak bir önceki alanın sonuna yapışıyorlar.
+            if (sidebar && looksLikeHeading(line)) {
+                // Başlık iki satıra sarabilir ("CERTIFICATIONS &" + "TRAINING").
+                // Devam satırı bölümü kapatırsa alan boş kalıyordu; ölçümde
+                // certifications 467c -> eksik oldu. Sarma satırını yut, kapatma.
+                if (!headingJustOpened) active = null;
+                headingJustOpened = false;
+                continue;
+            }
+            headingJustOpened = false;
             if (active != null) {
                 putOrAppend(values, active, sanitize(line, active), source, 0.92);
             }
