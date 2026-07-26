@@ -129,8 +129,17 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         return positive.length == 0 ? 0 : positive[positive.length / 2];
     }
 
+    /**
+     * #213: satıra TİPOGRAFİ bilgisi eklendi. Gerekçe ölçümle sabit: Türkçe
+     * CV'lerde (özellikle kariyer.net düzeninde) başlıklar BÜYÜK HARF değil
+     * mixed-case yazılıyor ve %70-büyük-harf ölçütü hepsini reddediyor. Ölçüm
+     * ayrıca büyük-harf kuralını GEVŞETMENİN yanlış olduğunu gösterdi (referans
+     * CV 9/10 -> 5/10, üstelik yanlış değerlerle). Doğru sinyal tipografi:
+     * başlık, gövdeden belirgin biçimde daha büyük ve/veya kalın yazılır.
+     */
     private record TextLine(
-            String text, int page, double x, double y, double width, double height) {}
+            String text, int page, double x, double y, double width, double height,
+            double fontSize, boolean bold) {}
 
     private record LocatedValue(
             String value,
@@ -406,8 +415,95 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
             double width = Math.max(0.1, right - left);
             double height = Math.max(0.1, bottom - top);
-            lines.add(new TextLine(value, page, Math.max(0, left), Math.max(0, top), width, height));
+            lines.add(new TextLine(value, page, Math.max(0, left), Math.max(0, top), width, height,
+                    medianFontSize(positions, from, to), looksBold(positions, from, to)));
         }
+
+        /**
+         * Satırın punto ölçüsü. ORTANCA alınır, ortalama değil: tek bir büyük
+         * karakter (madde işareti, simge) ortalamayı kaydırır ve satırı yanlışlıkla
+         * başlık gibi gösterir.
+         */
+        private static double medianFontSize(List<TextPosition> positions, int from, int to) {
+            double[] sizes = new double[to - from];
+            for (int i = from; i < to; i++) sizes[i - from] = positions.get(i).getFontSizeInPt();
+            java.util.Arrays.sort(sizes);
+            if (sizes.length == 0) return 0;
+            return sizes[sizes.length / 2];
+        }
+
+        /**
+         * Kalınlık font ADINDAN okunur (PDFBox gömülü fontta ağırlık alanını her
+         * zaman vermez). Satırın YARISINDAN fazlası kalın fontla yazılmışsa satır
+         * kalın sayılır — tek kalın kelime satırı başlık yapmaz.
+         */
+        private static boolean looksBold(List<TextPosition> positions, int from, int to) {
+            int bold = 0;
+            int counted = 0;
+            for (int i = from; i < to; i++) {
+                var font = positions.get(i).getFont();
+                if (font == null || font.getName() == null) continue;
+                counted++;
+                String name = font.getName().toLowerCase(java.util.Locale.ROOT);
+                if (name.contains("bold") || name.contains("black") || name.contains("heavy")
+                        || name.contains("semibold") || name.contains("demibold")) {
+                    bold++;
+                }
+            }
+            return counted > 0 && bold * 2 > counted;
+        }
+    }
+
+    /**
+     * #213 TEŞHİS — kural yazmadan önce ölçüm. Satır METNİNİ basmaz (gerçek CV = PII);
+     * yalnız şekil bilgisini ve mevcut kuralların o satır için ne dediğini basar.
+     *
+     * <p>Yalnız teşhis testinden çağrılır; üretim akışında kullanılmaz.
+     */
+    static String diagnose(byte[] pdfBytes) throws IOException {
+        StringBuilder out = new StringBuilder();
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            PositionedTextStripper stripper = new PositionedTextStripper();
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                List<TextLine> lines = stripper.extract(document, page);
+                List<List<TextLine>> columns = splitIntoColumns(lines);
+                double[] sorted = lines.stream().mapToDouble(TextLine::fontSize).sorted()
+                        .toArray();
+                double body = sorted.length == 0 ? 0 : sorted[sorted.length / 2];
+                double leftMargin = lines.stream().mapToDouble(TextLine::x).min().orElse(0);
+                out.append(String.format("sayfa=%d satır=%d akış=%d gövdePt=%.0f solKenar=%.0f%n",
+                        page, lines.size(), columns.size(), body, leftMargin));
+                for (int c = 0; c < columns.size(); c++) {
+                    List<TextLine> col = columns.get(c);
+                    double minX = col.stream().mapToDouble(TextLine::x).min().orElse(0);
+                    double maxX = col.stream().mapToDouble(l -> l.x() + l.width()).max().orElse(0);
+                    boolean sidebar = columns.size() > 1 && c == columns.size() - 1;
+                    out.append(String.format("  akış#%d satır=%d x=[%.0f..%.0f] yanÇubukMu=%s%n",
+                            c, col.size(), minX, maxX, sidebar));
+                    for (TextLine line : col) {
+                        String t = line.text().strip();
+                        int letters = 0;
+                        int upper = 0;
+                        for (int i = 0; i < t.length(); i++) {
+                            if (Character.isLetter(t.charAt(i))) {
+                                letters++;
+                                if (Character.isUpperCase(t.charAt(i))) upper++;
+                            }
+                        }
+                        String norm = normalizeLabel(t);
+                        out.append(String.format(
+                                "    oran=%.2f kalın=%-5s solda=%-5s uzun=%-3d büyük=%2d%% "
+                                        + "başlıkMı=%-5s etiket=%s%n",
+                                body == 0 ? 0 : line.fontSize() / body, line.bold(),
+                                Math.abs(line.x() - leftMargin) < 2.0, t.length(),
+                                letters == 0 ? 0 : (100 * upper / letters),
+                                looksLikeHeading(t),
+                                headingField(t, norm) == null ? "-" : headingField(t, norm)));
+                    }
+                }
+            }
+        }
+        return out.toString();
     }
 
     private static String sanitize(String raw, ResumeField field) {
