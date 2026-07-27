@@ -305,6 +305,52 @@ jobs:
       - name: "F3 bundle minimal-yuzey guard'i"
         run: node scripts/check-mfe-bundle.mjs
 
+  # Yayin imajini PR'da DERLE (push YOK). Yukaridaki job npm ile derliyor ve
+  # gecer; imaj derlemesi ayri bir baglamdir (repo koku, farkli COPY kumesi) ve
+  # orada eksik kalan bir bagimlilik yalnizca burada gorunur. Ilk yazimda tam
+  # boyle bir sey kacti: web/i18n/tr-TR.json kopyalanmiyordu, npm build yesildi
+  # ama imaj TS2307 ile duserdi. Bu kapi olmasa kirik imaj main'e gecerdi.
+  mfe-interview-evidence-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: "UI imaji derlenebiliyor mu (push yok)"
+        run: |
+          docker build \
+            -f web/mfe-interview-evidence/Dockerfile \
+            -t ats-interview-evidence-ui:ci \
+            .
+      - name: "Imaj gercekten servis ediyor mu (read-only + non-root)"
+        run: |
+          set -euo pipefail
+          docker run -d --name ie-ui-ci \
+            --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run \
+            --user 10001:10001 -p 18080:8080 \
+            -e ATS_API_UPSTREAM=http://127.0.0.1:9 \
+            ats-interview-evidence-ui:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:18080/healthz | grep -qx ok
+          # Uygulama kabugu base yolundan geliyor ve asset URL'leri o yolu
+          # tasiyor; base yanlissa deep-link'te 404 olurdu.
+          curl -fsS http://127.0.0.1:18080/ats/interview-evidence/ \
+            | grep -q '/ats/interview-evidence/assets/'
+          # SPA fallback: derin yol index.html'e dusmeli.
+          test "$(curl -s -o /dev/null -w '%{http_code}' \
+            http://127.0.0.1:18080/ats/interview-evidence/derin/yol)" = "200"
+          docker rm -f ie-ui-ci >/dev/null
+      - name: "Bozuk upstream fail-closed mi"
+        run: |
+          set -euo pipefail
+          if docker run --rm --user 10001:10001 --read-only \
+              --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run \
+              -e ATS_API_UPSTREAM=ftp://nope ats-interview-evidence-ui:ci; then
+            echo "FATAL: gecersiz upstream ile container ayaga kalkti" >&2
+            exit 1
+          fi
+
   kvkk-crosswalk-guard:
     runs-on: ubuntu-latest
     steps:
