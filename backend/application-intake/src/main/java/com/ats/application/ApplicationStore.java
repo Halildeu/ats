@@ -52,13 +52,44 @@ public interface ApplicationStore {
             String actorRef,
             String occurredAt) {}
 
+    /**
+     * #226: aynı adayın DİĞER başvuruları. Ölçüldü — aynı e-postayla aynı ilana
+     * sınırsız başvurulabiliyor ve hiçbir yerde görünmüyordu: İK iki özdeş kayıt
+     * görüyor, hangisinin güncel olduğunu bilmiyor.
+     *
+     * <p>Bu bir POLİTİKA değil, GÖRÜNÜRLÜK. Hiçbir gönderim engellenmez;
+     * engelleme/üzerine-yazma/gruplama kararı ölçüm birikmeden verilemez
+     * (aday CV'sini güncelleyip yeniden başvurabilir, bu meşru).
+     *
+     * <p>Aday-görünür alan değildir; yalnız İK detayında yayınlanır.
+     */
+    record CandidateOtherApplication(
+            String publicRef,
+            String jobSlug,
+            String jobTitle,
+            ApplicationStatus status,
+            String submittedAt,
+            /** Aynı ilana ikinci başvuru mu — İK'nın asıl sorduğu bu. */
+            boolean sameJob) {}
+
     record RecruiterApplicationDetail(
             CandidateApplication application,
             List<ApplicationHistoryEvent> history,
-            List<ApplicationEvaluation> evaluations) {
+            List<ApplicationEvaluation> evaluations,
+            List<CandidateOtherApplication> otherApplications) {
         public RecruiterApplicationDetail {
             history = List.copyOf(history);
             evaluations = List.copyOf(evaluations);
+            otherApplications =
+                    otherApplications == null ? List.of() : List.copyOf(otherApplications);
+        }
+
+        /** Girdi listesi eklenmeden yazılmış çağrı yerleri için geri uyum. */
+        public RecruiterApplicationDetail(
+                CandidateApplication application,
+                List<ApplicationHistoryEvent> history,
+                List<ApplicationEvaluation> evaluations) {
+            this(application, history, evaluations, List.of());
         }
     }
 

@@ -404,12 +404,35 @@ class ApplicationApiController {
             int revision,
             String createdAt) {}
 
+    /**
+     * #226: ayni adayin DIGER basvurulari. Politika degil GORUNURLUK — hicbir
+     * gonderim engellenmez; IK "bu adayin baska basvurusu var mi, ayni ilana mi"
+     * sorusunu detay ekraninda gorur.
+     *
+     * @param sameJob ayni ilana ikinci basvuru mu — IK'nin asil sordugu bu
+     */
+    @Schema(name = "RecruiterCandidateOtherApplication",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record OtherApplicationDto(
+            String publicRef, String jobSlug, String jobTitle,
+            @Schema(allowableValues = {
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
+            String status,
+            String submittedAt, boolean sameJob) {}
+
+    /**
+     * @param otherApplications #226 ayni adayin diger basvurulari; BOS ise tek
+     *     basvurusu var. Opsiyonel degil: bos liste "baktim, yok" der.
+     */
     @Schema(name = "RecruiterApplicationDetailResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record RecruiterDetailDto(
             RecruiterApplicationDto application,
             List<RecruiterHistoryDto> history,
-            List<EvaluationDto> evaluations) {}
+            List<EvaluationDto> evaluations,
+            List<OtherApplicationDto> otherApplications) {}
 
     @GetMapping("/api/v1/recruiter/applications")
     @ApiResponses({
@@ -663,7 +686,12 @@ class ApplicationApiController {
         return new RecruiterDetailDto(
                 recruiterDto(detail.application()),
                 detail.history().stream().map(ApplicationApiController::historyDto).toList(),
-                detail.evaluations().stream().map(ApplicationApiController::evaluationDto).toList());
+                detail.evaluations().stream().map(ApplicationApiController::evaluationDto).toList(),
+                detail.otherApplications().stream()
+                        .map(o -> new OtherApplicationDto(
+                                o.publicRef(), o.jobSlug(), o.jobTitle(), o.status().name(),
+                                o.submittedAt(), o.sameJob()))
+                        .toList());
     }
 
     private static RecruiterHistoryDto historyDto(ApplicationHistoryEvent event) {
