@@ -207,6 +207,65 @@ class PublicApplicationRateLimitFilterTest {
         }
     }
 
+    @Test
+    void login_request_and_verify_have_separate_budgets() throws Exception {
+        // #235: kod isteği her seferinde mail gönderebilir (dar bütçe),
+        // doğrulama göndermez (geniş bütçe). Tek kova olsaydı doğrulama
+        // denemeleri adayın yeni-kod isteme hakkını yerdi.
+        //
+        // ÖLÇÜM YÖNÜ ÖNEMLİ: önce GENİŞ bütçeyi doldur, sonra DAR ucu dene.
+        // Ters yön (10 istek + 1 doğrulama) paylaşılan kovada da geçer, çünkü
+        // 11 < 30; o test kova birleştirmesini yakalamıyordu.
+        var filter = filterAt("2026-07-28T12:00:00Z");
+        String requestPath = "/api/v1/candidate/login/request";
+        String verifyPath = "/api/v1/candidate/login/verify";
+
+        for (int i = 0; i < PublicApplicationRateLimitFilter.LOGIN_VERIFY_LIMIT; i++) {
+            var allowed = new MockHttpServletResponse();
+            filter.doFilter(request("POST", verifyPath), allowed, new MockFilterChain());
+            assertEquals(200, allowed.getStatus(), "sınır altındaki doğrulama geçmeli");
+        }
+        var deniedVerify = new MockHttpServletResponse();
+        filter.doFilter(request("POST", verifyPath), deniedVerify, new MockFilterChain());
+        assertEquals(429, deniedVerify.getStatus(), "doğrulama bütçesi sınırlı olmalı");
+
+        // Doğrulama kovası dolu; kod isteği taze kovadan geçmeli.
+        var requestAllowed = new MockHttpServletResponse();
+        filter.doFilter(request("POST", requestPath), requestAllowed, new MockFilterChain());
+        assertEquals(200, requestAllowed.getStatus(),
+                "doğrulama bütçesi kod isteğini tüketmemeli");
+    }
+
+    @Test
+    void login_verify_is_bounded_too() throws Exception {
+        var filter = filterAt("2026-07-28T12:00:00Z");
+        String verifyPath = "/api/v1/candidate/login/verify";
+        for (int i = 0; i < PublicApplicationRateLimitFilter.LOGIN_VERIFY_LIMIT; i++) {
+            filter.doFilter(request("POST", verifyPath), new MockHttpServletResponse(),
+                    new MockFilterChain());
+        }
+        var denied = new MockHttpServletResponse();
+        filter.doFilter(request("POST", verifyPath), denied, new MockFilterChain());
+        assertEquals(429, denied.getStatus());
+        assertTrue(denied.getContentAsString().contains("RATE_LIMITED"));
+    }
+
+    @Test
+    void login_application_list_shares_the_candidate_read_budget() throws Exception {
+        // Oturumla liste okuma da portal yenilemesi; ayrı kova bütçeyi ikiye
+        // katlardı.
+        var filter = filterAt("2026-07-28T12:00:00Z");
+        String base = "/api/v1/candidate/applications/app_abcdefghijklmnopqrstuvwx";
+        for (int i = 0; i < PublicApplicationRateLimitFilter.CANDIDATE_READ_LIMIT; i++) {
+            filter.doFilter(request("GET", base), new MockHttpServletResponse(),
+                    new MockFilterChain());
+        }
+        var denied = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/api/v1/candidate/login/applications"), denied,
+                new MockFilterChain());
+        assertEquals(429, denied.getStatus(), "giriş listesi okuma kovasını paylaşmalı");
+    }
+
     private static PublicApplicationRateLimitFilter filterAt(String instant) {
         return new PublicApplicationRateLimitFilter(new PublicApplicationRateLimiter(
                 Clock.fixed(Instant.parse(instant), ZoneOffset.UTC)));
