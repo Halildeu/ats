@@ -276,6 +276,72 @@ class PostgresApplicationStoreTest {
                 "hard-delete reddedildikten sonra başvuru hâlâ okunur");
     }
 
+    @Test
+    void the_recruiter_sees_the_same_candidate_other_applications() {
+        // #226: canli olculdu — ayni e-postayla ayni ilana SINIRSIZ basvurulabiliyor
+        // (iki 201, iki publicRef) ve IK bunu hicbir yerde goremiyordu: iki ozdes
+        // kayit, hangisi guncel belirsiz. Bu POLITIKA degil GORUNURLUK; hicbir
+        // gonderim engellenmiyor.
+        String first = "app_" + "G".repeat(24);
+        String second = "app_" + "H".repeat(24);
+        submitWithEmail(first, "9a".repeat(32), "app-duplicate-key-01", "9b".repeat(32), DUP_EMAIL);
+        submitWithEmail(second, "9c".repeat(32), "app-duplicate-key-02", "9d".repeat(32),
+                DUP_EMAIL);
+
+        var detail = applications.findRecruiterApplication(TENANT, first)
+                .asOptional().orElseThrow();
+        assertEquals(1, detail.otherApplications().size(),
+                "yalniz ayni e-postali diger basvuru gorunmeli: " + detail.otherApplications());
+        var other = detail.otherApplications().get(0);
+        assertEquals(second, other.publicRef());
+        // IK'nin asil sordugu: AYNI ilana mi ikinci kez basvurdu?
+        assertTrue(other.sameJob(), "ayni ilana ikinci basvuru sameJob=true olmali");
+        assertEquals(SLUG, other.jobSlug());
+
+        // Simetrik olmali: ikinci kayittan bakinca da birincisi gorunur.
+        var reverse = applications.findRecruiterApplication(TENANT, second)
+                .asOptional().orElseThrow();
+        assertEquals(first, reverse.otherApplications().get(0).publicRef());
+    }
+
+    @Test
+    void email_matching_is_normalised_so_real_duplicates_are_not_missed() {
+        // Gercek adaylar ayni adresi farkli buyuk/kucuk harfle ve bosluklu yazar.
+        // Ham esitlik mukerreri KACIRIR ve ozellik sessizce ise yaramaz gorunur.
+        String base = "app_" + "I".repeat(24);
+        String messy = "app_" + "J".repeat(24);
+        submitWithEmail(base, "9e".repeat(32), "app-normalise-key-01", "9f".repeat(32),
+                NORM_EMAIL);
+        submitWithEmail(messy, "8a".repeat(32), "app-normalise-key-02", "8b".repeat(32),
+                "  " + NORM_EMAIL.toUpperCase(java.util.Locale.ROOT) + " ");
+
+        var detail = applications.findRecruiterApplication(TENANT, base)
+                .asOptional().orElseThrow();
+        assertTrue(
+                detail.otherApplications().stream().anyMatch(o -> o.publicRef().equals(messy)),
+                "buyuk/kucuk harf + bosluk farki mukerreri gizlememeli: "
+                        + detail.otherApplications());
+    }
+
+    @Test
+    void a_blank_email_never_groups_two_different_candidates() {
+        // Bos e-posta normalize edilince esitlenir ve e-postasiz IKI FARKLI adayi
+        // ayni kisi gosterirdi. Eslesmeye hic girmemeli.
+        String blankOne = "app_" + "K".repeat(24);
+        String blankTwo = "app_" + "L".repeat(24);
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, blankOne, "8c".repeat(32), "app-blankmail-key-01",
+                "8d".repeat(32), submissionWithEmail(""), NOW)).asOptional().orElseThrow();
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, blankTwo, "8e".repeat(32), "app-blankmail-key-02",
+                "8f".repeat(32), submissionWithEmail(""), NOW)).asOptional().orElseThrow();
+
+        var detail = applications.findRecruiterApplication(TENANT, blankOne)
+                .asOptional().orElseThrow();
+        assertTrue(detail.otherApplications().isEmpty(),
+                "e-postasiz kayitlar ayni kisi sayilmamali: " + detail.otherApplications());
+    }
+
     // --- helpers ---
 
     private static SubmitCommand command(
@@ -351,6 +417,29 @@ class PostgresApplicationStoreTest {
                 List.of(new ApplicationIntakeService.EducationEntry(
                         "Örnek Üniversitesi", "Lisans", "YBS", "2016", "2020", null)),
                 "Türkçe, İngilizce", "ISO 45001");
+    }
+
+    /** #226 testleri kendi e-postasini kullanir: paylasilan fixture e-postasi
+     *  sabit oldugu icin diger testlerin basvurulari da "ayni aday" sayilir ve
+     *  sayim belirsizlesir. */
+    private static final String DUP_EMAIL = "mukerrer.aday@example.test";
+    private static final String NORM_EMAIL = "normalize.aday@example.test";
+
+    private static void submitWithEmail(
+            String publicRef, String accessDigest, String key, String requestDigest, String email) {
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, publicRef, accessDigest, key, requestDigest,
+                submissionWithEmail(email), NOW)).asOptional().orElseThrow();
+    }
+
+    /** Mevcut `submission` ile AYNI sekil; yalniz e-posta degisir. */
+    private static Submission submissionWithEmail(String email) {
+        return new Submission(
+                "Deniz Sentetik", email, "+905550000000", "İstanbul",
+                "https://www.linkedin.com/in/sentetik", "https://portfolio.example.test",
+                "Ürün alanında sentetik profesyonel özet", "Sentetik deneyim", "Sentetik eğitim",
+                List.of("Ürün", "Araştırma"), "Sentetik başvuru",
+                ApplicationIntakeService.NOTICE_VERSION, NOW, NOW, null, null);
     }
 
     private static Submission submission(String fullName) {

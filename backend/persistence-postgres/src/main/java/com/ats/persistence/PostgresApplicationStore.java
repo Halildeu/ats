@@ -263,7 +263,8 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 return Outcome.ok(new RecruiterApplicationDetail(
                         application,
                         readHistory(c, tenantId, applicationId),
-                        readEvaluations(c, tenantId, applicationId)));
+                        readEvaluations(c, tenantId, applicationId),
+                        readOtherApplications(c, tenantId, application)));
             }
         } catch (IllegalArgumentException | JsonCodec.JsonCodecException ex) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
@@ -542,6 +543,58 @@ public final class PostgresApplicationStore implements ApplicationStore {
             }
             return List.copyOf(events);
         }
+    }
+
+    /**
+     * #226: aynı adayın DİĞER başvuruları. Ölçüldü — aynı e-postayla aynı ilana
+     * sınırsız başvurulabiliyor (canlı: iki 201, iki publicRef) ve İK bunu
+     * hiçbir yerde göremiyordu.
+     *
+     * <p>Eşleştirme e-posta üzerinden ve NORMALİZE: gerçek adaylar aynı adresi
+     * farklı büyük/küçük harfle ve baştaki/sondaki boşlukla yazar; ham eşitlik
+     * mükerreri kaçırır ve özellik sessizce işe yaramaz görünür.
+     *
+     * <p>E-postası olmayan kayıt eşleştirmeye HİÇ girmez: {@code NULL = NULL}
+     * SQL'de zaten yanlıştır, ama boş dize normalize edilince eşleşir ve
+     * e-postasız iki farklı adayı aynı kişi gösterirdi.
+     *
+     * <p>Silinmiş kişisel veri (KVKK) kapsam dışı: {@code personal_data_erased_at}
+     * dolu kayıt eşleştirilmez.
+     */
+    private List<ApplicationStore.CandidateOtherApplication> readOtherApplications(
+            Connection c, TenantId tenantId, CandidateApplication application)
+            throws SQLException {
+        String email = application.email();
+        if (email == null || email.isBlank()) return List.of();
+        String sql = """
+                SELECT a.public_ref, j.slug, j.title, a.status, a.created_at, a.job_id
+                  FROM ats_application a
+                  JOIN ats_job_posting j
+                    ON j.tenant_id = a.tenant_id AND j.job_id = a.job_id
+                 WHERE a.tenant_id = ?
+                   AND a.public_ref <> ?
+                   AND a.personal_data_erased_at IS NULL
+                   AND lower(btrim(a.email)) = lower(btrim(?))
+                 ORDER BY a.created_at DESC, a.public_ref
+                """;
+        List<ApplicationStore.CandidateOtherApplication> out = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, tenantId.value());
+            ps.setString(2, application.publicRef());
+            ps.setString(3, email);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new ApplicationStore.CandidateOtherApplication(
+                            rs.getString("public_ref"),
+                            rs.getString("slug"),
+                            rs.getString("title"),
+                            ApplicationStatus.valueOf(rs.getString("status")),
+                            iso(rs, "created_at"),
+                            application.jobId().equals(rs.getString("job_id"))));
+                }
+            }
+        }
+        return List.copyOf(out);
     }
 
     private List<ApplicationEvaluation> readEvaluations(
