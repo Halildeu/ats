@@ -35,7 +35,16 @@ COPY web/i18n ./web/i18n
 COPY web/mfe-interview-evidence ./web/mfe-interview-evidence
 RUN cd web/mfe-interview-evidence && npm run build
 
-FROM nginx:1.27-alpine
+# Base tag, not digest - same convention as backend/app-boot, and trust
+# evidence is the published digest either way. Consequence to know: a tag
+# floats, so a base that scans clean today can go CRITICAL tomorrow and the
+# fail-closed Trivy gate will refuse to publish. That is the gate working, not
+# a regression; bump the tag to one whose packages carry the fix.
+#
+# 1.27-alpine was rejected on 2026-07-27: alpine 3.21.3 shipped openssl
+# 3.3.3-r0, two CRITICAL findings for CVE-2026-31789 (fixed in 3.3.7-r0).
+# 1.29-alpine is alpine 3.23.x with openssl 3.5.6-r0 - measured, not assumed.
+FROM nginx:1.29-alpine
 # UID/GID 10001 NUMERIC: kubelet's runAsNonRoot check cannot resolve a named
 # user ("non-numeric user" CreateContainerConfigError).
 RUN addgroup -g 10001 -S ats && adduser -u 10001 -S -G ats ats
