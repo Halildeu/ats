@@ -101,6 +101,13 @@ class SecurityConfig {
                                 "/api/v1/careers/*/jobs/*/applications").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/v1/careers/*/jobs/*/resume-imports").permitAll()
+                        // #235: giriş uçları public — kimlik zaten uç İÇİNDE
+                        // kurulur (kod → oturum anahtarı); JWT katmanı yok.
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/candidate/login/request",
+                                "/api/v1/candidate/login/verify").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/candidate/login/applications").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/candidate/applications/*").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/candidate/applications/*/interviews").permitAll()
