@@ -16,6 +16,9 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'web/mfe-interview-evidence/**'
+      - 'packages/ui/**'
+      - 'contracts/**'
       - '.github/workflows/image-push.yml'
   workflow_dispatch:
 
@@ -28,7 +31,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Iki imaj tek workflow'da. Yol kapisi olmadan salt-UI bir degisiklik
+  # app-boot'u da yeniden basardi: icerigi ayni ama digest'i farkli bir imaj,
+  # ve GitOps digest pinledigi icin anlamsiz bir bump PR'i dogururdu.
+  # Emin olunamayan her durumda (ilk push, force-push, manuel dispatch)
+  # kapi ACIK kalir - yayin hattinda eksik basmaktansa fazla basmak yeglenir.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      ui: ${{ steps.filter.outputs.ui }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Degisen yollar
+        id: filter
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" != "push" ] || [ -z "$BEFORE" ] ||
+             [ "$BEFORE" = "0000000000000000000000000000000000000000" ] ||
+             ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "onceki commit cozulemedi; her iki imaj da basilacak"
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "ui=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          printf '%s\n' "$CHANGED"
+          match() { printf '%s\n' "$CHANGED" | grep -Eq "$1" && echo true || echo false; }
+          # Workflow'un kendisi degistiyse ikisi de yeniden basilir.
+          WF=$(match '^\.github/workflows/image-push\.yml$')
+          BACKEND=$(match '^backend/')
+          # UI imaji packages/ui ve contracts/ uzerine derleniyor.
+          UI=$(match '^(web/mfe-interview-evidence/|packages/ui/|contracts/)')
+          [ "$WF" = "true" ] && { BACKEND=true; UI=true; }
+          echo "backend=$BACKEND" >> "$GITHUB_OUTPUT"
+          echo "ui=$UI" >> "$GITHUB_OUTPUT"
+
   build-scan-push:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -93,5 +139,71 @@ jobs:
             echo "FATAL: push digest'i lokal RepoDigests ile eşleşmedi (${IMAGE}@${DIGEST})" >&2; exit 1
           fi
           echo "ATS app-boot image published:"
+          echo "  - tag:      ${{ steps.meta.outputs.tag }}"
+          echo "  - digest:   ${DIGEST}"
+
+  # mfe-interview-evidence UI. CI zaten bu paketi derliyordu (ci.yml
+  # mfe-interview-evidence-build) ama ciktiyi hicbir yere yayinlamiyordu:
+  # bundle her push'ta uretilip atiliyor, artifact-host'ta remoteEntry/dist
+  # bulunmuyordu. API canli oldugu halde ekran hicbir dagitilmis ortamda
+  # acilamiyordu. Bu job zincirin eksik halkasi; app-boot ile AYNI sozlesme:
+  # taranan lokal imaj == push edilen imaj, ve "digest:" satiri authority.
+  build-scan-push-ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute tag
+        id: meta
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${OWNER_LC}/ats-interview-evidence-ui" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${SHORT}" >> "$GITHUB_OUTPUT"
+
+      # Context = repo koku: uygulamanin packages/ui uzerinde file: bagimliligi
+      # ve contracts/ semalarina importu var.
+      - name: Build image (repo root context)
+        run: |
+          docker build \
+            -f web/mfe-interview-evidence/Dockerfile \
+            -t "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}" \
+            .
+
+      - name: Trivy scan (CRITICAL fail-closed)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: '${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}'
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+
+      - name: SBOM (syft — push edilen lokal imajdan)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: '${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}'
+          format: spdx-json
+          artifact-name: ats-interview-evidence-ui-sbom.spdx.json
+
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push + digest authority
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.meta.outputs.image }}"
+          PUSH_OUT=$(docker push "${IMAGE}:${{ steps.meta.outputs.tag }}" | tee /dev/stderr)
+          DIGEST=$(printf '%s\n' "$PUSH_OUT" | grep -Eo 'sha256:[0-9a-f]{64}' | tail -1)
+          if ! printf '%s' "$DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "FATAL: push çıktısından geçerli digest çıkarılamadı" >&2; exit 1
+          fi
+          if ! docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' \
+              "${IMAGE}:${{ steps.meta.outputs.tag }}" | grep -Fxq "${IMAGE}@${DIGEST}"; then
+            echo "FATAL: push digest'i lokal RepoDigests ile eşleşmedi (${IMAGE}@${DIGEST})" >&2; exit 1
+          fi
+          echo "ATS interview-evidence UI image published:"
           echo "  - tag:      ${{ steps.meta.outputs.tag }}"
           echo "  - digest:   ${DIGEST}"

@@ -1,0 +1,6 @@
+# Build context hygiene. The image build runs from the repo root, so this file
+# only covers what lives beside the app; the root .dockerignore covers the rest.
+node_modules
+dist
+dev
+*.log
