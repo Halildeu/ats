@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -56,6 +57,101 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     + "[Hh]alen|[Dd]evam(?:\\s+ediyor)?|[Gg]ünümüz|[Pp]resent|[Cc]urrent|"
                     + "[Nn]ow|\\.{2,})");
     private static final Pattern SINGLE_YEAR = Pattern.compile("(?<!\\d)(?:19|20)\\d{2}(?!\\d)");
+
+    /**
+     * #242 dilim A: AY + YIL normalizasyonu. Ayrıştırıcı bugüne kadar YALNIZ yıl
+     * tanıyordu; "Eyl 2022 - Mar 2024" satırından "2022 - 2024" çıkıyor, ay
+     * bilgisi SESSİZCE atılıyordu. Toplu hesap ay hassasiyeti istediği için
+     * (sahip gereksinimi) bu kayıp doğrudan ürün gereksinimini bozuyor.
+     *
+     * <p>Normalizasyon çıktısı tek biçim: {@code YYYY-MM}. Böylece aşağıdaki tüm
+     * katmanlar (form alanı, sunucu doğrulaması, toplu hesap) aynı dili konuşur.
+     * Ay bulunamazsa değer yıl olarak kalır — uydurulmuş bir ay, eksik aydan
+     * kötüdür (yanlışlığı görünmez olur).
+     */
+    private static final Map<String, String> MONTHS = monthLexicon();
+
+    private static Map<String, String> monthLexicon() {
+        Map<String, String> m = new HashMap<>();
+        String[][] tr = {
+            {"ocak", "oca", "01"}, {"şubat", "şub", "02"}, {"mart", "mar", "03"},
+            {"nisan", "nis", "04"}, {"mayıs", "may", "05"}, {"haziran", "haz", "06"},
+            {"temmuz", "tem", "07"}, {"ağustos", "ağu", "08"}, {"eylül", "eyl", "09"},
+            {"ekim", "eki", "10"}, {"kasım", "kas", "11"}, {"aralık", "ara", "12"},
+        };
+        for (String[] row : tr) {
+            m.put(row[0], row[2]);
+            m.put(row[1], row[2]);
+            // Türkçe'ye özgü harfler kaybolmuş CV metinleri yaygın ("subat",
+            // "agustos", "eylul") — PDF çıkarımı sık sık aksanı düşürüyor.
+            m.put(deaccent(row[0]), row[2]);
+            m.put(deaccent(row[1]), row[2]);
+        }
+        String[][] en = {
+            {"january", "jan", "01"}, {"february", "feb", "02"}, {"march", "mar", "03"},
+            {"april", "apr", "04"}, {"may", "may", "05"}, {"june", "jun", "06"},
+            {"july", "jul", "07"}, {"august", "aug", "08"}, {"september", "sep", "09"},
+            {"october", "oct", "10"}, {"november", "nov", "11"}, {"december", "dec", "12"},
+        };
+        for (String[] row : en) {
+            m.putIfAbsent(row[0], row[2]);
+            m.putIfAbsent(row[1], row[2]);
+        }
+        return Map.copyOf(m);
+    }
+
+    private static String deaccent(String value) {
+        return value.replace("ş", "s").replace("ğ", "g").replace("ı", "i")
+                .replace("ü", "u").replace("ö", "o").replace("ç", "c");
+    }
+
+    /** "Eyl 2022" / "Eylül 2022" / "09/2022" / "2022-09" → "2022-09". */
+    /** Normalize edilmiş ay aralığı: "2022-09 - 2024-03" ya da "2022-09 - Halen". */
+    private static final Pattern MONTH_RANGE = Pattern.compile(
+            "(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])\\s*[-–—/]\\s*"
+                    + "(?:(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])|"
+                    + "[Hh]alen|[Dd]evam(?:\\s+ediyor)?|[Gg]ünümüz|[Pp]resent|[Cc]urrent|"
+                    + "[Nn]ow|\\.{2,})");
+    private static final Pattern SINGLE_MONTH = Pattern.compile(
+            "(?<!\\d)(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])(?!\\d)");
+
+    private static final Pattern MONTH_NAME_YEAR = Pattern.compile(
+            "(?<![\\p{L}])(\\p{L}{3,9})\\s+((?:19|20)\\d{2})(?!\\d)");
+    private static final Pattern NUMERIC_MONTH_YEAR = Pattern.compile(
+            "(?<!\\d)(0?[1-9]|1[0-2])\\s*[./]\\s*((?:19|20)\\d{2})(?!\\d)");
+    private static final Pattern ISO_MONTH = Pattern.compile(
+            "(?<!\\d)((?:19|20)\\d{2})-(0[1-9]|1[0-2])(?!\\d)");
+
+    /**
+     * Satırdaki ay+yıl ifadelerini {@code YYYY-MM}'e çevirir. Tanınmayan metne
+     * DOKUNMAZ: ay adı sözlükte yoksa satır olduğu gibi kalır ve mevcut yıl
+     * ayrıştırması devreye girer.
+     */
+    static String normalizeMonthYear(String text) {
+        if (text == null || text.isBlank()) return text;
+        String out = ISO_MONTH.matcher(text).replaceAll("$1-$2");
+        Matcher numeric = NUMERIC_MONTH_YEAR.matcher(out);
+        StringBuilder sb = new StringBuilder();
+        while (numeric.find()) {
+            String month = numeric.group(1).length() == 1 ? "0" + numeric.group(1) : numeric.group(1);
+            numeric.appendReplacement(sb, numeric.group(2) + "-" + month);
+        }
+        numeric.appendTail(sb);
+        out = sb.toString();
+
+        Matcher named = MONTH_NAME_YEAR.matcher(out);
+        StringBuilder nb = new StringBuilder();
+        while (named.find()) {
+            String key = named.group(1).toLowerCase(java.util.Locale.ROOT);
+            String month = MONTHS.get(key);
+            if (month == null) month = MONTHS.get(deaccent(key));
+            named.appendReplacement(nb,
+                    month == null ? Matcher.quoteReplacement(named.group())
+                            : named.group(2) + "-" + month);
+        }
+        named.appendTail(nb);
+        return nb.toString();
+    }
     /**
      * Kayıt-başı eşikleri. Ölçülen değerler: kayıt başı satırların punto oranı
      * 1.13–1.17, gövde 1.00 → 1.05 eşiği ikisini ayırır. Sol kenar toleransı 6pt:
@@ -625,7 +721,19 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      *
      * @return tarih deseni yoksa {@code null}
      */
-    private static DateLine splitDateLine(String text) {
+    private static DateLine splitDateLine(String rawText) {
+        // #242 A: ay+yıl önce tek biçime çevrilir; aksi halde "Eyl 2022" satırından
+        // yalnız "2022" çıkar ve AY SESSİZCE KAYBOLUR.
+        String text = normalizeMonthYear(rawText);
+        Matcher month = MONTH_RANGE.matcher(text);
+        if (month.find()) {
+            return new DateLine(month.group(), stripAround(text, month.start(), month.end()));
+        }
+        Matcher singleMonth = SINGLE_MONTH.matcher(text);
+        if (singleMonth.find()) {
+            return new DateLine(singleMonth.group(),
+                    stripAround(text, singleMonth.start(), singleMonth.end()));
+        }
         Matcher range = YEAR_RANGE.matcher(text);
         if (range.find()) {
             return new DateLine(range.group(), stripAround(text, range.start(), range.end()));
