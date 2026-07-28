@@ -129,10 +129,10 @@ class ApplicationApiController {
     record ExperienceEntryBody(
             @Schema(maxLength = 160) String title,
             @Schema(maxLength = 160) String company,
-            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}-(0[1-9]|1[0-2])$",
-                    description = "YYYY-AA (ör. 2022-09). Miras serbest metin kabul edilir; "
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                    description = "YYYY veya YYYY-AA (ör. 2019, 2022-09). Biçim hassasiyeti taşır; "
                             + "yapısal GÖRÜNEN değer geçerli olmalıdır.") String startDate,
-            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}-(0[1-9]|1[0-2])$",
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
                     description = "Boş = devam ediyor.") String endDate,
             @Schema(maxLength = 4000) String description) {}
 

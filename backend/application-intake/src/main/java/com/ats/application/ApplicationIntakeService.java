@@ -139,6 +139,10 @@ public final class ApplicationIntakeService {
     private static boolean backwards(String start, String end, Pattern shape) {
         if (start == null || end == null || start.isEmpty() || end.isEmpty()) return false;
         if (!shape.matcher(start).matches() || !shape.matcher(end).matches()) return false;
+        // Kıyas yalnız AYNI hassasiyette yapılır. "2019-06" ile "2019" arasında
+        // sıralama uydurmak yanlış pozitif üretir: "Haziran 2019'da başladı,
+        // 2019 içinde bitti" meşru bir beyandır ve reddedilmemeli.
+        if (start.length() != end.length()) return false;
         return end.compareTo(start) < 0;
     }
 
@@ -172,6 +176,19 @@ public final class ApplicationIntakeService {
      */
     private static final Pattern STRUCTURED_SHAPE = Pattern.compile("[0-9-]+");
     private static final Pattern MONTH_SHAPE = Pattern.compile("\\d{4}-(0[1-9]|1[0-2])");
+    /**
+     * #242 (a) kararı: deneyim tarihi AY ya da YIL hassasiyetinde olabilir.
+     *
+     * <p>Yalnız ay kabul etmek CANLI BİR KUSURDU: ayrıştırıcı yıl-only bir CV
+     * satırından ("Ornek Sanayi AS 2019 - 2023") startDate olarak "2019" üretiyor
+     * ve #241 bunu reddediyordu — aday, uydurmadığı bir ayı uydurmadan
+     * gönderemiyordu. Tam olarak kaçınmaya çalıştığım arıza.
+     *
+     * <p>Hassasiyet farkı KAYBEDİLMEZ: değerin biçimi hassasiyetin kendisidir
+     * ("2019" = yıl, "2019-06" = ay). Toplu hesap ikisini ayrı raporlar.
+     */
+    private static final Pattern MONTH_OR_YEAR_SHAPE =
+            Pattern.compile("\\d{4}(-(0[1-9]|1[0-2]))?");
     private static final Pattern YEAR_SHAPE = Pattern.compile("\\d{4}");
     /** Alt sınır veri hatasını ayırır; üst sınır saatten değil TAKVİMDEN gelir. */
     private static final int MIN_ENTRY_YEAR = 1950;
@@ -655,10 +672,10 @@ public final class ApplicationIntakeService {
                     || entry.startDate().length() > 40 || entry.endDate().length() > 40
                     || entry.description().length() > 4000)
                 return invalid("experience girdi alan uzunluğu geçersiz");
-            if (malformedStructured(entry.startDate(), MONTH_SHAPE)
-                    || malformedStructured(entry.endDate(), MONTH_SHAPE))
-                return invalid("experience tarihi YYYY-AA biçiminde olmalı (ör. 2022-09)");
-            if (backwards(entry.startDate(), entry.endDate(), MONTH_SHAPE))
+            if (malformedStructured(entry.startDate(), MONTH_OR_YEAR_SHAPE)
+                    || malformedStructured(entry.endDate(), MONTH_OR_YEAR_SHAPE))
+                return invalid("experience tarihi YYYY veya YYYY-AA olmalı (ör. 2019, 2022-09)");
+            if (backwards(entry.startDate(), entry.endDate(), MONTH_OR_YEAR_SHAPE))
                 return invalid("experience bitiş tarihi başlangıçtan önce olamaz");
         }
         for (EducationEntry entry : value.educationEntries()) {

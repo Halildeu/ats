@@ -339,10 +339,36 @@ class ApplicationIntakeServiceTest {
     }
 
     @Test
+    void server_accepts_year_only_experience_dates_because_the_parser_produces_them() {
+        // CANLI KUSUR (#241): yalnız YYYY-AA kabul ediliyordu. Ama ayrıştırıcı
+        // yıl-only bir CV satırından ("Ornek Sanayi AS 2019 - 2023") startDate
+        // olarak "2019" üretiyor. Aday, uydurmadığı bir ayı uydurmadan
+        // gönderemiyordu — tam olarak kaçınmaya çalıştığım arıza.
+        assertEquals("", submitReason(withExperience("2019", "2023")));
+        assertEquals("", submitReason(withExperience("2019", "")));
+        // Ay hassasiyeti de geçerli; ikisi bir arada yaşayabilir (#242 (a) kararı).
+        assertEquals("", submitReason(withExperience("2022-09", "2024-03")));
+        // Geçersiz olan hâlâ reddedilir.
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
+    }
+
+    @Test
+    void server_does_not_invent_an_order_between_two_different_precisions() {
+        // "Haziran 2019'da başladı, 2019 içinde bitti" MEŞRU bir beyandır.
+        // Sözlüksel kıyas bunu ters aralık sanıp reddederdi.
+        assertEquals("", submitReason(withExperience("2019-06", "2019")));
+        assertEquals("", submitReason(withExperience("2019", "2019-06")));
+        // Aynı hassasiyette kıyas yapılmaya devam eder.
+        assertTrue(submitReason(withExperience("2023-05", "2021-01")).contains("başlangıçtan önce"));
+        assertTrue(submitReason(withExperience("2023", "2021")).contains("başlangıçtan önce"));
+    }
+
+    @Test
     void server_rejects_a_structured_looking_date_that_is_not_valid() {
         // İstemci doğrulaması SÖZLEŞME DEĞİL: curl ya da eski bir sekme onu atlar.
-        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY-AA"));
-        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY-AA"));
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
         assertTrue(submitReason(withEducation("201", "")).contains("YYYY"));
     }
 
