@@ -129,8 +129,11 @@ class ApplicationApiController {
     record ExperienceEntryBody(
             @Schema(maxLength = 160) String title,
             @Schema(maxLength = 160) String company,
-            @Schema(maxLength = 40) String startDate,
-            @Schema(maxLength = 40) String endDate,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}-(0[1-9]|1[0-2])$",
+                    description = "YYYY-AA (ör. 2022-09). Miras serbest metin kabul edilir; "
+                            + "yapısal GÖRÜNEN değer geçerli olmalıdır.") String startDate,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}-(0[1-9]|1[0-2])$",
+                    description = "Boş = devam ediyor.") String endDate,
             @Schema(maxLength = 4000) String description) {}
 
     /** #215: tek bir eğitim girdisi. */
@@ -140,8 +143,10 @@ class ApplicationApiController {
             @Schema(maxLength = 160) String school,
             @Schema(maxLength = 160) String degree,
             @Schema(maxLength = 160) String field,
-            @Schema(maxLength = 40) String startYear,
-            @Schema(maxLength = 40) String endYear,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "YYYY (ör. 2016).") String startYear,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "Boş = devam ediyor.") String endYear,
             @Schema(maxLength = 4000) String description) {}
 
     @Schema(name = "ApplicationSubmitRequest",

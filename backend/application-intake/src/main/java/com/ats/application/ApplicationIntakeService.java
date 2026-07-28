@@ -124,8 +124,57 @@ public final class ApplicationIntakeService {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Yapısal GÖRÜNEN ama geçerli OLMAYAN değer. Serbest metin ("Eyl 2022")
+     * bu kapıdan geçer — onu reddetmek CV ayrıştırıcısının ürettiği veriyi
+     * kullanılamaz kılardı. Reddedilen: "2019-13", "20191", "2019-", yani
+     * yalnız rakam/tire olup biçime uymayan.
+     */
+    private static boolean malformedStructured(String value, Pattern shape) {
+        if (value == null || value.isEmpty()) return false;
+        return STRUCTURED_SHAPE.matcher(value).matches() && !shape.matcher(value).matches();
+    }
+
+    /** İki taraf da yapısalsa kronoloji denetlenir; sözlüksel sıra = kronolojik. */
+    private static boolean backwards(String start, String end, Pattern shape) {
+        if (start == null || end == null || start.isEmpty() || end.isEmpty()) return false;
+        if (!shape.matcher(start).matches() || !shape.matcher(end).matches()) return false;
+        return end.compareTo(start) < 0;
+    }
+
+    private boolean implausibleYear(String value) {
+        if (value == null || !YEAR_SHAPE.matcher(value).matches()) return false;
+        int year = Integer.parseInt(value);
+        return year < MIN_ENTRY_YEAR || year > currentYearInstance();
+    }
+
+    /**
+     * Üst sınır SABİT YAZILMAZ: yıl dönümünde sessizce eskir ve 1 Ocak'ta
+     * geçerli bir yılı reddetmeye başlardı. Servisin kendi saatinden okunur.
+     */
+    private int currentYearInstance() {
+        return clock.instant().atZone(java.time.ZoneOffset.UTC).getYear();
+    }
+
     /** #215: herkese açık uçta tekrar sayısı sınırlı. */
     private static final int MAX_ENTRIES = 30;
+
+    /**
+     * #239 dilim 2: sunucu tarafı biçim doğrulaması. İstemci doğrulaması tek
+     * başına SÖZLEŞME DEĞİLDİR — istemci atlanırsa (curl, eski sekme, başka
+     * istemci) serbest metin yine girerdi.
+     *
+     * Kural "her tarih yapısal olmalı" DEĞİL, çünkü CV ayrıştırıcısı serbest
+     * metin üretebiliyor ("Eyl 2022") ve o değeri reddetmek adayı düzeltemeyeceği
+     * bir 400'e kilitler. Kural: <b>yapısal görünen değer geçerli olmalı</b>.
+     * Yani yalnız rakam ve tire içeren bir değer ya doğru biçimdedir ya da
+     * reddedilir; "2019-13" (13. ay) veya "20191" sessizce kabul edilmez.
+     */
+    private static final Pattern STRUCTURED_SHAPE = Pattern.compile("[0-9-]+");
+    private static final Pattern MONTH_SHAPE = Pattern.compile("\\d{4}-(0[1-9]|1[0-2])");
+    private static final Pattern YEAR_SHAPE = Pattern.compile("\\d{4}");
+    /** Alt sınır veri hatasını ayırır; üst sınır saatten değil TAKVİMDEN gelir. */
+    private static final int MIN_ENTRY_YEAR = 1950;
 
     public record Submission(
             String fullName,
@@ -606,12 +655,25 @@ public final class ApplicationIntakeService {
                     || entry.startDate().length() > 40 || entry.endDate().length() > 40
                     || entry.description().length() > 4000)
                 return invalid("experience girdi alan uzunluğu geçersiz");
+            if (malformedStructured(entry.startDate(), MONTH_SHAPE)
+                    || malformedStructured(entry.endDate(), MONTH_SHAPE))
+                return invalid("experience tarihi YYYY-AA biçiminde olmalı (ör. 2022-09)");
+            if (backwards(entry.startDate(), entry.endDate(), MONTH_SHAPE))
+                return invalid("experience bitiş tarihi başlangıçtan önce olamaz");
         }
         for (EducationEntry entry : value.educationEntries()) {
             if (entry.school().length() > 160 || entry.degree().length() > 160
                     || entry.field().length() > 160 || entry.startYear().length() > 40
                     || entry.endYear().length() > 40 || entry.description().length() > 4000)
                 return invalid("education girdi alan uzunluğu geçersiz");
+            if (malformedStructured(entry.startYear(), YEAR_SHAPE)
+                    || malformedStructured(entry.endYear(), YEAR_SHAPE))
+                return invalid("education yılı YYYY biçiminde olmalı (ör. 2016)");
+            if (implausibleYear(entry.startYear()) || implausibleYear(entry.endYear()))
+                return invalid("education yılı " + MIN_ENTRY_YEAR + " ile "
+                        + currentYearInstance() + " arasında olmalı");
+            if (backwards(entry.startYear(), entry.endYear(), YEAR_SHAPE))
+                return invalid("education bitiş yılı başlangıçtan önce olamaz");
         }
         if (value.languages() != null && value.languages().length() > 2000)
             return invalid("languages en fazla 2000 karakter olmalı");
