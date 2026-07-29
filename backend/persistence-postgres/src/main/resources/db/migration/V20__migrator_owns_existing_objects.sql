@@ -20,15 +20,24 @@
 -- olması için önkoşuldu (bkz. RB-ats-migrator-role-split.md "Before any of this") — yeni
 -- bir operasyonel önkoşul yok.
 --
--- Idempotent: CURRENT_USER hiçbir şeye sahip değilse döngüler sıfır kez çalışır (no-op,
--- hata değil) — hem taze kurulumda hem yükseltmede aynı blok geçerli.
+-- flyway_schema_history bu migration çalışırken Flyway tarafından kilitlidir. Aynı
+-- transaction içinde o tabloya ALTER TABLE ... OWNER uygulamak PostgreSQL'de kendi
+-- kilidini bekleyen bir lock wait üretir. Bu nedenle history tablosu burada bilinçli
+-- olarak hariç tutulur; sahiplik devri Flyway kilidi bırakıldıktan sonraki iki-datasource
+-- operasyon adımına aittir.
+--
+-- Idempotent: CURRENT_USER, flyway_schema_history dışında hiçbir şeye sahip değilse
+-- döngüler sıfır kez çalışır (no-op, hata değil) — hem taze kurulumda hem yükseltmede
+-- aynı blok geçerli.
 DO $migrator_ownership_transfer$
 DECLARE
     r RECORD;
 BEGIN
     FOR r IN
         SELECT tablename FROM pg_catalog.pg_tables
-         WHERE schemaname = 'public' AND tableowner = CURRENT_USER
+         WHERE schemaname = 'public'
+           AND tableowner = CURRENT_USER
+           AND tablename <> 'flyway_schema_history'
     LOOP
         EXECUTE format('ALTER TABLE public.%I OWNER TO ats_migrator', r.tablename);
     END LOOP;
@@ -42,9 +51,7 @@ BEGIN
 END
 $migrator_ownership_transfer$;
 
--- Sahiplik devri flyway_schema_history'i de kapsar (yukarıdaki tablo döngüsü onu da
--- yakalar). Flyway iki-datasource ayrımı (runbook adım 4, follow-up PR) tamamlanana kadar
--- gelecekteki migration'ları HÂLÂ ats_app-üyesi bir login olarak çalıştırıyor — sahip
--- artık ats_migrator olduğu için bu satır olmadan V21+ "permission denied for table
--- flyway_schema_history" ile patlardı.
+-- flyway_schema_history burada devredilmez, ancak iki-datasource ayrımı tamamlanana kadar
+-- ats_app rolünün mevcut Flyway/runtime geçiş sürecinde history tablosuna erişebilmesi
+-- gerekir. Bu grant, owner değişikliğinden bağımsız olarak geçiş sözleşmesini açık tutar.
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE flyway_schema_history TO ats_app;

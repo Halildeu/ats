@@ -52,9 +52,9 @@ class MigratorOwnershipTransferTest {
     void upgradePath_ownershipTransfersOnV20WithoutBreakingExistingGrants() throws Exception {
         PGSimpleDataSource ds = new PGSimpleDataSource();
         // 30s statement_timeout: an earlier revision of this test hung in CI for hours
-        // instead of failing fast (root cause: unscoped REASSIGN OWNED, fixed above per
-        // review). Kept as a defensive bound so any future recurrence fails fast instead
-        // of stalling silently for hours.
+        // while V20 tried to change ownership of Flyway's own locked schema-history table.
+        // Kept as a defensive bound so any future recurrence fails fast instead of
+        // stalling silently for hours.
         String baseUrl = PG.getJdbcUrl();
         String separator = baseUrl.contains("?") ? "&" : "?";
         ds.setUrl(baseUrl + separator + "options=-c%20statement_timeout%3D30000");
@@ -85,9 +85,12 @@ class MigratorOwnershipTransferTest {
         Flyway.configure().dataSource(ds).load().migrate();
 
         try (Connection c = ds.getConnection()) {
-            assertEquals(0, countTablesOwnedBy(c, runner),
-                    "post-V20: the migration runner must own NO tables in schema public"
-                            + " (upgrade path)");
+            assertEquals(runner, tableOwner(c, "flyway_schema_history"),
+                    "post-V20: Flyway must retain ownership of its locked history table"
+                            + " until the post-migration datasource split");
+            assertEquals(0, countManagedTablesOwnedBy(c, runner),
+                    "post-V20: the migration runner must own no managed ATS tables"
+                            + " besides flyway_schema_history (upgrade path)");
             assertEquals(0, countSequencesOwnedBy(c, runner),
                     "post-V20: the migration runner must own NO sequences in schema public"
                             + " (upgrade path)");
@@ -96,10 +99,9 @@ class MigratorOwnershipTransferTest {
             assertTrue(countSequencesOwnedBy(c, "ats_migrator") > 0,
                     "post-V20: ats_migrator must own the transferred sequences");
 
-            // flyway_schema_history: ownership moved to ats_migrator, but ats_app (the
-            // group role the real runtime/Flyway login inherits from) must still be able
-            // to read/write it — otherwise the NEXT migration would fail with permission
-            // denied before the datasource split (runbook step 4) ships.
+            // flyway_schema_history remains owned by the active Flyway runner because
+            // changing it while Flyway holds its lock self-blocks. ats_app still receives
+            // explicit access for the transition until the datasource split ships.
             try (PreparedStatement ps = c.prepareStatement(
                     "SELECT has_table_privilege('ats_app', 'flyway_schema_history', 'SELECT'),"
                             + " has_table_privilege('ats_app', 'flyway_schema_history', 'INSERT'),"
@@ -131,9 +133,10 @@ class MigratorOwnershipTransferTest {
 
             // Idempotency (#230 acceptance implies safety on re-run, matches V16's own
             // "idempotent" claim): re-executes V20's exact DO block. Both loops iterate
-            // zero times post-transfer (nothing left owned by the runner in schema
-            // public) — a safe no-op, not an error. Reuses the same already-migrated
-            // container instead of spinning up a second one.
+            // zero times post-transfer (nothing except Flyway's intentionally excluded
+            // history table remains runner-owned in schema public) — a safe no-op, not an
+            // error. Reuses the same already-migrated container instead of spinning up a
+            // second one.
             try (Statement st = c.createStatement()) {
                 st.execute(
                         "DO $reapply$\n"
@@ -141,6 +144,7 @@ class MigratorOwnershipTransferTest {
                         + "BEGIN\n"
                         + "  FOR r IN SELECT tablename FROM pg_catalog.pg_tables\n"
                         + "            WHERE schemaname = 'public' AND tableowner = CURRENT_USER\n"
+                        + "              AND tablename <> 'flyway_schema_history'\n"
                         + "  LOOP EXECUTE format('ALTER TABLE public.%I OWNER TO ats_migrator', r.tablename); END LOOP;\n"
                         + "  FOR r IN SELECT sequencename FROM pg_catalog.pg_sequences\n"
                         + "            WHERE schemaname = 'public' AND sequenceowner = CURRENT_USER\n"
@@ -158,6 +162,32 @@ class MigratorOwnershipTransferTest {
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
                 return rs.getInt(1);
+            }
+        }
+    }
+
+    private static int countManagedTablesOwnedBy(Connection c, String role) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT count(*) FROM pg_catalog.pg_tables"
+                        + " WHERE schemaname = 'public'"
+                        + " AND tablename <> 'flyway_schema_history'"
+                        + " AND tableowner = ?")) {
+            ps.setString(1, role);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
+    }
+
+    private static String tableOwner(Connection c, String table) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT tableowner FROM pg_catalog.pg_tables"
+                        + " WHERE schemaname = 'public' AND tablename = ?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "expected table in public schema: " + table);
+                return rs.getString(1);
             }
         }
     }
