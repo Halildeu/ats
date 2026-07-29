@@ -206,6 +206,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * sayısız unvanda geçer (İş Sağlığı ve Güvenliği Uzmanı, Sağlık Teknikeri).
      * Korunması gereken şey adayın SAĞLIK DURUMU'dur, "sağlık" kelimesi değil;
      * o yüzden çok kelimeli biçimler açıkça listelendi.
+     *
+     * <p>Askerlik (#214): Türkiye'de standart CV alanı ve iki korumalı kategoriye
+     * VEKİL — yalnız erkekler yükümlü olduğu için cinsiyet, muafiyetler ağırlıkla
+     * sağlık gerekçeli olduğu için sağlık/engellilik. Bu yüzden CV'den forma
+     * önerilmez. Bare "askerlik" YALNIZ tam eşleşmedir; önek eşleşmesi açılamaz,
+     * çünkü `Askerlik Şube Başkanı` gerçek bir iş unvanıdır ve bastırılırsa
+     * "saglik" hatası tekrarlanır. Etiketin tek kelime kaldığı biçimler
+     * ({@code Askerlik: Yapıldı}) {@link #MILITARY_STATUS_WORDS} ile ayrılır.
      */
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
@@ -214,7 +222,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             "saglik raporu", "kronik hastalik", "engellilik durumu",
             "tc kimlik no", "t c kimlik no", "kimlik no", "ucret beklentisi",
             "maas beklentisi", "fotograf", "referans", "referanslar",
-            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu");
+            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu",
+            "askerlik", "askerlik durumu", "askerlik hizmeti",
+            "askerlik bilgisi", "askerlik bilgileri", "askerlik yukumlulugu");
 
     /**
      * Aynı taban hizasındaki iki kolon PDFBox'tan TEK satır olarak gelebilir
@@ -1162,11 +1172,39 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static boolean isProtected(String normalizedLabel) {
         boolean labelShaped = normalizedLabel.length() <= MAX_HEADING_CHARS
                 && normalizedLabel.split(" ").length <= MAX_HEADING_TOKENS;
-        return PROTECTED_LABELS.stream().anyMatch(label ->
+        boolean listed = PROTECTED_LABELS.stream().anyMatch(label ->
                 normalizedLabel.equals(label)
                         || (labelShaped
                                 && label.indexOf(' ') >= 0
                                 && normalizedLabel.startsWith(label + " ")));
+        return listed || (labelShaped && militaryServiceStatusLine(normalizedLabel));
+    }
+
+    /**
+     * Askerlik yükümlülüğü durumu sözlüğü (kapalı küme, aksansız normalize).
+     *
+     * <p>Türkçe'de bu durum sayılı sözcükle ifade edilir; iş unvanı sözcükleri
+     * (şube, daire, başkan, komutanlık…) bu kümede YOKTUR. Ayrım bu yüzden
+     * etiketin kelime sayısıyla değil DEĞERLE yapılır: {@code Askerlik: Yapıldı}
+     * korumalıdır, {@code Askerlik Şube Başkanı} unvandır ve korunmaz.
+     */
+    private static final Set<String> MILITARY_STATUS_WORDS = Set.of(
+            "yapildi", "yapilmadi", "yapilmis", "yapti", "yapmadi", "yapiyor",
+            "yapacak", "tamamlandi", "tamamlanmadi", "tecil", "tecilli",
+            "muaf", "muafiyet", "muaftir", "bedelli", "terhis", "yukumlu",
+            "askerligini", "sevk", "ertelendi", "ertelenmis", "beklemede");
+
+    /**
+     * {@code Askerlik <durum>} biçimi: etiket tek kelime olduğu için önek
+     * eşleşmesi kapalıdır (gerekçe {@link #PROTECTED_LABELS} javadoc'unda),
+     * ayrım {@link #MILITARY_STATUS_WORDS} ile yapılır.
+     */
+    private static boolean militaryServiceStatusLine(String normalizedLabel) {
+        if (!normalizedLabel.startsWith("askerlik ")) return false;
+        for (String token : normalizedLabel.split(" ")) {
+            if (MILITARY_STATUS_WORDS.contains(token)) return true;
+        }
+        return false;
     }
 
     private static String normalizeLabel(String value) {
