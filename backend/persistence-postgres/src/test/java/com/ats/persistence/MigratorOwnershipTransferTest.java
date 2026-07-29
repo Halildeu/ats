@@ -53,7 +53,13 @@ class MigratorOwnershipTransferTest {
     @Test
     void upgradePath_ownershipTransfersOnV20WithoutBreakingExistingGrants() throws Exception {
         PGSimpleDataSource ds = new PGSimpleDataSource();
-        ds.setUrl(PG.getJdbcUrl());
+        // 30s statement_timeout: an earlier revision of this test hung in CI for hours
+        // instead of failing fast (root cause not fully isolated — this bounds any
+        // recurrence to a clear, fast failure instead of a silent multi-hour stall).
+        // getJdbcUrl() has no query string today, but appending defensively either way.
+        String baseUrl = PG.getJdbcUrl();
+        String separator = baseUrl.contains("?") ? "&" : "?";
+        ds.setUrl(baseUrl + separator + "options=-c%20statement_timeout%3D30000");
         ds.setUser(PG.getUsername());
         ds.setPassword(PG.getPassword());
         String runner = PG.getUsername();
@@ -114,27 +120,13 @@ class MigratorOwnershipTransferTest {
                 assertTrue(rs.getBoolean(3), "V2 grant: ats_app UPDATE ON review_case retained post-V20");
                 assertFalse(rs.getBoolean(4), "V2 boundary: ats_app must still NOT have DELETE ON review_case");
             }
-        }
-    }
 
-    @Test
-    void reassignOwnedIsIdempotent_reapplyingV20DoesNotFail() throws Exception {
-        // #230 acceptance implies safety on re-run (matches V16's own "idempotent" claim).
-        // Flyway won't literally re-run an already-applied version, so this proves the
-        // underlying SQL statement itself tolerates a no-op re-execution — a future
-        // rollback/replay of this migration file cannot strand the database.
-        try (PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16-alpine")) {
-            pg.start();
-            PGSimpleDataSource ds = new PGSimpleDataSource();
-            ds.setUrl(pg.getJdbcUrl());
-            ds.setUser(pg.getUsername());
-            ds.setPassword(pg.getPassword());
-            Flyway.configure().dataSource(ds).load().migrate();
-
-            try (Connection c = ds.getConnection();
-                    Statement st = c.createStatement()) {
-                // The connecting principal already owns nothing post-V20 — re-running the
-                // exact statement must be a safe no-op, not an error.
+            // Idempotency (#230 acceptance implies safety on re-run, matches V16's own
+            // "idempotent" claim): reuses the SAME already-migrated container instead of
+            // spinning up a second one — a prior revision of this test started a second
+            // PostgreSQLContainer here purely for this check, which is unnecessary
+            // container/resource overhead this test doesn't need.
+            try (Statement st = c.createStatement()) {
                 st.execute("REASSIGN OWNED BY CURRENT_USER TO ats_migrator");
             }
         }
