@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeDocumentParser.ParseResult;
@@ -625,6 +626,55 @@ class PdfBoxResumeDocumentParserTest {
         assertFalse(all.contains("Ornek mahalle"), "adres sizmamali: " + all);
         assertTrue(result.protectedSuppressed() >= 3,
                 "uc korumali etiket de sayilmali: " + result.protectedSuppressed());
+    }
+
+    @Test
+    void military_service_status_is_suppressed_in_both_label_shapes() throws Exception {
+        // #214: askerlik durumu iki korumali kategoriye vekil (cinsiyet: yalniz
+        // erkekler yukumlu; saglik: muafiyetler agirlikla saglik gerekceli).
+        // Iki bicim de olculdu: kariyer.net "Askerlik Durumu / Yapildi" ve
+        // etiketin tek kelime kaldigi "Askerlik: Tecilli".
+        byte[] pdf = pdf(
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022",
+                "Askerlik Durumu",
+                "Yapildi 6 ay",
+                "Askerlik Tecilli 2027");
+
+        ParseResult result = parseResult(pdf);
+        String all = result.proposals().stream()
+                .map(p -> p.value())
+                .collect(Collectors.joining(" || "));
+
+        assertFalse(all.contains("Askerlik"), "askerlik etiketi hicbir alana gitmemeli: " + all);
+        assertFalse(all.contains("Yapildi"), "askerlik degeri sizmamali: " + all);
+        assertFalse(all.contains("Tecilli"), "tek kelimeli etiket bicimi de korunmali: " + all);
+        assertTrue(result.protectedSuppressed() >= 2,
+                "iki askerlik satiri da sayilmali: " + result.protectedSuppressed());
+    }
+
+    @Test
+    void askerlik_sube_baskani_job_title_is_not_suppressed() throws Exception {
+        // Bare "askerlik" icin onek eslesmesi ACILAMAZ: `Askerlik Sube Baskani`
+        // gercek bir Turkiye is unvanidir. Bastirilirsa aktif bolum kapanir ve
+        // adayin DENEYIMI kaybolur — "saglik" hatasinin (yukarida) tekrari.
+        byte[] pdf = pdf(
+                "IS DENEYIMLERI",
+                "Askerlik Sube Baskani",
+                "Ornek Kurum - 2015 - 2019");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertNotNull(fields.get(ResumeField.EXPERIENCE),
+                "unvan bastirildiysa bolum kapanir ve DENEYIM alani hic olusmaz");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Askerlik Sube Baskani"),
+                "mesru is unvani korumali alan sayilmamali: "
+                        + fields.get(ResumeField.EXPERIENCE));
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Ornek Kurum"),
+                "unvandan sonraki satir da ayni bolumde kalmali");
+        assertEquals(0, result.protectedSuppressed(), "bu belgede korumali etiket yok");
     }
 
     private Map<ResumeField, String> parse(byte[] pdf) {
