@@ -4,25 +4,47 @@
 -- ats_app V1'den beri NOLOGIN'dir (yalnız GRANT toplayan bir grup rolü) — hiçbir bağlantı
 -- literal olarak "ats_app" OLARAK CREATE TABLE çalıştırmaz; nesnelerin gerçek sahibi HER
 -- ZAMAN o anki bağlı LOGIN kimliğidir (bugün: mevcut Flyway/runtime login'i, örn.
--- ats_app_login — henüz ats_migrator_login'e ayrılmadı, bkz. runbook adım 4). "REASSIGN
--- OWNED BY ats_app" bu yüzden yanlış hedefti: ats_app hiçbir zaman sahip olmadığı için
--- no-op'a benzer ama CI'daki MigrationRoleProvisioningPrerequisiteTest'in least-privilege
--- runner'ında (ats_deployer benzeri, yalnız ats_migrator üyesi) "permission denied to
--- reassign objects — Only roles with privileges of role ats_app may reassign objects
--- owned by it" ile SERT patlar (o runner ats_app'in üyesi değil).
+-- ats_app_login — henüz ats_migrator_login'e ayrılmadı, bkz. runbook adım 4).
 --
--- Doğru hedef bağlı LOGIN kimliğinin KENDİSİ: CURRENT_USER. REASSIGN OWNED BY CURRENT_USER
--- kendi sahip olduğun nesneleri devretmek için özel bir yetki istemez — yalnız hedef role
--- (ats_migrator) üyeliği gerekir, ki bu zaten V16'nın kendi ALTER DEFAULT PRIVILEGES FOR
--- ROLE ats_migrator satırının başarılı olması için önkoşuldu (bkz.
--- RB-ats-migrator-role-split.md "Before any of this") — yeni bir operasyonel önkoşul yok.
+-- Review düzeltmesi (Halil, PR#246): ilk revizyon "REASSIGN OWNED BY CURRENT_USER"
+-- kullanıyordu — bu, o an bağlı kullanıcının SAHİP OLDUĞU HER ŞEYİ (public dışındaki
+-- schema'lar, hatta CURRENT_USER veritabanın/schema'nın kendisinin sahibiyse o dahil)
+-- devreder; #230 kabulü yalnız public'teki YÖNETİLEN ATS tablo/sequence'lerini kapsıyor.
+-- Bunun yerine public şemasındaki, CURRENT_USER'a ait her tabloyu VE her sequence'i tek
+-- tek numaralandırıp ayrı ayrı devrediyoruz — kapsam kesin olarak public ile sınırlı,
+-- schema/database sahipliğine hiç dokunulmaz.
 --
--- Idempotent: CURRENT_USER hiçbir şeye sahip değilse REASSIGN OWNED no-op'tur (hata
--- değil) — hem taze kurulumda hem yükseltmede aynı satır geçerli.
-REASSIGN OWNED BY CURRENT_USER TO ats_migrator;
+-- Doğru hedef bağlı LOGIN kimliğinin KENDİSİ: CURRENT_USER. Kendi sahip olduğun nesneleri
+-- devretmek özel bir yetki istemez — yalnız hedef role (ats_migrator) üyeliği gerekir, ki
+-- bu zaten V16'nın kendi ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator satırının başarılı
+-- olması için önkoşuldu (bkz. RB-ats-migrator-role-split.md "Before any of this") — yeni
+-- bir operasyonel önkoşul yok.
+--
+-- Idempotent: CURRENT_USER hiçbir şeye sahip değilse döngüler sıfır kez çalışır (no-op,
+-- hata değil) — hem taze kurulumda hem yükseltmede aynı blok geçerli.
+DO $migrator_ownership_transfer$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT tablename FROM pg_catalog.pg_tables
+         WHERE schemaname = 'public' AND tableowner = CURRENT_USER
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I OWNER TO ats_migrator', r.tablename);
+    END LOOP;
 
--- Sahiplik devri flyway_schema_history'i de kapsar. Flyway iki-datasource ayrımı
--- (runbook adım 5, follow-up PR) tamamlanana kadar gelecekteki migration'ları HÂLÂ
--- ats_app olarak çalıştırıyor — sahip artık ats_migrator olduğu için bu satır olmadan
--- V21+ "permission denied for table flyway_schema_history" ile patlardı.
+    FOR r IN
+        SELECT sequencename FROM pg_catalog.pg_sequences
+         WHERE schemaname = 'public' AND sequenceowner = CURRENT_USER
+    LOOP
+        EXECUTE format('ALTER SEQUENCE public.%I OWNER TO ats_migrator', r.sequencename);
+    END LOOP;
+END
+$migrator_ownership_transfer$;
+
+-- Sahiplik devri flyway_schema_history'i de kapsar (yukarıdaki tablo döngüsü onu da
+-- yakalar). Flyway iki-datasource ayrımı (runbook adım 4, follow-up PR) tamamlanana kadar
+-- gelecekteki migration'ları HÂLÂ ats_app-üyesi bir login olarak çalıştırıyor — sahip
+-- artık ats_migrator olduğu için bu satır olmadan V21+ "permission denied for table
+-- flyway_schema_history" ile patlardı.
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE flyway_schema_history TO ats_app;

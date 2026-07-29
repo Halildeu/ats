@@ -62,13 +62,17 @@ Before the first production activation (real candidate PII, GA cutover) — neve
 
 ## Step 1 is now automatic (#230)
 
-`V20__migrator_owns_existing_objects.sql` runs `REASSIGN OWNED BY ats_app TO ats_migrator`
-(plus the `flyway_schema_history` grant Flyway itself needs to keep running as `ats_app`
-afterward) as a normal Flyway migration. It requires no new operational precondition: the
-`ats_app`↔`ats_migrator` membership it relies on is the same one V16's own
-`ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator` line already required to succeed (see
-"Before any of this" above). Proven on both the fresh-install and upgrade path by
-`MigratorOwnershipTransferTest` (`persistence-postgres`) — idempotent, safe to re-apply.
+`V20__migrator_owns_existing_objects.sql` reassigns every `public`-schema table and
+sequence currently owned by the connecting migration principal to `ats_migrator` — one
+`ALTER TABLE`/`ALTER SEQUENCE ... OWNER TO` per object (not a blanket
+`REASSIGN OWNED BY ... TO ...`, which would also reassign anything the principal owns
+*outside* the managed ATS relations, e.g. schema/database-level ownership — out of #230's
+scope) — plus the `flyway_schema_history` grant Flyway itself needs to keep running
+afterward. It requires no new operational precondition: the `ats_migrator` membership it
+relies on is the same one V16's own `ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator` line
+already required to succeed (see "Before any of this" above). Proven on both the
+fresh-install and upgrade path by `MigratorOwnershipTransferTest` (`persistence-postgres`)
+— idempotent, safe to re-apply.
 
 Once V20 has run (`SELECT * FROM flyway_schema_history WHERE version = '20';`), skip
 straight to **Step 1** below. The manual superuser ownership-transfer step that used to be

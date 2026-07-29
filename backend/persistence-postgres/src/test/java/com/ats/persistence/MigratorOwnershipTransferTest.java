@@ -19,24 +19,22 @@ import org.junit.jupiter.api.Test;
  * Faz 25 #230 P0-FULLATS-DB-02 — proves V20 finishes the ownership half of #176 that
  * V16/PR#197 left as a manual DBA runbook step (RB-ats-migrator-role-split.md).
  *
- * <p><b>Corrected premise (CI-caught, see below).</b> {@code ats_app} has been NOLOGIN
- * since V1 — a pure grant-collecting group role. No connection is ever literally
- * "{@code ats_app}", so no object is ever owned by it; the true owner of anything created
- * during migration is always the CONNECTING LOGIN IDENTITY (in production: whatever runs
- * Flyway today, before the ats_migrator_login split ships — runbook step 4). An earlier
- * revision of V20 ran {@code REASSIGN OWNED BY ats_app TO ats_migrator}, which is a
- * near-no-op against that role and — worse — fails outright under a least-privilege
- * runner that is not itself a member of {@code ats_app}
- * ({@code MigrationRoleProvisioningPrerequisiteTest} caught this in CI: "permission denied
- * to reassign objects — Only roles with privileges of role \"ats_app\" may reassign
- * objects owned by it"). V20 now runs {@code REASSIGN OWNED BY CURRENT_USER TO
- * ats_migrator} instead, which only requires membership in the target role — the same
- * membership V16's own {@code ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator} line already
- * required to succeed.
+ * <p><b>Corrected premise (CI-caught).</b> {@code ats_app} has been NOLOGIN since V1 — a
+ * pure grant-collecting group role. No connection is ever literally "{@code ats_app}", so
+ * no object is ever owned by it; the true owner of anything created during migration is
+ * always the CONNECTING LOGIN IDENTITY (in production: whatever runs Flyway today, before
+ * the ats_migrator_login split ships — runbook step 4).
  *
- * <p>This test therefore asserts ownership against the actual connecting principal (the
- * Testcontainers default user), not a hardcoded "ats_app" literal — asserting the latter
- * would silently pass for the wrong reason (the role never owned anything to begin with).
+ * <p><b>Review correction (Halil, PR#246).</b> An earlier revision ran
+ * {@code REASSIGN OWNED BY CURRENT_USER TO ats_migrator}, which is not scoped to public ATS
+ * relations — it reassigns everything the connecting principal owns in the database,
+ * including schema/database-level ownership outside #230's acceptance. V20 now enumerates
+ * and reassigns only {@code public} schema tables and sequences individually
+ * ({@code ALTER TABLE}/{@code ALTER SEQUENCE ... OWNER TO}), leaving anything outside that
+ * scope untouched. This test therefore asserts BOTH table and sequence ownership (the
+ * original revision only checked {@code pg_tables}), against the actual connecting
+ * principal rather than a hardcoded "ats_app" literal — asserting the latter would
+ * silently pass for the wrong reason (the role never owned anything to begin with).
  *
  * <p>Two-stage harness proves both #230 acceptance paths on the same virgin container:
  * stage 1 migrates only to V19 (mirrors a database that has been running since before V20
@@ -54,9 +52,9 @@ class MigratorOwnershipTransferTest {
     void upgradePath_ownershipTransfersOnV20WithoutBreakingExistingGrants() throws Exception {
         PGSimpleDataSource ds = new PGSimpleDataSource();
         // 30s statement_timeout: an earlier revision of this test hung in CI for hours
-        // instead of failing fast (root cause not fully isolated — this bounds any
-        // recurrence to a clear, fast failure instead of a silent multi-hour stall).
-        // getJdbcUrl() has no query string today, but appending defensively either way.
+        // instead of failing fast (root cause: unscoped REASSIGN OWNED, fixed above per
+        // review). Kept as a defensive bound so any future recurrence fails fast instead
+        // of stalling silently for hours.
         String baseUrl = PG.getJdbcUrl();
         String separator = baseUrl.contains("?") ? "&" : "?";
         ds.setUrl(baseUrl + separator + "options=-c%20statement_timeout%3D30000");
@@ -65,16 +63,21 @@ class MigratorOwnershipTransferTest {
         String runner = PG.getUsername();
 
         // Stage 1: simulate a pre-V20 database. At V19, the migration-running principal
-        // must still own its own tables (this is the documented baseline #230/#176 set out
-        // to fix) — that principal is the actual connecting user, not the NOLOGIN
-        // "ats_app" group role, which has never literally owned anything.
+        // must still own its own tables AND sequences (this is the documented baseline
+        // #230/#176 set out to fix) — that principal is the actual connecting user, not
+        // the NOLOGIN "ats_app" group role, which has never literally owned anything.
         Flyway.configure().dataSource(ds).target("19").load().migrate();
         try (Connection c = ds.getConnection()) {
-            assertTrue(countOwnedBy(c, runner) > 0,
+            assertTrue(countTablesOwnedBy(c, runner) > 0,
                     "precondition: at V19, the migration runner must still own tables"
                             + " (pre-#230 baseline)");
-            assertEquals(0, countOwnedBy(c, "ats_migrator"),
-                    "precondition: ats_migrator owns nothing before V20 runs");
+            assertTrue(countSequencesOwnedBy(c, runner) > 0,
+                    "precondition: at V19, the migration runner must still own sequences"
+                            + " (identity columns behind V1..V19 tables)");
+            assertEquals(0, countTablesOwnedBy(c, "ats_migrator"),
+                    "precondition: ats_migrator owns no tables before V20 runs");
+            assertEquals(0, countSequencesOwnedBy(c, "ats_migrator"),
+                    "precondition: ats_migrator owns no sequences before V20 runs");
         }
 
         // Stage 2: apply V20 on top of the already-populated V19 state (the real upgrade
@@ -82,11 +85,16 @@ class MigratorOwnershipTransferTest {
         Flyway.configure().dataSource(ds).load().migrate();
 
         try (Connection c = ds.getConnection()) {
-            assertEquals(0, countOwnedBy(c, runner),
-                    "post-V20: the migration runner must own NOTHING in schema public"
+            assertEquals(0, countTablesOwnedBy(c, runner),
+                    "post-V20: the migration runner must own NO tables in schema public"
                             + " (upgrade path)");
-            assertTrue(countOwnedBy(c, "ats_migrator") > 0,
+            assertEquals(0, countSequencesOwnedBy(c, runner),
+                    "post-V20: the migration runner must own NO sequences in schema public"
+                            + " (upgrade path)");
+            assertTrue(countTablesOwnedBy(c, "ats_migrator") > 0,
                     "post-V20: ats_migrator must own the transferred tables");
+            assertTrue(countSequencesOwnedBy(c, "ats_migrator") > 0,
+                    "post-V20: ats_migrator must own the transferred sequences");
 
             // flyway_schema_history: ownership moved to ats_migrator, but ats_app (the
             // group role the real runtime/Flyway login inherits from) must still be able
@@ -106,8 +114,8 @@ class MigratorOwnershipTransferTest {
                 assertTrue(rs.getBoolean(4), "ats_app must retain DELETE on flyway_schema_history");
             }
 
-            // Regression sanity (same tables the V16 test already exercises): REASSIGN
-            // OWNED must transfer ownership WITHOUT touching pre-existing per-table ACLs.
+            // Regression sanity (same tables the V16 test already exercises): the ownership
+            // transfer must happen WITHOUT touching pre-existing per-table ACLs.
             try (PreparedStatement ps = c.prepareStatement(
                     "SELECT has_table_privilege('ats_app', 'transcript', 'DELETE'),"
                             + " has_table_privilege('ats_app', 'transcript', 'INSERT'),"
@@ -122,19 +130,41 @@ class MigratorOwnershipTransferTest {
             }
 
             // Idempotency (#230 acceptance implies safety on re-run, matches V16's own
-            // "idempotent" claim): reuses the SAME already-migrated container instead of
-            // spinning up a second one — a prior revision of this test started a second
-            // PostgreSQLContainer here purely for this check, which is unnecessary
-            // container/resource overhead this test doesn't need.
+            // "idempotent" claim): re-executes V20's exact DO block. Both loops iterate
+            // zero times post-transfer (nothing left owned by the runner in schema
+            // public) — a safe no-op, not an error. Reuses the same already-migrated
+            // container instead of spinning up a second one.
             try (Statement st = c.createStatement()) {
-                st.execute("REASSIGN OWNED BY CURRENT_USER TO ats_migrator");
+                st.execute(
+                        "DO $reapply$\n"
+                        + "DECLARE r RECORD;\n"
+                        + "BEGIN\n"
+                        + "  FOR r IN SELECT tablename FROM pg_catalog.pg_tables\n"
+                        + "            WHERE schemaname = 'public' AND tableowner = CURRENT_USER\n"
+                        + "  LOOP EXECUTE format('ALTER TABLE public.%I OWNER TO ats_migrator', r.tablename); END LOOP;\n"
+                        + "  FOR r IN SELECT sequencename FROM pg_catalog.pg_sequences\n"
+                        + "            WHERE schemaname = 'public' AND sequenceowner = CURRENT_USER\n"
+                        + "  LOOP EXECUTE format('ALTER SEQUENCE public.%I OWNER TO ats_migrator', r.sequencename); END LOOP;\n"
+                        + "END\n"
+                        + "$reapply$;");
             }
         }
     }
 
-    private static int countOwnedBy(Connection c, String role) throws Exception {
+    private static int countTablesOwnedBy(Connection c, String role) throws Exception {
         try (PreparedStatement ps = c.prepareStatement(
-                "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = ?")) {
+                "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public' AND tableowner = ?")) {
+            ps.setString(1, role);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getInt(1);
+            }
+        }
+    }
+
+    private static int countSequencesOwnedBy(Connection c, String role) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT count(*) FROM pg_catalog.pg_sequences WHERE schemaname = 'public' AND sequenceowner = ?")) {
             ps.setString(1, role);
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
