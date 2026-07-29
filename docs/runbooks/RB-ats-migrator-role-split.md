@@ -2,9 +2,9 @@
 
 ## Scope
 
-One-time pre-production DBA action that transfers ownership of every schema-public object from `ats_app` to `ats_migrator` and issues the operational credentials that Flyway (init container) and the runtime pod use. **Migration `V16__migrator_role_least_privilege.sql` must already be applied** before this runbook is executed — V16 pre-provisions `ats_migrator` (NOLOGIN) and revokes `CREATE` on schema public from `ats_app`.
+One-time pre-production DBA action that issues the operational credentials that Flyway (init container) and the runtime pod use, after ownership of every schema-public object has moved from `ats_app` to `ats_migrator`. **Migrations `V16__migrator_role_least_privilege.sql` and `V20__migrator_owns_existing_objects.sql` must already be applied** before this runbook is executed — V16 pre-provisions `ats_migrator` (NOLOGIN) and revokes `CREATE` on schema public from `ats_app`; V20 performs the ownership transfer itself (automated, see below — this used to be a manual Step 1 here).
 
-Fixes #176 (P0-FULLATS-DB-01).
+Fixes #176 (P0-FULLATS-DB-01); ownership-transfer automation completed by #230 (P0-FULLATS-DB-02).
 
 ## Before any of this: roles must exist first (#202)
 
@@ -60,34 +60,40 @@ Flyway validates checksums on start, so editing an applied file breaks existing 
 
 Before the first production activation (real candidate PII, GA cutover) — never on a live customer database. Idempotent on drilled non-prod databases; safe to re-run.
 
+## Step 1 is now automatic (#230)
+
+`V20__migrator_owns_existing_objects.sql` reassigns every managed `public`-schema table
+(except `flyway_schema_history`) and sequence currently owned by the connecting migration
+principal to `ats_migrator` — one
+`ALTER TABLE`/`ALTER SEQUENCE ... OWNER TO` per object (not a blanket
+`REASSIGN OWNED BY ... TO ...`, which would also reassign anything the principal owns
+*outside* the managed ATS relations, e.g. schema/database-level ownership — out of #230's
+scope). `flyway_schema_history` is deliberately excluded because Flyway holds its lock
+while V20 runs; changing that table's owner inside the active migration self-blocks.
+The table remains owned by the active Flyway runner and receives the explicit `ats_app`
+grant needed during the transition. Its ownership moves only after Flyway releases the
+lock, as part of the two-datasource operation in Step 4. V20 requires no new operational
+precondition: the `ats_migrator` membership it
+relies on is the same one V16's own `ALTER DEFAULT PRIVILEGES FOR ROLE ats_migrator` line
+already required to succeed (see "Before any of this" above). The upgrade path is proven
+by `MigratorOwnershipTransferTest`; the least-privilege fresh-install path and the same
+ownership invariants are proven by `MigrationRoleProvisioningPrerequisiteTest`
+(`persistence-postgres`). The transfer is idempotent and safe to re-apply without touching
+the locked history table.
+
+Once V20 has run (`SELECT * FROM flyway_schema_history WHERE version = '20';`), skip
+straight to **Step 1** below. The manual superuser ownership-transfer step that used to be
+here is gone; this runbook now starts at issuing the `ats_migrator_login` credential.
+
 ## Preconditions
 
-- Superuser DB login available (Postgres bootstrap credential).
 - Vault path `secret/ats/db/` writable by operator.
-- ATS backend pods scaled to 0 or in maintenance mode (no writes during ownership transfer).
-- V16 present in `flyway_schema_history` (`SELECT * FROM flyway_schema_history WHERE version = '16';`).
+- ATS backend pods scaled to 0 or in maintenance mode.
+- V20 present in `flyway_schema_history` (`SELECT * FROM flyway_schema_history WHERE version = '20';`).
 
 ## Steps
 
-### 1. Transfer object ownership (`postgres` superuser)
-
-```sql
--- Connect as superuser
-psql -h <host> -U postgres -d ats
-
--- Verify V16 is applied
-SELECT version, description, success FROM flyway_schema_history WHERE version = '16';
--- expect: 16 | migrator_role_least_privilege | t
-
--- Reassign every ats_app-owned object in the current database to ats_migrator
-REASSIGN OWNED BY ats_app TO ats_migrator;
-
--- Sanity: ats_app now owns nothing in schema public
-SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = 'ats_app';
--- expect: 0
-```
-
-### 2. Issue the migrator login (`postgres` superuser)
+### 1. Issue the migrator login (`postgres` superuser)
 
 ```sql
 -- Rotate every 90 days per credential lifecycle policy
@@ -100,7 +106,7 @@ vault kv put secret/ats/db/migrator \
     valid_until=2026-10-19
 ```
 
-### 3. Reduce the runtime login to app-role membership only
+### 2. Reduce the runtime login to app-role membership only
 
 ```sql
 -- ats_app_login is the existing runtime pod credential
@@ -108,7 +114,7 @@ ALTER ROLE ats_app_login NOINHERIT;
 GRANT ats_app TO ats_app_login;
 ```
 
-### 4. Verify least-privilege invariants (live)
+### 3. Verify least-privilege invariants (live)
 
 ```sql
 -- ats_app cannot CREATE (already true post-V16, re-check)
@@ -124,13 +130,31 @@ CREATE TABLE runbook_boundary_probe (id int);
 RESET ROLE;
 ```
 
-### 5. Reconfigure Flyway to use the migrator login
+### 4. Reconfigure Flyway to use the migrator login
 
 Split the ATS backend Spring config so Flyway migrations run under `ats_migrator_login` while the runtime `DataSource` (Hikari) keeps using `ats_app_login`. Follow-up PR wires the two-datasource pattern; until then Flyway must not auto-run on pod boot (`spring.flyway.enabled=false` + explicit CI/init step).
 
+After the last migration process has exited and no Flyway advisory/history lock remains,
+transfer only the history table to the migrator role:
+
+```sql
+ALTER TABLE public.flyway_schema_history OWNER TO ats_migrator;
+```
+
+Read back the owner before enabling the split configuration:
+
+```sql
+SELECT tableowner
+  FROM pg_catalog.pg_tables
+ WHERE schemaname = 'public'
+   AND tablename = 'flyway_schema_history';
+-- expect: ats_migrator
+```
+
 ## Rollback
 
-If ownership transfer breaks something unexpectedly:
+If the V20 ownership transfer breaks something unexpectedly (emergency manual reversal —
+this does not retract the Flyway migration record itself):
 
 ```sql
 -- Grant back ownership to ats_app
@@ -140,15 +164,17 @@ REASSIGN OWNED BY ats_migrator TO ats_app;
 GRANT CREATE ON SCHEMA public TO ats_app;
 ```
 
-Rollback restores the previous baseline but leaves `ats_migrator` provisioned (harmless idle role). The V16 migration is not retracted; only the operational role split is undone.
+Rollback restores the previous baseline but leaves `ats_migrator` provisioned (harmless idle role). V16/V20 are not retracted; only the ownership/grant state is manually reverted.
 
 ## Evidence
 
 Store the following in the operator packet for audit:
 
-- `flyway_schema_history` row for V16 (timestamp, success)
-- `pg_tables WHERE tableowner = 'ats_app'` count = 0 after step 1
-- `has_schema_privilege('ats_app', 'public', 'CREATE')` = `f` post-step 4
+- `flyway_schema_history` row for V20 (timestamp, success)
+- `flyway_schema_history` owner = active runner immediately after V20, then
+  `ats_migrator` after the Step 4 post-migration transfer
+- `pg_tables WHERE tableowner = 'ats_app'` count = 0 post-V20
+- `has_schema_privilege('ats_app', 'public', 'CREATE')` = `f` post-step 3
 - Vault path `secret/ats/db/migrator` last-updated timestamp
 
 ## Not covered by this runbook
