@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,17 +43,17 @@ class InterviewApiController {
     private final ConsentService consentService;
     private final IngestService ingestService;
     private final TranscriptStore transcriptStore;
-    private final TranscriptionService transcriptionService;
+    private final ObjectProvider<TranscriptionService> transcriptionServices;
     private final long maxUploadBytes;
     private final TenantAccess tenantAccess;
 
     InterviewApiController(ConsentService consentService, IngestService ingestService,
-            TranscriptStore transcriptStore, TranscriptionService transcriptionService,
+            TranscriptStore transcriptStore, ObjectProvider<TranscriptionService> transcriptionServices,
             AppProperties props, TenantAccess tenantAccess) {
         this.consentService = consentService;
         this.ingestService = ingestService;
         this.transcriptStore = transcriptStore;
-        this.transcriptionService = transcriptionService;
+        this.transcriptionServices = transcriptionServices;
         this.maxUploadBytes = props.ingest().maxUploadBytes();
         this.tenantAccess = tenantAccess;
     }
@@ -150,6 +151,10 @@ class InterviewApiController {
     @PostMapping("/api/v1/interviews/{interviewId}/transcribe")
     ResponseEntity<?> transcribe(Authentication auth,
             @PathVariable("interviewId") String interviewId, @RequestBody TranscribeBody body) {
+        TranscriptionService transcriptionService = transcriptionServices.getIfAvailable();
+        if (transcriptionService == null) {
+            return aiUnavailable();
+        }
         if (body == null || body.sourceObjectKey() == null || body.sourceObjectKey().isBlank()) {
             return badRequest("sourceObjectKey zorunlu (upload makbuzundaki objectKey)");
         }
@@ -209,5 +214,13 @@ class InterviewApiController {
 
     private static ResponseEntity<Map<String, String>> badRequest(String reason) {
         return ResponseEntity.badRequest().body(Map.of("error", "INVALID", "reason", reason));
+    }
+
+    private static ResponseEntity<Map<String, String>> aiUnavailable() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(Map.of(
+                        "error", "AI_NOT_APPROVED",
+                        "reason", "AI capability owner-approved governance activation bekliyor"));
     }
 }

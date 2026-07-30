@@ -25,7 +25,16 @@ class AppPropertiesTest {
     @Test
     void missing_ai_base_url_fails_closed() {
         assertThrows(IllegalStateException.class,
-                () -> new AppProperties.Ai(null, "", null, null, null, null, null, null, null));
+                () -> new AppProperties.Ai(true, null, "", null, null, null, null, null, null, null));
+    }
+
+    @Test
+    void disabled_ai_does_not_block_core_product_on_missing_ai_configuration() {
+        AppProperties.Ai ai = new AppProperties.Ai(
+                false, "not-a-provider", null, null, null, null, null, null, null, null);
+        assertEquals(false, ai.enabled());
+        assertNull(ai.baseUrl());
+        assertEquals("not-a-provider", ai.provider(), "disabled config is inert until explicit enable");
     }
 
     @Test
@@ -49,7 +58,7 @@ class AppPropertiesTest {
 
     @Test
     void blank_bearer_normalizes_to_null_and_timeout_defaults() {
-        AppProperties.Ai ai = new AppProperties.Ai(null, "http://ai.local", "  ", null, null, null, null, "  ", null);
+        AppProperties.Ai ai = new AppProperties.Ai(true, null, "http://ai.local", "  ", null, null, null, null, "  ", null);
         assertNull(ai.bearer());
         assertEquals(Duration.ofSeconds(30), ai.timeout());
         // slice-36 default'ları: provider kapalı-küme default'u + dil + grant TTL

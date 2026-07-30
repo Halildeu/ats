@@ -50,7 +50,7 @@ class GovernanceDefaultsFailClosedTest {
      * durumunu SADIK kurar (agent'ın elle null geçmesi değil, gerçek normalizasyon yolu).
      */
     private static AppProperties.Ai ai(String endpointRef, String transcribeRef, String citeRef) {
-        return new AppProperties.Ai("http-json", BASE_URL, null, null, null, null, null,
+        return new AppProperties.Ai(true, "http-json", BASE_URL, null, null, null, null, null,
                 endpointRef, new AppProperties.Approvals(transcribeRef, citeRef));
     }
 

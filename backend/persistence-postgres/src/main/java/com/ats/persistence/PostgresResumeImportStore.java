@@ -1,5 +1,6 @@
 package com.ats.persistence;
 
+import com.ats.application.ResumeImportService;
 import com.ats.application.ResumeImportService.ImportState;
 import com.ats.application.ResumeImportService.ProposalDraft;
 import com.ats.application.ResumeImportService.ProposalState;
@@ -380,7 +381,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                     c.rollback();
                     return Outcome.ok(new ConfirmResult(ConfirmState.VERSION_CONFLICT, current, null));
                 }
-                Map<ResumeField, String> selected = selectedFields(c, current);
+                Map<ResumeField, SelectedField> selected = selectedFields(c, current);
                 if (selected.isEmpty()) {
                     c.rollback();
                     return Outcome.ok(new ConfirmResult(ConfirmState.NO_SELECTED_FIELDS, current, null));
@@ -390,8 +391,8 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 terminalUpdate(c, current, ImportState.CONFIRMED, command.occurredAt());
                 purgeProposals(c, current.tenantId(), current.importId());
                 ResumeImport confirmed = readImport(c, current.tenantId(), current.importId(), false);
-                ResumeDraft draft = new ResumeDraft(
-                        draftId.toString(), current.importId(), 0, selected, command.occurredAt());
+                ResumeDraft draft = draftFrom(draftId, current.importId(), selected,
+                        command.occurredAt());
                 c.commit();
                 return Outcome.ok(new ConfirmResult(ConfirmState.CONFIRMED, confirmed, draft));
             } catch (SQLException ex) {
@@ -596,7 +597,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
         }
         String sql = """
                 SELECT d.draft_id, d.import_id, d.version, d.created_at,
-                       f.field_key, f.field_value
+                       f.field_key, f.field_value, f.field_entries::text AS field_entries
                   FROM ats_candidate_draft d
                   JOIN ats_resume_import i
                     ON i.tenant_id=d.tenant_id AND i.import_id=d.import_id
@@ -615,6 +616,8 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
             ps.setInt(5, expectedDraftVersion);
             ps.setTimestamp(6, now);
             Map<ResumeField, String> fields = new LinkedHashMap<>();
+            Map<ResumeField, List<ResumeImportService.ProposedEntry>> entries =
+                    new LinkedHashMap<>();
             String draftId = null;
             String createdAt = null;
             try (ResultSet rs = ps.executeQuery()) {
@@ -624,12 +627,20 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                         createdAt = iso(rs, "created_at");
                     }
                     String field = rs.getString("field_key");
-                    if (field != null) fields.put(ResumeField.valueOf(field), rs.getString("field_value"));
+                    if (field == null) continue;
+                    ResumeField key = ResumeField.valueOf(field);
+                    fields.put(key, rs.getString("field_value"));
+                    // #218: sütun NULL ise anahtar hiç konmaz. Boş liste koymak
+                    // "gruplandı, sonuç boş" derdi; anahtarın YOKLUĞU "gruplama
+                    // yok, blob'a düş" der. Tüketicinin ayrımı görmesi gerekiyor.
+                    String json = rs.getString("field_entries");
+                    if (json != null) entries.put(key, Pg.proposedEntriesFromJson(json));
                 }
             }
             return draftId == null
                     ? Outcome.fail(OutcomeCode.NOT_FOUND, "onaylı CV taslağı bulunamadı")
-                    : Outcome.ok(new ResumeDraft(draftId, importId, expectedDraftVersion, fields, createdAt));
+                    : Outcome.ok(new ResumeDraft(
+                            draftId, importId, expectedDraftVersion, fields, createdAt, entries));
         } catch (IllegalArgumentException ex) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "CV taslak alanı bozuk (fail-closed)");
         } catch (SQLException ex) {
@@ -750,8 +761,8 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 INSERT INTO ats_resume_proposal
                     (tenant_id, import_id, field_key, proposed_value, candidate_value,
                      state, version, source_page, bbox_x, bbox_y, bbox_width, bbox_height,
-                     confidence, parser_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     confidence, parser_version, created_at, updated_at, proposed_entries)
+                VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSONB))
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             for (ProposalDraft proposal : proposals) {
@@ -768,7 +779,12 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 ps.setDouble(i++, p.width()); ps.setDouble(i++, p.height());
                 ps.setDouble(i++, p.confidence()); ps.setString(i++, p.parserVersion());
                 ps.setTimestamp(i++, timestamp(command.occurredAt()));
-                ps.setTimestamp(i, timestamp(command.occurredAt()));
+                ps.setTimestamp(i++, timestamp(command.occurredAt()));
+                // #218: gruplama yoksa NULL yazılır, '[]' DEĞİL. '[]' "gruplandı,
+                // sonuç boş" derdi; NULL "gruplama yok" der ve okuyucu blob'a düşer.
+                // İki farklı gerçeği tek değere indirmek sessiz bozulma üretir.
+                ps.setString(i, proposal.entries().isEmpty()
+                        ? null : Pg.proposedEntriesToJson(proposal.entries()));
                 ps.addBatch();
             }
             int[] inserted = ps.executeBatch();
@@ -791,22 +807,36 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
         }
     }
 
-    private static Map<ResumeField, String> selectedFields(
+    /**
+     * #218: seçilen alan artık metin YANINDA yapısal kayıtları da taşır.
+     *
+     * @param entries aday öneriyi DÜZENLEMEDEN kabul ettiyse dolu; düzenlediyse boş
+     */
+    private record SelectedField(String value, List<ResumeImportService.ProposedEntry> entries) {}
+
+    private static Map<ResumeField, SelectedField> selectedFields(
             Connection c, ResumeImport current) throws SQLException {
+        // Girdiler YALNIZ 'ACCEPTED' durumunda taşınır. 'EDITED' ise adayın metni
+        // tek otoritedir: eski kayıtlar artık o metni tarif etmiyor ve onları
+        // forma kart olarak basmak adayın düzenlemesini sessizce ezerdi.
         String sql = """
                 SELECT field_key,
-                       CASE WHEN state='EDITED' THEN candidate_value ELSE proposed_value END AS value
+                       CASE WHEN state='EDITED' THEN candidate_value ELSE proposed_value END AS value,
+                       CASE WHEN state='EDITED' THEN NULL ELSE proposed_entries END::text AS entries
                   FROM ats_resume_proposal
                  WHERE tenant_id=? AND import_id=? AND state IN ('ACCEPTED','EDITED')
                  ORDER BY field_key
                 """;
-        Map<ResumeField, String> selected = new LinkedHashMap<>();
+        Map<ResumeField, SelectedField> selected = new LinkedHashMap<>();
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, current.tenantId().value());
             ps.setString(2, current.importId());
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) selected.put(
-                        ResumeField.valueOf(rs.getString("field_key")), rs.getString("value"));
+                while (rs.next()) {
+                    selected.put(ResumeField.valueOf(rs.getString("field_key")),
+                            new SelectedField(rs.getString("value"),
+                                    Pg.proposedEntriesFromJson(rs.getString("entries"))));
+                }
             }
         }
         return selected;
@@ -814,7 +844,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
 
     private static void insertDraft(
             Connection c, ResumeImport current, UUID draftId,
-            String occurredAt, Map<ResumeField, String> selected) throws SQLException {
+            String occurredAt, Map<ResumeField, SelectedField> selected) throws SQLException {
         String draftSql = """
                 INSERT INTO ats_candidate_draft
                     (tenant_id, draft_id, import_id, job_id, candidate_access_digest,
@@ -831,20 +861,40 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
         }
         String fieldSql = """
                 INSERT INTO ats_candidate_draft_field
-                    (tenant_id, draft_id, field_key, field_value, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                    (tenant_id, draft_id, field_key, field_value, created_at, field_entries)
+                VALUES (?, ?, ?, ?, ?, CAST(? AS JSONB))
                 """;
         try (PreparedStatement ps = c.prepareStatement(fieldSql)) {
-            for (Map.Entry<ResumeField, String> entry : selected.entrySet()) {
+            for (Map.Entry<ResumeField, SelectedField> entry : selected.entrySet()) {
                 ps.setString(1, current.tenantId().value());
                 ps.setObject(2, draftId);
                 ps.setString(3, entry.getKey().name());
-                ps.setString(4, entry.getValue());
+                ps.setString(4, entry.getValue().value());
                 ps.setTimestamp(5, timestamp(occurredAt));
+                List<ResumeImportService.ProposedEntry> entries = entry.getValue().entries();
+                ps.setString(6, entries.isEmpty() ? null : Pg.proposedEntriesToJson(entries));
                 ps.addBatch();
             }
             ps.executeBatch();
         }
+    }
+
+    /**
+     * #218: onaylanan taslak metin + yapısal kayıtları birlikte taşır. Kayıt listesi
+     * boş olan alan haritaya HİÇ konmaz — anahtarın yokluğu "gruplama yok, blob'a
+     * düş" demek; boş liste "gruplandı, sonuç boş" derdi ve tüketiciye yanlış
+     * sinyal verirdi.
+     */
+    private static ResumeDraft draftFrom(
+            UUID draftId, String importId,
+            Map<ResumeField, SelectedField> selected, String occurredAt) {
+        Map<ResumeField, String> fields = new LinkedHashMap<>();
+        Map<ResumeField, List<ResumeImportService.ProposedEntry>> entries = new LinkedHashMap<>();
+        for (Map.Entry<ResumeField, SelectedField> e : selected.entrySet()) {
+            fields.put(e.getKey(), e.getValue().value());
+            if (!e.getValue().entries().isEmpty()) entries.put(e.getKey(), e.getValue().entries());
+        }
+        return new ResumeDraft(draftId.toString(), importId, 0, fields, occurredAt, entries);
     }
 
     private static void terminalUpdate(
@@ -963,7 +1013,7 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
         String sql = """
                 SELECT field_key, proposed_value, candidate_value, state, version,
                        source_page, bbox_x, bbox_y, bbox_width, bbox_height,
-                       confidence, parser_version
+                       confidence, parser_version, proposed_entries::text AS proposed_entries
                   FROM ats_resume_proposal
                  WHERE tenant_id=? AND import_id=? ORDER BY field_key
                 """;
@@ -979,7 +1029,8 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                             new Provenance(rs.getInt("source_page"), rs.getDouble("bbox_x"),
                                     rs.getDouble("bbox_y"), rs.getDouble("bbox_width"),
                                     rs.getDouble("bbox_height"), rs.getDouble("confidence"),
-                                    rs.getString("parser_version"))));
+                                    rs.getString("parser_version")),
+                            Pg.proposedEntriesFromJson(rs.getString("proposed_entries"))));
                 }
             }
         }

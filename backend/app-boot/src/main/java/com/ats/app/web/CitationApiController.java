@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,11 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class CitationApiController {
 
-    private final CitationService citationService;
+    private final ObjectProvider<CitationService> citationServices;
     private final TenantAccess tenantAccess;
 
-    CitationApiController(CitationService citationService, TenantAccess tenantAccess) {
-        this.citationService = citationService;
+    CitationApiController(ObjectProvider<CitationService> citationServices, TenantAccess tenantAccess) {
+        this.citationServices = citationServices;
         this.tenantAccess = tenantAccess;
     }
 
@@ -37,6 +38,14 @@ class CitationApiController {
     @PostMapping("/api/v1/interviews/{interviewId}/citations")
     ResponseEntity<?> citeClaim(Authentication auth,
             @PathVariable("interviewId") String interviewId, @RequestBody CiteBody body) {
+        CitationService citationService = citationServices.getIfAvailable();
+        if (citationService == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .cacheControl(org.springframework.http.CacheControl.noStore())
+                    .body(Map.of(
+                            "error", "AI_NOT_APPROVED",
+                            "reason", "AI capability owner-approved governance activation bekliyor"));
+        }
         if (body == null || body.transcriptKey() == null || body.transcriptKey().isBlank()
                 || body.claim() == null || body.claim().isBlank()) {
             return ResponseEntity.badRequest()

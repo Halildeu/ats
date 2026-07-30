@@ -52,13 +52,44 @@ public interface ApplicationStore {
             String actorRef,
             String occurredAt) {}
 
+    /**
+     * #226: aynı adayın DİĞER başvuruları. Ölçüldü — aynı e-postayla aynı ilana
+     * sınırsız başvurulabiliyor ve hiçbir yerde görünmüyordu: İK iki özdeş kayıt
+     * görüyor, hangisinin güncel olduğunu bilmiyor.
+     *
+     * <p>Bu bir POLİTİKA değil, GÖRÜNÜRLÜK. Hiçbir gönderim engellenmez;
+     * engelleme/üzerine-yazma/gruplama kararı ölçüm birikmeden verilemez
+     * (aday CV'sini güncelleyip yeniden başvurabilir, bu meşru).
+     *
+     * <p>Aday-görünür alan değildir; yalnız İK detayında yayınlanır.
+     */
+    record CandidateOtherApplication(
+            String publicRef,
+            String jobSlug,
+            String jobTitle,
+            ApplicationStatus status,
+            String submittedAt,
+            /** Aynı ilana ikinci başvuru mu — İK'nın asıl sorduğu bu. */
+            boolean sameJob) {}
+
     record RecruiterApplicationDetail(
             CandidateApplication application,
             List<ApplicationHistoryEvent> history,
-            List<ApplicationEvaluation> evaluations) {
+            List<ApplicationEvaluation> evaluations,
+            List<CandidateOtherApplication> otherApplications) {
         public RecruiterApplicationDetail {
             history = List.copyOf(history);
             evaluations = List.copyOf(evaluations);
+            otherApplications =
+                    otherApplications == null ? List.of() : List.copyOf(otherApplications);
+        }
+
+        /** Girdi listesi eklenmeden yazılmış çağrı yerleri için geri uyum. */
+        public RecruiterApplicationDetail(
+                CandidateApplication application,
+                List<ApplicationHistoryEvent> history,
+                List<ApplicationEvaluation> evaluations) {
+            this(application, history, evaluations, List.of());
         }
     }
 
@@ -140,6 +171,20 @@ public interface ApplicationStore {
 
     /** Public ref + token digest birlikte zorunlu; uyuşmazlık her zaman NOT_FOUND. */
     Outcome<CandidateStatusView> findCandidateStatus(String publicRef, String candidateAccessDigest);
+
+    /**
+     * #242 D: toplu deneyim hesabı için YALNIZ deneyim girdileri. PII-minimize:
+     * ad, e-posta, telefon, şehir dönmez — toplu hesap kimliği bilmek zorunda
+     * değildir ve bilmemesi gerekir.
+     *
+     * <p>Fail-closed varsayılan: bu yeteneği uygulamayan bir store, sessizce
+     * BOŞ liste dönüp "hiç deneyim yok" gibi bir sonuç üretmez.
+     */
+    default Outcome<java.util.List<java.util.List<ApplicationIntakeService.ExperienceEntry>>>
+            experienceEntriesForCoverage(TenantId tenant) {
+        return Outcome.fail(com.ats.kernel.OutcomeCode.NOT_CONFIGURED,
+                "toplu deneyim hesabı bu store'da desteklenmiyor");
+    }
 
     Outcome<ApplicationPage> listRecruiterApplications(
             TenantId tenantId, String jobSlug, ApplicationStatus status, int page, int size);

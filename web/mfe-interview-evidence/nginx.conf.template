@@ -1,0 +1,105 @@
+# Full nginx config for the mfe-interview-evidence static image.
+#
+# Rendered by docker-entrypoint.sh to /tmp at container start and loaded with
+# "nginx -c". A complete config (not a conf.d snippet) is what lets the pod run
+# with a read-only root filesystem: the only writable paths it needs are the
+# emptyDir mounts the deployment already provides.
+#
+# The app calls /api/v1/interviews/... on its own origin (see reviewApi.ts),
+# while the shared cluster ingress publishes the ATS API under /api/ats/v1 - a
+# different prefix. Proxying here keeps the app's paths untouched and leaves
+# the shared /api namespace alone; the UI owns its own upstream.
+#
+# ${ATS_API_UPSTREAM} is substituted by envsubst; nginx cannot read env vars.
+
+worker_processes 1;
+pid /tmp/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    server_tokens off;
+
+    # Every writable path is an emptyDir in the deployment; nothing is written
+    # to the image layer, so readOnlyRootFilesystem holds.
+    client_body_temp_path /tmp/client_body;
+    proxy_temp_path       /tmp/proxy;
+    fastcgi_temp_path     /tmp/fastcgi;
+    uwsgi_temp_path       /tmp/uwsgi;
+    scgi_temp_path        /tmp/scgi;
+
+    access_log /dev/stdout;
+    error_log  /dev/stderr warn;
+
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+
+        # nginx REPLACES inherited add_header sets rather than merging them: any
+        # location that declares even one add_header loses every server-level
+        # header. Measured - the security trio was silently absent on the asset,
+        # index and healthz responses until they were repeated below. So these
+        # three lines are duplicated into each such location on purpose; do not
+        # "deduplicate" them.
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy no-referrer always;
+
+        # Probes only, never proxied: the UI stays Ready while the API upstream
+        # is down. A screen that renders its own error state is more useful
+        # than a pod that CrashLoops because a dependency was late.
+        location = /healthz {
+            access_log off;
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-Frame-Options DENY always;
+            add_header Referrer-Policy no-referrer always;
+            add_header Content-Type text/plain;
+            return 200 'ok';
+        }
+
+        location /api/v1/ {
+            proxy_pass ${ATS_API_UPSTREAM};
+            proxy_http_version 1.1;
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            # Evidence export walks citations and can outlast the 60s default.
+            proxy_read_timeout 120s;
+        }
+
+        # Hashed asset names are immutable. index.html must never be cached, or
+        # a browser keeps loading the previous bundle after a digest bump.
+        location ~* ^/ats/interview-evidence/assets/.*\.(js|css|woff2?|png|svg|jpg|jpeg|gif|ico)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-Frame-Options DENY always;
+            add_header Referrer-Policy no-referrer always;
+            try_files $uri =404;
+        }
+
+        location = /ats/interview-evidence/index.html {
+            add_header Cache-Control "no-store";
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-Frame-Options DENY always;
+            add_header Referrer-Policy no-referrer always;
+        }
+
+        # SPA history fallback: deep links land on index.html and the app
+        # resolves the route client-side.
+        location /ats/interview-evidence/ {
+            try_files $uri $uri/ /ats/interview-evidence/index.html;
+        }
+
+        location = / {
+            return 302 /ats/interview-evidence/;
+        }
+    }
+}

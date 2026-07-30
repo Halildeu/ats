@@ -247,6 +247,33 @@ public final class PostgresApplicationStore implements ApplicationStore {
         }
     }
 
+    /**
+     * #242 D: toplu deneyim hesabı için YALNIZ girdi dizisi okunur — ad, e-posta,
+     * telefon, şehir sorguya hiç girmez (PII-minimize). Silinmiş kişisel veri
+     * (KVKK) kapsam dışıdır; boş girdi dizisi olan satırlar da sorguya girmez,
+     * ama "başvuru sayısı" onları saymaz — bu ayrım kapsam raporunda görünür.
+     */
+    @Override
+    public Outcome<List<List<ApplicationIntakeService.ExperienceEntry>>>
+            experienceEntriesForCoverage(TenantId tenantId) {
+        String sql = "SELECT a.experience_entries::text FROM ats_application a"
+                + " WHERE a.tenant_id = ? AND a.personal_data_erased_at IS NULL"
+                + " AND a.experience_entries <> '[]'::jsonb"
+                + " ORDER BY a.created_at, a.application_id";
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, tenantId.value());
+            List<List<ApplicationIntakeService.ExperienceEntry>> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(Pg.experienceEntriesFromJson(rs.getString(1)));
+                }
+            }
+            return Outcome.ok(List.copyOf(out));
+        } catch (SQLException ex) {
+            return Pg.sqlFail(ex);
+        }
+    }
+
     @Override
     public Outcome<RecruiterApplicationDetail> findRecruiterApplication(
             TenantId tenantId, String publicRef) {
@@ -263,7 +290,8 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 return Outcome.ok(new RecruiterApplicationDetail(
                         application,
                         readHistory(c, tenantId, applicationId),
-                        readEvaluations(c, tenantId, applicationId)));
+                        readEvaluations(c, tenantId, applicationId),
+                        readOtherApplications(c, tenantId, application)));
             }
         } catch (IllegalArgumentException | JsonCodec.JsonCodecException ex) {
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
@@ -542,6 +570,58 @@ public final class PostgresApplicationStore implements ApplicationStore {
             }
             return List.copyOf(events);
         }
+    }
+
+    /**
+     * #226: aynı adayın DİĞER başvuruları. Ölçüldü — aynı e-postayla aynı ilana
+     * sınırsız başvurulabiliyor (canlı: iki 201, iki publicRef) ve İK bunu
+     * hiçbir yerde göremiyordu.
+     *
+     * <p>Eşleştirme e-posta üzerinden ve NORMALİZE: gerçek adaylar aynı adresi
+     * farklı büyük/küçük harfle ve baştaki/sondaki boşlukla yazar; ham eşitlik
+     * mükerreri kaçırır ve özellik sessizce işe yaramaz görünür.
+     *
+     * <p>E-postası olmayan kayıt eşleştirmeye HİÇ girmez: {@code NULL = NULL}
+     * SQL'de zaten yanlıştır, ama boş dize normalize edilince eşleşir ve
+     * e-postasız iki farklı adayı aynı kişi gösterirdi.
+     *
+     * <p>Silinmiş kişisel veri (KVKK) kapsam dışı: {@code personal_data_erased_at}
+     * dolu kayıt eşleştirilmez.
+     */
+    private List<ApplicationStore.CandidateOtherApplication> readOtherApplications(
+            Connection c, TenantId tenantId, CandidateApplication application)
+            throws SQLException {
+        String email = application.email();
+        if (email == null || email.isBlank()) return List.of();
+        String sql = """
+                SELECT a.public_ref, j.slug, j.title, a.status, a.created_at, a.job_id
+                  FROM ats_application a
+                  JOIN ats_job_posting j
+                    ON j.tenant_id = a.tenant_id AND j.job_id = a.job_id
+                 WHERE a.tenant_id = ?
+                   AND a.public_ref <> ?
+                   AND a.personal_data_erased_at IS NULL
+                   AND lower(btrim(a.email)) = lower(btrim(?))
+                 ORDER BY a.created_at DESC, a.public_ref
+                """;
+        List<ApplicationStore.CandidateOtherApplication> out = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, tenantId.value());
+            ps.setString(2, application.publicRef());
+            ps.setString(3, email);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new ApplicationStore.CandidateOtherApplication(
+                            rs.getString("public_ref"),
+                            rs.getString("slug"),
+                            rs.getString("title"),
+                            ApplicationStatus.valueOf(rs.getString("status")),
+                            iso(rs, "created_at"),
+                            application.jobId().equals(rs.getString("job_id"))));
+                }
+            }
+        }
+        return List.copyOf(out);
     }
 
     private List<ApplicationEvaluation> readEvaluations(
@@ -844,9 +924,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
                      linkedin_url, portfolio_url, professional_summary, experience, education,
                      skills, note, status, version, candidate_access_digest, notice_version,
                      notice_accepted_at, accuracy_confirmed_at, application_source,
-                     resume_import_id, created_at, updated_at)
+                     resume_import_id, created_at, updated_at,
+                     experience_entries, education_entries, languages, certifications)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'SUBMITTED', 0,
-                        ?, ?, ?, ?, ?, ?, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
@@ -862,7 +943,14 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setString(i++, resumeBinding.source());
             ps.setString(i++, resumeBinding.importId());
             ps.setTimestamp(i++, timestamp(command.occurredAt()));
-            ps.setTimestamp(i, timestamp(command.occurredAt()));
+            ps.setTimestamp(i++, timestamp(command.occurredAt()));
+            // #215 genişletme: yapısal girdiler eski TEXT kolonlarının YANINA yazılır.
+            // Eski kolonlar Submission.effectiveExperience()/-Education() ile türetilmiş
+            // metni taşır, yani İK görünümü ve export'lar bu turda hiç değişmez.
+            ps.setString(i++, Pg.experienceEntriesToJson(s.experienceEntries()));
+            ps.setString(i++, Pg.educationEntriesToJson(s.educationEntries()));
+            ps.setString(i++, s.languages());
+            ps.setString(i, s.certifications());
             ps.executeUpdate();
         }
     }
@@ -1090,7 +1178,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 SELECT a.tenant_id, a.application_id::text, a.public_ref, a.job_id,
                        j.slug, j.title, a.full_name, a.email, a.phone, a.city,
                        a.linkedin_url, a.portfolio_url, a.professional_summary,
-                       a.experience, a.education, a.skills::text, a.note, a.status,
+                       a.experience, a.education,
+                       a.experience_entries::text, a.education_entries::text,
+                       a.languages, a.certifications,
+                       a.skills::text, a.note, a.status,
                        a.version, a.notice_version, a.notice_accepted_at,
                        a.accuracy_confirmed_at, a.created_at, a.updated_at
                   FROM ats_application a
@@ -1127,6 +1218,9 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 rs.getString("phone"), rs.getString("city"), rs.getString("linkedin_url"),
                 rs.getString("portfolio_url"), rs.getString("professional_summary"),
                 rs.getString("experience"), rs.getString("education"),
+                Pg.experienceEntriesFromJson(rs.getString("experience_entries")),
+                Pg.educationEntriesFromJson(rs.getString("education_entries")),
+                rs.getString("languages"), rs.getString("certifications"),
                 Pg.stringsFromJson(rs.getString("skills")), rs.getString("note"),
                 ApplicationStatus.valueOf(rs.getString("status")), rs.getInt("version"),
                 rs.getString("notice_version"), iso(rs, "notice_accepted_at"),

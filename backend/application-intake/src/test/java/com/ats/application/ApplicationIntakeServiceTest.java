@@ -226,9 +226,172 @@ class ApplicationIntakeServiceTest {
         assertEquals("acik", store.command.publicHandle());
     }
 
+    @Test
+    void non_production_policy_accepts_real_candidate_email() {
+        CapturingStore store = new CapturingStore();
+        var out = serviceAllowingRealData(store).submit(
+                "acik", "urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS,
+                new ApplicationIntakeService.Submission(
+                        " Deniz ", "Deniz@Sirket.COM", "+905550000000", "İstanbul", null, null,
+                        "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans",
+                        List.of("Ürün"), null, ApplicationIntakeService.NOTICE_VERSION,
+                        NOW.toString(), NOW.toString()));
+
+        assertTrue(out.isOk(),
+                "test/dev ortam politikasında gerçek e-posta ile başvuru kabul edilir");
+        assertEquals("deniz@sirket.com", store.command.submission().email(),
+                "gerçek e-posta da normalize edilir; yalnız sentetik kısıtı kalkar");
+    }
+
     private static ApplicationIntakeService service(ApplicationStore store) {
         return new ApplicationIntakeService(store, new TenantId("test-tenant"),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom());
+    }
+
+    /** Non-prod ortam politikası (prod'da bu bayrak makine tarafından kilitlidir). */
+    private static ApplicationIntakeService serviceAllowingRealData(ApplicationStore store) {
+        return new ApplicationIntakeService(store, new TenantId("test-tenant"),
+                Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(), true);
+    }
+
+    @Test
+    void structured_entries_derive_the_legacy_single_string_fields() {
+        // #215 genislet/daralt: yeni istemci yalniz yapisal girdi gonderir. Eski tek-string
+        // alanlar backend'de ondan turetilir; boylece IK gorunumu, export ve DSAR yuzeyleri
+        // ayni icerigi gormeye devam eder ve iki tarafi ayni anda deploy etmek gerekmez.
+        var submission = new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday",
+                null, null, List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry(
+                        "Ürün Yöneticisi", "Örnek Teknoloji", "2022", "Devam", "Keşif ve yol haritası")),
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "Endüstri Mühendisliği", "2016", "2020", "")),
+                "Türkçe - ana dil", "ISO 45001");
+
+        String experience = submission.effectiveExperience();
+        assertTrue(experience.contains("Ürün Yöneticisi"), experience);
+        assertTrue(experience.contains("Örnek Teknoloji"), experience);
+        assertTrue(experience.contains("2022 - Devam"), experience);
+        assertTrue(experience.contains("Keşif ve yol haritası"), experience);
+        assertTrue(submission.effectiveEducation().contains("Örnek Üniversitesi"));
+        assertEquals("Türkçe - ana dil", submission.languages());
+    }
+
+    @Test
+    void a_legacy_string_submission_keeps_its_own_text() {
+        // Eski istemci yapisal girdi gondermez; yazdigi metin AYNEN kalmali.
+        var submission = submission();
+
+        assertTrue(submission.experienceEntries().isEmpty());
+        assertEquals("Beş yıl deneyim", submission.effectiveExperience());
+        assertEquals("Lisans", submission.effectiveEducation());
+    }
+
+    @Test
+    void blank_repeated_rows_are_dropped_before_validation() {
+        // Form "satir ekle" dugmesi doldurulmamis girdi birakabilir; bos satir kaydedilmez.
+        var submission = new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", null, "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry("Ürün Yöneticisi", "", "", "", ""),
+                        new ApplicationIntakeService.ExperienceEntry("", "", "", "", ""),
+                        new ApplicationIntakeService.ExperienceEntry(null, null, null, null, null)),
+                List.of(), null, null);
+
+        assertEquals(1, submission.experienceEntries().size(),
+                "yalniz dolu satir kalmali: " + submission.experienceEntries());
+        assertEquals("Ürün Yöneticisi", submission.effectiveExperience());
+    }
+
+    // ---- #239 dilim 2: sunucu tarafı biçim pinlemesi -------------------------
+
+    private static ApplicationIntakeService.Submission withExperience(String start, String end) {
+        return new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry(
+                        "Ürün Uzmanı", "Örnek Teknoloji", start, end, "Sentetik")),
+                List.of(), null, null);
+    }
+
+    private static ApplicationIntakeService.Submission withEducation(String start, String end) {
+        return new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null, List.of(),
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "YBS", start, end, "Sentetik")),
+                null, null);
+    }
+
+    private static String submitReason(ApplicationIntakeService.Submission body) {
+        var out = service(new CapturingStore())
+                .submit("urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS, body);
+        return out instanceof Outcome.Fail<?> fail ? fail.reason() : "";
+    }
+
+    @Test
+    void server_accepts_year_only_experience_dates_because_the_parser_produces_them() {
+        // CANLI KUSUR (#241): yalnız YYYY-AA kabul ediliyordu. Ama ayrıştırıcı
+        // yıl-only bir CV satırından ("Ornek Sanayi AS 2019 - 2023") startDate
+        // olarak "2019" üretiyor. Aday, uydurmadığı bir ayı uydurmadan
+        // gönderemiyordu — tam olarak kaçınmaya çalıştığım arıza.
+        assertEquals("", submitReason(withExperience("2019", "2023")));
+        assertEquals("", submitReason(withExperience("2019", "")));
+        // Ay hassasiyeti de geçerli; ikisi bir arada yaşayabilir (#242 (a) kararı).
+        assertEquals("", submitReason(withExperience("2022-09", "2024-03")));
+        // Geçersiz olan hâlâ reddedilir.
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
+    }
+
+    @Test
+    void server_does_not_invent_an_order_between_two_different_precisions() {
+        // "Haziran 2019'da başladı, 2019 içinde bitti" MEŞRU bir beyandır.
+        // Sözlüksel kıyas bunu ters aralık sanıp reddederdi.
+        assertEquals("", submitReason(withExperience("2019-06", "2019")));
+        assertEquals("", submitReason(withExperience("2019", "2019-06")));
+        // Aynı hassasiyette kıyas yapılmaya devam eder.
+        assertTrue(submitReason(withExperience("2023-05", "2021-01")).contains("başlangıçtan önce"));
+        assertTrue(submitReason(withExperience("2023", "2021")).contains("başlangıçtan önce"));
+    }
+
+    @Test
+    void server_rejects_a_structured_looking_date_that_is_not_valid() {
+        // İstemci doğrulaması SÖZLEŞME DEĞİL: curl ya da eski bir sekme onu atlar.
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withEducation("201", "")).contains("YYYY"));
+    }
+
+    @Test
+    void server_keeps_accepting_legacy_free_text_the_parser_can_produce() {
+        // CV ayrıştırıcısı serbest metin üretebiliyor ("Eyl 2022"). Onu reddetmek
+        // adayı DÜZELTEMEYECEĞİ bir 400'e kilitler; kural "yapısal GÖRÜNEN değer
+        // geçerli olmalı", "her değer yapısal olmalı" değil.
+        assertEquals("", submitReason(withExperience("Eyl 2022", "Halen")));
+        assertEquals("", submitReason(withEducation("2016 güz", "")));
+        // Yapısal ve geçerli olan da geçer.
+        assertEquals("", submitReason(withExperience("2022-09", "2024-03")));
+        assertEquals("", submitReason(withEducation("2016", "2020")));
+    }
+
+    @Test
+    void server_rejects_a_backwards_range_and_an_implausible_year() {
+        assertTrue(submitReason(withExperience("2023-05", "2021-01")).contains("başlangıçtan önce"));
+        assertTrue(submitReason(withEducation("2020", "2016")).contains("başlangıçtan önce"));
+        // Dört hane olmak makul olmak değildir.
+        assertTrue(submitReason(withEducation("0001", "")).contains("arasında olmalı"));
+        // Üst sınır servisin SAATİNDEN gelir; sabit yazılsa yıl dönümünde eskirdi.
+        assertTrue(submitReason(withEducation("2999", "")).contains("arasında olmalı"));
     }
 
     private static ApplicationIntakeService.Submission submission() {
@@ -263,7 +426,15 @@ class ApplicationIntakeServiceTest {
                     value.publicRef(), "job", value.jobSlug(), "Ürün Yöneticisi",
                     value.submission().fullName(), value.submission().email(), value.submission().phone(),
                     value.submission().city(), null, null, value.submission().summary(),
-                    value.submission().experience(), value.submission().education(),
+                    // #215 C: sahte store, gerçek store gibi TÜRETİLMİŞ metni ve yapısal
+                    // girdileri birlikte yansıtır. `experience()` ham alanı okumak, aday
+                    // yalnız girdi gönderdiğinde boş dönerdi ve test gerçek davranışı
+                    // temsil etmezdi (gerçek store `effectiveExperience()` yazıyor).
+                    value.submission().effectiveExperience(),
+                    value.submission().effectiveEducation(),
+                    value.submission().experienceEntries(),
+                    value.submission().educationEntries(),
+                    value.submission().languages(), value.submission().certifications(),
                     value.submission().skills(), null, ApplicationStatus.SUBMITTED, 0,
                     value.submission().noticeVersion(), value.submission().noticeAcceptedAt(),
                     value.submission().accuracyConfirmedAt(),

@@ -123,6 +123,39 @@ class ApplicationApiController {
         return ResponseEntity.ok(jobDto(((Outcome.Ok<JobPosting>) out).value()));
     }
 
+    /** #215: tek bir iş deneyimi girdisi. Tarihler serbest metin — CV biçimleri çok çeşitli. */
+    @Schema(name = "ApplicationExperienceEntry",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ExperienceEntryBody(
+            @Schema(maxLength = 160) String title,
+            @Schema(maxLength = 160) String company,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                    description = "YYYY veya YYYY-AA (ör. 2019, 2022-09). Biçim hassasiyeti taşır; "
+                            + "yapısal GÖRÜNEN değer geçerli olmalıdır.") String startDate,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                    description = "Bitiş tarihi. Süregelen iş için BOŞ bırakılır ve "
+                            + "ongoing=true gönderilir.") String endDate,
+            @Schema(description = "#242 C: iş hâlâ sürüyor. Boş bitiş tarihi 'bilinmiyor' "
+                    + "demektir; süregelenlik ayrı bir beyandır ve toplu hesapta bitiş "
+                    + "BUGÜN kabul edilir. Sunucu 'Devam ediyor'/'Halen'/'Present' gibi "
+                    + "değerleri bitiş alanından buraya taşır.") Boolean ongoing,
+            @Schema(maxLength = 4000) String description) {}
+
+    /** #215: tek bir eğitim girdisi. */
+    @Schema(name = "ApplicationEducationEntry",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record EducationEntryBody(
+            @Schema(maxLength = 160) String school,
+            @Schema(maxLength = 160) String degree,
+            @Schema(maxLength = 160) String field,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "YYYY (ör. 2016).") String startYear,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "Bitiş yılı. Öğrenim sürüyorsa BOŞ + ongoing=true.")
+                    String endYear,
+            @Schema(description = "#242 C: öğrenim hâlâ sürüyor.") Boolean ongoing,
+            @Schema(maxLength = 4000) String description) {}
+
     @Schema(name = "ApplicationSubmitRequest",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record SubmitBody(
@@ -133,9 +166,17 @@ class ApplicationApiController {
             String linkedIn,
             String portfolio,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String summary,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String experience,
-            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String education,
+            // #215 genişlet/daralt: artık ZORUNLU DEĞİL. Yeni istemci yapısal
+            // experienceEntries/educationEntries gönderir ve backend eski tek-string
+            // alanı ondan türetir; eski istemci string göndermeye devam eder. İkisinden
+            // en az biri gerekli — doğrulama türetilmiş değer üzerinde koşar.
+            String experience,
+            String education,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<String> skills,
+            @Schema(maxLength = 30) List<ExperienceEntryBody> experienceEntries,
+            @Schema(maxLength = 30) List<EducationEntryBody> educationEntries,
+            @Schema(maxLength = 2000) String languages,
+            @Schema(maxLength = 4000) String certifications,
             String note,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
@@ -177,7 +218,9 @@ class ApplicationApiController {
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
-                body.resumeImportId(), body.resumeDraftVersion());
+                body.resumeImportId(), body.resumeDraftVersion(),
+                experienceEntries(body), educationEntries(body),
+                body.languages(), body.certifications());
         return submit(service.submit(
                 jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -206,7 +249,9 @@ class ApplicationApiController {
                 body.fullName(), body.email(), body.phone(), body.city(), body.linkedIn(),
                 body.portfolio(), body.summary(), body.experience(), body.education(), body.skills(),
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
-                body.resumeImportId(), body.resumeDraftVersion());
+                body.resumeImportId(), body.resumeDraftVersion(),
+                experienceEntries(body), educationEntries(body),
+                body.languages(), body.certifications());
         return submit(service.submit(
                 publicHandle, jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -311,7 +356,14 @@ class ApplicationApiController {
     record RecruiterApplicationDto(
             String publicRef, String jobSlug, String jobTitle, String fullName, String email,
             String phone, String city, String linkedIn, String portfolio, String summary,
-            String experience, String education, List<String> skills, String note,
+            String experience, String education,
+            // #215 C: yapısal girdiler İK'ya da açılır. Eski tek-string alanlar KALIR —
+            // girdisiz gönderilmiş eski başvurular ve türetilmiş metne bakan export/DSAR
+            // yüzeyleri bozulmasın. Girdi listesi BOŞ olabilir; o zaman metin tek otoritedir.
+            List<ExperienceEntryBody> experienceEntries,
+            List<EducationEntryBody> educationEntries,
+            String languages, String certifications,
+            List<String> skills, String note,
             @Schema(allowableValues = {
                     "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
                     "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
@@ -364,12 +416,35 @@ class ApplicationApiController {
             int revision,
             String createdAt) {}
 
+    /**
+     * #226: ayni adayin DIGER basvurulari. Politika degil GORUNURLUK — hicbir
+     * gonderim engellenmez; IK "bu adayin baska basvurusu var mi, ayni ilana mi"
+     * sorusunu detay ekraninda gorur.
+     *
+     * @param sameJob ayni ilana ikinci basvuru mu — IK'nin asil sordugu bu
+     */
+    @Schema(name = "RecruiterCandidateOtherApplication",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record OtherApplicationDto(
+            String publicRef, String jobSlug, String jobTitle,
+            @Schema(allowableValues = {
+                    "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
+                    "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
+                    "REJECTED", "WITHDRAWN"})
+            String status,
+            String submittedAt, boolean sameJob) {}
+
+    /**
+     * @param otherApplications #226 ayni adayin diger basvurulari; BOS ise tek
+     *     basvurusu var. Opsiyonel degil: bos liste "baktim, yok" der.
+     */
     @Schema(name = "RecruiterApplicationDetailResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record RecruiterDetailDto(
             RecruiterApplicationDto application,
             List<RecruiterHistoryDto> history,
-            List<EvaluationDto> evaluations) {}
+            List<EvaluationDto> evaluations,
+            List<OtherApplicationDto> otherApplications) {}
 
     @GetMapping("/api/v1/recruiter/applications")
     @ApiResponses({
@@ -394,6 +469,62 @@ class ApplicationApiController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(new RecruiterPageDto(
                 result.items().stream().map(ApplicationApiController::recruiterSummaryDto).toList(),
                 result.page(), result.size(), result.total()));
+    }
+
+    /**
+     * #242 D: toplu deneyim hesabı. KAPSAM alanları yanıtın zorunlu parçasıdır —
+     * kapsamsız bir ortalama, güven veren yanlış bir sayıdır.
+     */
+    @Schema(name = "ExperienceCoverageResponse",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ExperienceCoverageDto(
+            @Schema(description = "Deneyim girdisi olan başvuru sayısı") int applications,
+            @Schema(description = "Toplam deneyim girdisi") int entries,
+            @Schema(description = "Süresi hesaplanabilen girdi") int computable,
+            @Schema(description = "İki ucu da ay hassasiyetli girdi") int monthPrecision,
+            @Schema(description = "En az bir ucu yıl hassasiyetli girdi; süre yıl "
+                    + "sınırlarına yuvarlanır") int yearPrecision,
+            @Schema(description = "Bitişi asOf kabul edilen süregelen girdi") int ongoing,
+            @Schema(description = "Hesaba GİRMEYEN girdi (uç yok ya da çevrilemedi)")
+                    int uncomputable,
+            @Schema(description = "Hesaplanabilir girdilerin toplam süresi (ay)") long totalMonths,
+            @Schema(description = "Süregelen işlerin bitişi olarak kullanılan ay (YYYY-MM). "
+                    + "Süregelen süreler her ay artar; sonuç bu değer olmadan yorumlanamaz.")
+                    String asOf) {}
+
+    @GetMapping("/api/v1/recruiter/applications/experience-coverage")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Toplu deneyim hesabı + kapsam",
+                    content = @Content(schema = @Schema(implementation = ExperienceCoverageDto.class))),
+            @ApiResponse(responseCode = "400", description = "asOf biçimi YYYY-MM olmalı"),
+            @ApiResponse(responseCode = "401", description = "Kimlik doğrulanmadı"),
+            @ApiResponse(responseCode = "403", description = "ATS başvuru görüntüleme yetkisi yok"),
+            @ApiResponse(responseCode = "503", description = "Yetki doğrulama servisi kullanılamıyor")
+    })
+    ResponseEntity<?> experienceCoverage(Authentication auth,
+            @RequestParam(value = "asOf", required = false) String asOf) {
+        Outcome<Void> allowed = authorization.require(
+                auth, RecruiterAuthorization.Permission.APPLICATION_VIEW);
+        if (allowed instanceof Outcome.Fail<Void> fail) return OutcomeHttp.fail(fail);
+        java.time.YearMonth month;
+        try {
+            // null = "servisin saatini kullan"; servis kendi Clock'unu bilir.
+            month = asOf == null || asOf.isBlank() ? null : java.time.YearMonth.parse(asOf.trim());
+        } catch (java.time.format.DateTimeParseException ex) {
+            return OutcomeHttp.fail(new Outcome.Fail<Void>(
+                    com.ats.kernel.OutcomeCode.INVALID, "asOf biçimi YYYY-MM olmalı"));
+        }
+        Outcome<ApplicationIntakeService.ExperienceCoverage> out =
+                service.experienceCoverage(tenantAccess.tenant(auth), month);
+        if (out instanceof Outcome.Fail<ApplicationIntakeService.ExperienceCoverage> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        ApplicationIntakeService.ExperienceCoverage c =
+                ((Outcome.Ok<ApplicationIntakeService.ExperienceCoverage>) out).value();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+                new ExperienceCoverageDto(c.applications(), c.entries(), c.computable(),
+                        c.monthPrecision(), c.yearPrecision(), c.ongoing(), c.uncomputable(),
+                        c.totalMonths(), c.asOf()));
     }
 
     @GetMapping("/api/v1/recruiter/applications/{publicRef}")
@@ -588,7 +719,15 @@ class ApplicationApiController {
         return new RecruiterApplicationDto(
                 app.publicRef(), app.jobSlug(), app.jobTitle(), app.fullName(), app.email(),
                 app.phone(), app.city(), app.linkedIn(), app.portfolio(), app.summary(),
-                app.experience(), app.education(), app.skills(), app.note(), app.status().name(),
+                app.experience(), app.education(),
+                app.experienceEntries().stream().map(e -> new ExperienceEntryBody(
+                        e.title(), e.company(), e.startDate(), e.endDate(), e.ongoing(),
+                        e.description())).toList(),
+                app.educationEntries().stream().map(e -> new EducationEntryBody(
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
+                        e.ongoing(), e.description())).toList(),
+                app.languages(), app.certifications(),
+                app.skills(), app.note(), app.status().name(),
                 app.version(), app.createdAt(), app.updatedAt());
     }
 
@@ -616,7 +755,12 @@ class ApplicationApiController {
         return new RecruiterDetailDto(
                 recruiterDto(detail.application()),
                 detail.history().stream().map(ApplicationApiController::historyDto).toList(),
-                detail.evaluations().stream().map(ApplicationApiController::evaluationDto).toList());
+                detail.evaluations().stream().map(ApplicationApiController::evaluationDto).toList(),
+                detail.otherApplications().stream()
+                        .map(o -> new OtherApplicationDto(
+                                o.publicRef(), o.jobSlug(), o.jobTitle(), o.status().name(),
+                                o.submittedAt(), o.sameJob()))
+                        .toList());
     }
 
     private static RecruiterHistoryDto historyDto(ApplicationHistoryEvent event) {
@@ -636,5 +780,24 @@ class ApplicationApiController {
                         .toList(),
                 evaluation.summary(), evaluation.predecessorEvaluationId(),
                 evaluation.revision(), evaluation.createdAt());
+    }
+
+    /** #215: HTTP gövdesindeki girdileri servis kaydına çevirir; null güvenli. */
+    private static List<ApplicationIntakeService.ExperienceEntry> experienceEntries(SubmitBody body) {
+        if (body.experienceEntries() == null) return List.of();
+        return body.experienceEntries().stream()
+                .map(e -> new ApplicationIntakeService.ExperienceEntry(
+                        e.title(), e.company(), e.startDate(), e.endDate(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
+                .toList();
+    }
+
+    private static List<ApplicationIntakeService.EducationEntry> educationEntries(SubmitBody body) {
+        if (body.educationEntries() == null) return List.of();
+        return body.educationEntries().stream()
+                .map(e -> new ApplicationIntakeService.EducationEntry(
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
+                .toList();
     }
 }

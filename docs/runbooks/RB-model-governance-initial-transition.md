@@ -12,6 +12,11 @@
   alınacak → WORM'da henüz transition yok (`UNINITIALIZED`) → boot-gate DENY.
 - Bir modelin iptali (`APPROVED→REVOKED`) ya da yeniden onayı (`REVOKED→APPROVED`) gerekiyor.
 
+> **Müşteri-öncelikli çalışma modu:** Onay beklerken deployment `ats.ai.enabled=false` ile çekirdek
+> ilan/başvuru/aday-takip/İK yolunu sunar. AI çağrı uçlarının `503 AI_NOT_APPROVED` dönmesi beklenen
+> fail-closed durumdur; çekirdek ürünün bütünü bu owner gate yüzünden kapatılmaz. `enabled=true` yalnız
+> aşağıdaki exact owner transition başarıyla doğrulandıktan sonra GitOps üzerinden etkinleştirilir.
+
 ## Önkoşullar (owner)
 
 1. **Writer authority** (`ats_governance_writer`; INSERT+SELECT — V4; schema USAGE — V6). Bağlantı zarfı
@@ -82,10 +87,11 @@
      `readAll`+projeksiyonla oku, `expectedFrom`'u düzelt, tekrar dene. **Idempotent re-run güvenli.**
    - `ILLEGAL_TRANSITION` → geçiş matriste yok (ör. `APPROVED→DRAFT`) → gerekçe/hedef yanlış; düzelt.
    - `NOT_CONFIGURED` → WORM/DB erişilemez → bağlantı/rol kontrol.
-8. **Boot doğrula:** ilgili deployment'ı GitOps desired-state ile rollout et → boot-gate `resolve` WORM'u
-   okur → `APPROVED`
-   ise context kalkar. `resolve` DENIED kalıyorsa: özne gerçekten APPROVED mı, catalog↔WORM bütünlüğü
-   (ref catalog'da mı, capability tutarlı mı, chain intact mi) kontrol et (ADR-0021 §3 taksonomi).
+8. **AI aktivasyonunu GitOps'tan yap ve boot doğrula:** owner transition `Ok` kanıtlanmadan
+   `ats.ai.enabled=true` yapılmaz. Exact ref/endpoint değerleriyle GitOps aktivasyonu sonrası boot-gate
+   `resolve` WORM'u okur → `APPROVED` ise AI bean'leri kurulur. `resolve` DENIED kalıyorsa: özne gerçekten
+   APPROVED mı, catalog↔WORM bütünlüğü (ref catalog'da mı, capability tutarlı mı, chain intact mi) kontrol
+   et (ADR-0021 §3 taksonomi). Doğrudan workload patch/restart ile gate baypas edilmez.
 
 ## Rollback
 

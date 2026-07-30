@@ -10,8 +10,15 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const contractsSchemas = fileURLToPath(new URL("../../contracts/schemas", import.meta.url));
 const uiPackage = fileURLToPath(new URL("../../packages/ui", import.meta.url));
 
-// /api -> app-boot (dev; CORS'suz). Prod serving/deploy ayrı wiring dilimi.
-export default defineConfig({
+// Prod'da uygulama paylaşılan origin'in tamamına değil tek bir prefix'e servis
+// edilir; asset URL'leri o prefix'i taşımalı yoksa deep-link'te 404 olurlar.
+// Dev sunucusu köke bağlı kalır — geliştirici akışı değişmez.
+const PROD_BASE_PATH = "/ats/interview-evidence/";
+
+// /api -> app-boot (dev'de vite proxy; prod'da imajın kendi nginx'i, bkz.
+// nginx.conf.template — uygulama her iki durumda da /api/v1/... çağırır).
+export default defineConfig(({ command }) => ({
+  base: command === "build" ? PROD_BASE_PATH : "/",
   plugins: [react()],
   resolve: { preserveSymlinks: true },
   build: {
@@ -28,4 +35,4 @@ export default defineConfig({
     fs: { allow: [projectRoot, contractsSchemas, uiPackage] },
     proxy: { "/api": { target: "http://127.0.0.1:8080", changeOrigin: false } },
   },
-});
+}));
