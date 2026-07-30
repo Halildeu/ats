@@ -201,6 +201,19 @@ class WiringConfig {
     }
 
     @Bean
+    com.ats.application.CandidateLoginStore candidateLoginStore(DataSource ds, Flyway flyway) {
+        return new com.ats.persistence.PostgresCandidateLoginStore(ds);
+    }
+
+    @Bean
+    com.ats.application.CandidateLoginService candidateLoginService(
+            com.ats.application.CandidateLoginStore store,
+            com.ats.application.OtpMailSender mailSender) {
+        return new com.ats.application.CandidateLoginService(
+                store, mailSender, Clock.systemUTC(), new SecureRandom());
+    }
+
+    @Bean
     ResumeImportStore resumeImportStore(DataSource ds, Flyway flyway) {
         return new PostgresResumeImportStore(ds);
     }

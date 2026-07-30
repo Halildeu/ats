@@ -308,6 +308,92 @@ class ApplicationIntakeServiceTest {
         assertEquals("Ürün Yöneticisi", submission.effectiveExperience());
     }
 
+    // ---- #239 dilim 2: sunucu tarafı biçim pinlemesi -------------------------
+
+    private static ApplicationIntakeService.Submission withExperience(String start, String end) {
+        return new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null,
+                List.of(new ApplicationIntakeService.ExperienceEntry(
+                        "Ürün Uzmanı", "Örnek Teknoloji", start, end, "Sentetik")),
+                List.of(), null, null);
+    }
+
+    private static ApplicationIntakeService.Submission withEducation(String start, String end) {
+        return new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli aday", "Beş yıl deneyim", "Lisans", List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null, List.of(),
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "YBS", start, end, "Sentetik")),
+                null, null);
+    }
+
+    private static String submitReason(ApplicationIntakeService.Submission body) {
+        var out = service(new CapturingStore())
+                .submit("urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS, body);
+        return out instanceof Outcome.Fail<?> fail ? fail.reason() : "";
+    }
+
+    @Test
+    void server_accepts_year_only_experience_dates_because_the_parser_produces_them() {
+        // CANLI KUSUR (#241): yalnız YYYY-AA kabul ediliyordu. Ama ayrıştırıcı
+        // yıl-only bir CV satırından ("Ornek Sanayi AS 2019 - 2023") startDate
+        // olarak "2019" üretiyor. Aday, uydurmadığı bir ayı uydurmadan
+        // gönderemiyordu — tam olarak kaçınmaya çalıştığım arıza.
+        assertEquals("", submitReason(withExperience("2019", "2023")));
+        assertEquals("", submitReason(withExperience("2019", "")));
+        // Ay hassasiyeti de geçerli; ikisi bir arada yaşayabilir (#242 (a) kararı).
+        assertEquals("", submitReason(withExperience("2022-09", "2024-03")));
+        // Geçersiz olan hâlâ reddedilir.
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
+    }
+
+    @Test
+    void server_does_not_invent_an_order_between_two_different_precisions() {
+        // "Haziran 2019'da başladı, 2019 içinde bitti" MEŞRU bir beyandır.
+        // Sözlüksel kıyas bunu ters aralık sanıp reddederdi.
+        assertEquals("", submitReason(withExperience("2019-06", "2019")));
+        assertEquals("", submitReason(withExperience("2019", "2019-06")));
+        // Aynı hassasiyette kıyas yapılmaya devam eder.
+        assertTrue(submitReason(withExperience("2023-05", "2021-01")).contains("başlangıçtan önce"));
+        assertTrue(submitReason(withExperience("2023", "2021")).contains("başlangıçtan önce"));
+    }
+
+    @Test
+    void server_rejects_a_structured_looking_date_that_is_not_valid() {
+        // İstemci doğrulaması SÖZLEŞME DEĞİL: curl ya da eski bir sekme onu atlar.
+        assertTrue(submitReason(withExperience("2019-13", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withExperience("20191", "")).contains("YYYY veya YYYY-AA"));
+        assertTrue(submitReason(withEducation("201", "")).contains("YYYY"));
+    }
+
+    @Test
+    void server_keeps_accepting_legacy_free_text_the_parser_can_produce() {
+        // CV ayrıştırıcısı serbest metin üretebiliyor ("Eyl 2022"). Onu reddetmek
+        // adayı DÜZELTEMEYECEĞİ bir 400'e kilitler; kural "yapısal GÖRÜNEN değer
+        // geçerli olmalı", "her değer yapısal olmalı" değil.
+        assertEquals("", submitReason(withExperience("Eyl 2022", "Halen")));
+        assertEquals("", submitReason(withEducation("2016 güz", "")));
+        // Yapısal ve geçerli olan da geçer.
+        assertEquals("", submitReason(withExperience("2022-09", "2024-03")));
+        assertEquals("", submitReason(withEducation("2016", "2020")));
+    }
+
+    @Test
+    void server_rejects_a_backwards_range_and_an_implausible_year() {
+        assertTrue(submitReason(withExperience("2023-05", "2021-01")).contains("başlangıçtan önce"));
+        assertTrue(submitReason(withEducation("2020", "2016")).contains("başlangıçtan önce"));
+        // Dört hane olmak makul olmak değildir.
+        assertTrue(submitReason(withEducation("0001", "")).contains("arasında olmalı"));
+        // Üst sınır servisin SAATİNDEN gelir; sabit yazılsa yıl dönümünde eskirdi.
+        assertTrue(submitReason(withEducation("2999", "")).contains("arasında olmalı"));
+    }
+
     private static ApplicationIntakeService.Submission submission() {
         return new ApplicationIntakeService.Submission(
                 " Deniz ", "DENIZ@EXAMPLE.TEST", "+905550000000", "İstanbul", null, null,

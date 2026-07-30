@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeDocumentParser.ParseResult;
@@ -627,6 +628,55 @@ class PdfBoxResumeDocumentParserTest {
                 "uc korumali etiket de sayilmali: " + result.protectedSuppressed());
     }
 
+    @Test
+    void military_service_status_is_suppressed_in_both_label_shapes() throws Exception {
+        // #214: askerlik durumu iki korumali kategoriye vekil (cinsiyet: yalniz
+        // erkekler yukumlu; saglik: muafiyetler agirlikla saglik gerekceli).
+        // Iki bicim de olculdu: kariyer.net "Askerlik Durumu / Yapildi" ve
+        // etiketin tek kelime kaldigi "Askerlik: Tecilli".
+        byte[] pdf = pdf(
+                "EXPERIENCE",
+                "Ornek Teknoloji - 2022",
+                "Askerlik Durumu",
+                "Yapildi 6 ay",
+                "Askerlik Tecilli 2027");
+
+        ParseResult result = parseResult(pdf);
+        String all = result.proposals().stream()
+                .map(p -> p.value())
+                .collect(Collectors.joining(" || "));
+
+        assertFalse(all.contains("Askerlik"), "askerlik etiketi hicbir alana gitmemeli: " + all);
+        assertFalse(all.contains("Yapildi"), "askerlik degeri sizmamali: " + all);
+        assertFalse(all.contains("Tecilli"), "tek kelimeli etiket bicimi de korunmali: " + all);
+        assertTrue(result.protectedSuppressed() >= 2,
+                "iki askerlik satiri da sayilmali: " + result.protectedSuppressed());
+    }
+
+    @Test
+    void askerlik_sube_baskani_job_title_is_not_suppressed() throws Exception {
+        // Bare "askerlik" icin onek eslesmesi ACILAMAZ: `Askerlik Sube Baskani`
+        // gercek bir Turkiye is unvanidir. Bastirilirsa aktif bolum kapanir ve
+        // adayin DENEYIMI kaybolur — "saglik" hatasinin (yukarida) tekrari.
+        byte[] pdf = pdf(
+                "IS DENEYIMLERI",
+                "Askerlik Sube Baskani",
+                "Ornek Kurum - 2015 - 2019");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertNotNull(fields.get(ResumeField.EXPERIENCE),
+                "unvan bastirildiysa bolum kapanir ve DENEYIM alani hic olusmaz");
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Askerlik Sube Baskani"),
+                "mesru is unvani korumali alan sayilmamali: "
+                        + fields.get(ResumeField.EXPERIENCE));
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Ornek Kurum"),
+                "unvandan sonraki satir da ayni bolumde kalmali");
+        assertEquals(0, result.protectedSuppressed(), "bu belgede korumali etiket yok");
+    }
+
     private Map<ResumeField, String> parse(byte[] pdf) {
         return parseResult(pdf).proposals().stream()
                 .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
@@ -709,5 +759,70 @@ class PdfBoxResumeDocumentParserTest {
             document.save(out);
             return out.toByteArray();
         }
+    }
+
+    @Test
+    void the_parsing_path_itself_emits_normalized_month_dates() throws Exception {
+        // BAĞLANTI testi. Birim testi (normalizeMonthYear) yeşil kalırken
+        // splitDateLine onu ÇAĞIRMAYI bırakabilir — mutasyonla ölçtüm: bağlantıyı
+        // kestiğimde 27 test yeşil kaldı. Birimi test etmek yolu test etmek değil.
+        // Geometri ÇALIŞAN fixture'dan birebir alındı (iki kayıt): tek kayıtlı
+        // kendi fixture'ım bölme eşiğini tetiklemedi ve 0 kayıt döndü.
+        byte[] pdf = typedPdf(
+                "48|10|false|EXPERIENCE",
+                "48|11.5|true|Kidemli Urun Uzmani",
+                "48|10|false|Ornek Teknoloji Eyl 2022 - Mar 2024",
+                "57|10|false|Urun yolculugunu kurdu",
+                "48|11.5|true|Urun Uzmani",
+                "48|10|false|Baska Teknoloji Ocak 2019 - Agustos 2022",
+                "57|10|false|Yol haritasini yurutt");
+
+        List<ResumeImportService.ProposedEntry> entries =
+                entriesFor(pdf, ResumeField.EXPERIENCE);
+        assertEquals(2, entries.size(), "iki kayit olmali: " + entries);
+        assertEquals("2022-09 - 2024-03", entries.get(0).dateText(),
+                "ay bilgisi forma NORMALIZE gitmeli: " + entries.get(0));
+        assertEquals("Ornek Teknoloji", entries.get(0).subtitle());
+        // Aksansız Türkçe ay adları da yolun sonuna normalize ulaşmalı.
+        assertEquals("2019-01 - 2022-08", entries.get(1).dateText(),
+                "aksansiz ay adlari da normalize olmali: " + entries.get(1));
+    }
+
+    // ---- #242 dilim A: ay+yıl normalizasyonu --------------------------------
+
+    @Test
+    void normalizes_turkish_and_english_month_names_to_one_shape() {
+        // Ayrıştırıcı bugüne kadar YALNIZ yıl tanıyordu; "Eyl 2022" satırından
+        // sadece "2022" çıkıyor, AY SESSİZCE ATILIYORDU. Toplu hesap ay
+        // hassasiyeti istediği için bu kayıp ürün gereksinimini bozuyordu.
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("Eylül 2022"));
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("Eyl 2022"));
+        // PDF çıkarımı Türkçe aksanı sık düşürür.
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("Eylul 2022"));
+        assertEquals("2022-02", PdfBoxResumeDocumentParser.normalizeMonthYear("subat 2022"));
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("September 2022"));
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("09/2022"));
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("9.2022"));
+        // Zaten normalize olan değişmez (idempotent).
+        assertEquals("2022-09", PdfBoxResumeDocumentParser.normalizeMonthYear("2022-09"));
+    }
+
+    @Test
+    void leaves_text_untouched_when_no_month_can_be_proven() {
+        // Ay uydurmak eksik aydan KÖTÜDÜR: yanlışlığı görünmez olur.
+        assertEquals("2019", PdfBoxResumeDocumentParser.normalizeMonthYear("2019"));
+        assertEquals("2019 - 2021", PdfBoxResumeDocumentParser.normalizeMonthYear("2019 - 2021"));
+        assertEquals("Ornek Teknoloji 2019",
+                PdfBoxResumeDocumentParser.normalizeMonthYear("Ornek Teknoloji 2019"));
+        assertEquals("", PdfBoxResumeDocumentParser.normalizeMonthYear(""));
+        assertEquals(null, PdfBoxResumeDocumentParser.normalizeMonthYear(null));
+    }
+
+    @Test
+    void normalizes_both_ends_of_a_range_and_keeps_open_ended_wording() {
+        assertEquals("2022-09 - 2024-03",
+                PdfBoxResumeDocumentParser.normalizeMonthYear("Eyl 2022 - Mar 2024"));
+        assertEquals("2022-09 - Halen",
+                PdfBoxResumeDocumentParser.normalizeMonthYear("Eylül 2022 - Halen"));
     }
 }

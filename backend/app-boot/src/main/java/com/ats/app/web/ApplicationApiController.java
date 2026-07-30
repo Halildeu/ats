@@ -129,8 +129,16 @@ class ApplicationApiController {
     record ExperienceEntryBody(
             @Schema(maxLength = 160) String title,
             @Schema(maxLength = 160) String company,
-            @Schema(maxLength = 40) String startDate,
-            @Schema(maxLength = 40) String endDate,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                    description = "YYYY veya YYYY-AA (ör. 2019, 2022-09). Biçim hassasiyeti taşır; "
+                            + "yapısal GÖRÜNEN değer geçerli olmalıdır.") String startDate,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
+                    description = "Bitiş tarihi. Süregelen iş için BOŞ bırakılır ve "
+                            + "ongoing=true gönderilir.") String endDate,
+            @Schema(description = "#242 C: iş hâlâ sürüyor. Boş bitiş tarihi 'bilinmiyor' "
+                    + "demektir; süregelenlik ayrı bir beyandır ve toplu hesapta bitiş "
+                    + "BUGÜN kabul edilir. Sunucu 'Devam ediyor'/'Halen'/'Present' gibi "
+                    + "değerleri bitiş alanından buraya taşır.") Boolean ongoing,
             @Schema(maxLength = 4000) String description) {}
 
     /** #215: tek bir eğitim girdisi. */
@@ -140,8 +148,12 @@ class ApplicationApiController {
             @Schema(maxLength = 160) String school,
             @Schema(maxLength = 160) String degree,
             @Schema(maxLength = 160) String field,
-            @Schema(maxLength = 40) String startYear,
-            @Schema(maxLength = 40) String endYear,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "YYYY (ör. 2016).") String startYear,
+            @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
+                    description = "Bitiş yılı. Öğrenim sürüyorsa BOŞ + ongoing=true.")
+                    String endYear,
+            @Schema(description = "#242 C: öğrenim hâlâ sürüyor.") Boolean ongoing,
             @Schema(maxLength = 4000) String description) {}
 
     @Schema(name = "ApplicationSubmitRequest",
@@ -459,6 +471,62 @@ class ApplicationApiController {
                 result.page(), result.size(), result.total()));
     }
 
+    /**
+     * #242 D: toplu deneyim hesabı. KAPSAM alanları yanıtın zorunlu parçasıdır —
+     * kapsamsız bir ortalama, güven veren yanlış bir sayıdır.
+     */
+    @Schema(name = "ExperienceCoverageResponse",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ExperienceCoverageDto(
+            @Schema(description = "Deneyim girdisi olan başvuru sayısı") int applications,
+            @Schema(description = "Toplam deneyim girdisi") int entries,
+            @Schema(description = "Süresi hesaplanabilen girdi") int computable,
+            @Schema(description = "İki ucu da ay hassasiyetli girdi") int monthPrecision,
+            @Schema(description = "En az bir ucu yıl hassasiyetli girdi; süre yıl "
+                    + "sınırlarına yuvarlanır") int yearPrecision,
+            @Schema(description = "Bitişi asOf kabul edilen süregelen girdi") int ongoing,
+            @Schema(description = "Hesaba GİRMEYEN girdi (uç yok ya da çevrilemedi)")
+                    int uncomputable,
+            @Schema(description = "Hesaplanabilir girdilerin toplam süresi (ay)") long totalMonths,
+            @Schema(description = "Süregelen işlerin bitişi olarak kullanılan ay (YYYY-MM). "
+                    + "Süregelen süreler her ay artar; sonuç bu değer olmadan yorumlanamaz.")
+                    String asOf) {}
+
+    @GetMapping("/api/v1/recruiter/applications/experience-coverage")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Toplu deneyim hesabı + kapsam",
+                    content = @Content(schema = @Schema(implementation = ExperienceCoverageDto.class))),
+            @ApiResponse(responseCode = "400", description = "asOf biçimi YYYY-MM olmalı"),
+            @ApiResponse(responseCode = "401", description = "Kimlik doğrulanmadı"),
+            @ApiResponse(responseCode = "403", description = "ATS başvuru görüntüleme yetkisi yok"),
+            @ApiResponse(responseCode = "503", description = "Yetki doğrulama servisi kullanılamıyor")
+    })
+    ResponseEntity<?> experienceCoverage(Authentication auth,
+            @RequestParam(value = "asOf", required = false) String asOf) {
+        Outcome<Void> allowed = authorization.require(
+                auth, RecruiterAuthorization.Permission.APPLICATION_VIEW);
+        if (allowed instanceof Outcome.Fail<Void> fail) return OutcomeHttp.fail(fail);
+        java.time.YearMonth month;
+        try {
+            // null = "servisin saatini kullan"; servis kendi Clock'unu bilir.
+            month = asOf == null || asOf.isBlank() ? null : java.time.YearMonth.parse(asOf.trim());
+        } catch (java.time.format.DateTimeParseException ex) {
+            return OutcomeHttp.fail(new Outcome.Fail<Void>(
+                    com.ats.kernel.OutcomeCode.INVALID, "asOf biçimi YYYY-MM olmalı"));
+        }
+        Outcome<ApplicationIntakeService.ExperienceCoverage> out =
+                service.experienceCoverage(tenantAccess.tenant(auth), month);
+        if (out instanceof Outcome.Fail<ApplicationIntakeService.ExperienceCoverage> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        ApplicationIntakeService.ExperienceCoverage c =
+                ((Outcome.Ok<ApplicationIntakeService.ExperienceCoverage>) out).value();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+                new ExperienceCoverageDto(c.applications(), c.entries(), c.computable(),
+                        c.monthPrecision(), c.yearPrecision(), c.ongoing(), c.uncomputable(),
+                        c.totalMonths(), c.asOf()));
+    }
+
     @GetMapping("/api/v1/recruiter/applications/{publicRef}")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Tenant-bound başvuru detayı",
@@ -653,10 +721,11 @@ class ApplicationApiController {
                 app.phone(), app.city(), app.linkedIn(), app.portfolio(), app.summary(),
                 app.experience(), app.education(),
                 app.experienceEntries().stream().map(e -> new ExperienceEntryBody(
-                        e.title(), e.company(), e.startDate(), e.endDate(), e.description())).toList(),
+                        e.title(), e.company(), e.startDate(), e.endDate(), e.ongoing(),
+                        e.description())).toList(),
                 app.educationEntries().stream().map(e -> new EducationEntryBody(
                         e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
-                        e.description())).toList(),
+                        e.ongoing(), e.description())).toList(),
                 app.languages(), app.certifications(),
                 app.skills(), app.note(), app.status().name(),
                 app.version(), app.createdAt(), app.updatedAt());
@@ -718,7 +787,8 @@ class ApplicationApiController {
         if (body.experienceEntries() == null) return List.of();
         return body.experienceEntries().stream()
                 .map(e -> new ApplicationIntakeService.ExperienceEntry(
-                        e.title(), e.company(), e.startDate(), e.endDate(), e.description()))
+                        e.title(), e.company(), e.startDate(), e.endDate(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
                 .toList();
     }
 
@@ -726,7 +796,8 @@ class ApplicationApiController {
         if (body.educationEntries() == null) return List.of();
         return body.educationEntries().stream()
                 .map(e -> new ApplicationIntakeService.EducationEntry(
-                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(), e.description()))
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
                 .toList();
     }
 }

@@ -152,6 +152,33 @@ class MigrationRoleProvisioningPrerequisiteTest {
                 "V16 invariant still holds under a least-privilege runner");
         assertTrue(flag(deployer, "SELECT has_schema_privilege('ats_migrator','public','CREATE')"),
                 "ats_migrator must hold DDL authority after the chain");
+        assertTrue(flag(deployer,
+                        "SELECT tableowner = current_user FROM pg_catalog.pg_tables"
+                                + " WHERE schemaname = 'public'"
+                                + " AND tablename = 'flyway_schema_history'"),
+                "fresh install: Flyway must retain ownership of its locked history table");
+        assertFalse(flag(deployer,
+                        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_tables"
+                                + " WHERE schemaname = 'public'"
+                                + " AND tablename <> 'flyway_schema_history'"
+                                + " AND tableowner = current_user)"),
+                "fresh install: deployer must own no managed ATS tables after V20");
+        assertFalse(flag(deployer,
+                        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_sequences"
+                                + " WHERE schemaname = 'public'"
+                                + " AND sequenceowner = current_user)"),
+                "fresh install: deployer must own no ATS sequences after V20");
+        assertTrue(flag(deployer,
+                        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_tables"
+                                + " WHERE schemaname = 'public'"
+                                + " AND tablename <> 'flyway_schema_history'"
+                                + " AND tableowner = 'ats_migrator')"),
+                "fresh install: ats_migrator must own managed ATS tables after V20");
+        assertTrue(flag(deployer,
+                        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_sequences"
+                                + " WHERE schemaname = 'public'"
+                                + " AND sequenceowner = 'ats_migrator')"),
+                "fresh install: ats_migrator must own ATS sequences after V20");
     }
 
     private static String latestAppliedVersion(DataSource ds) throws Exception {

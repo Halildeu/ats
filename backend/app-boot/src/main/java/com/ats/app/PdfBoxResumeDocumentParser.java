@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -56,6 +57,72 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     + "[Hh]alen|[Dd]evam(?:\\s+ediyor)?|[Gg]ünümüz|[Pp]resent|[Cc]urrent|"
                     + "[Nn]ow|\\.{2,})");
     private static final Pattern SINGLE_YEAR = Pattern.compile("(?<!\\d)(?:19|20)\\d{2}(?!\\d)");
+
+    /**
+     * #242 dilim A: AY + YIL normalizasyonu. Ayrıştırıcı bugüne kadar YALNIZ yıl
+     * tanıyordu; "Eyl 2022 - Mar 2024" satırından "2022 - 2024" çıkıyor, ay
+     * bilgisi SESSİZCE atılıyordu. Toplu hesap ay hassasiyeti istediği için
+     * (sahip gereksinimi) bu kayıp doğrudan ürün gereksinimini bozuyor.
+     *
+     * <p>Normalizasyon çıktısı tek biçim: {@code YYYY-MM}. Böylece aşağıdaki tüm
+     * katmanlar (form alanı, sunucu doğrulaması, toplu hesap) aynı dili konuşur.
+     * Ay bulunamazsa değer yıl olarak kalır — uydurulmuş bir ay, eksik aydan
+     * kötüdür (yanlışlığı görünmez olur).
+     */
+    private static final Map<String, String> MONTHS =
+            com.ats.application.ResumeDateNormalizer.MONTHS;
+
+    private static String deaccent(String value) {
+        return com.ats.application.ResumeDateNormalizer.deaccent(value);
+    }
+
+    /** "Eyl 2022" / "Eylül 2022" / "09/2022" / "2022-09" → "2022-09". */
+    /** Normalize edilmiş ay aralığı: "2022-09 - 2024-03" ya da "2022-09 - Halen". */
+    private static final Pattern MONTH_RANGE = Pattern.compile(
+            "(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])\\s*[-–—/]\\s*"
+                    + "(?:(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])|"
+                    + "[Hh]alen|[Dd]evam(?:\\s+ediyor)?|[Gg]ünümüz|[Pp]resent|[Cc]urrent|"
+                    + "[Nn]ow|\\.{2,})");
+    private static final Pattern SINGLE_MONTH = Pattern.compile(
+            "(?<!\\d)(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])(?!\\d)");
+
+    private static final Pattern MONTH_NAME_YEAR = Pattern.compile(
+            "(?<![\\p{L}])(\\p{L}{3,9})\\s+((?:19|20)\\d{2})(?!\\d)");
+    private static final Pattern NUMERIC_MONTH_YEAR = Pattern.compile(
+            "(?<!\\d)(0?[1-9]|1[0-2])\\s*[./]\\s*((?:19|20)\\d{2})(?!\\d)");
+    private static final Pattern ISO_MONTH = Pattern.compile(
+            "(?<!\\d)((?:19|20)\\d{2})-(0[1-9]|1[0-2])(?!\\d)");
+
+    /**
+     * Satırdaki ay+yıl ifadelerini {@code YYYY-MM}'e çevirir. Tanınmayan metne
+     * DOKUNMAZ: ay adı sözlükte yoksa satır olduğu gibi kalır ve mevcut yıl
+     * ayrıştırması devreye girer.
+     */
+    static String normalizeMonthYear(String text) {
+        if (text == null || text.isBlank()) return text;
+        String out = ISO_MONTH.matcher(text).replaceAll("$1-$2");
+        Matcher numeric = NUMERIC_MONTH_YEAR.matcher(out);
+        StringBuilder sb = new StringBuilder();
+        while (numeric.find()) {
+            String month = numeric.group(1).length() == 1 ? "0" + numeric.group(1) : numeric.group(1);
+            numeric.appendReplacement(sb, numeric.group(2) + "-" + month);
+        }
+        numeric.appendTail(sb);
+        out = sb.toString();
+
+        Matcher named = MONTH_NAME_YEAR.matcher(out);
+        StringBuilder nb = new StringBuilder();
+        while (named.find()) {
+            String key = named.group(1).toLowerCase(java.util.Locale.ROOT);
+            String month = MONTHS.get(key);
+            if (month == null) month = MONTHS.get(deaccent(key));
+            named.appendReplacement(nb,
+                    month == null ? Matcher.quoteReplacement(named.group())
+                            : named.group(2) + "-" + month);
+        }
+        named.appendTail(nb);
+        return nb.toString();
+    }
     /**
      * Kayıt-başı eşikleri. Ölçülen değerler: kayıt başı satırların punto oranı
      * 1.13–1.17, gövde 1.00 → 1.05 eşiği ikisini ayırır. Sol kenar toleransı 6pt:
@@ -110,6 +177,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * sayısız unvanda geçer (İş Sağlığı ve Güvenliği Uzmanı, Sağlık Teknikeri).
      * Korunması gereken şey adayın SAĞLIK DURUMU'dur, "sağlık" kelimesi değil;
      * o yüzden çok kelimeli biçimler açıkça listelendi.
+     *
+     * <p>Askerlik (#214): Türkiye'de standart CV alanı ve iki korumalı kategoriye
+     * VEKİL — yalnız erkekler yükümlü olduğu için cinsiyet, muafiyetler ağırlıkla
+     * sağlık gerekçeli olduğu için sağlık/engellilik. Bu yüzden CV'den forma
+     * önerilmez. Bare "askerlik" YALNIZ tam eşleşmedir; önek eşleşmesi açılamaz,
+     * çünkü `Askerlik Şube Başkanı` gerçek bir iş unvanıdır ve bastırılırsa
+     * "saglik" hatası tekrarlanır. Etiketin tek kelime kaldığı biçimler
+     * ({@code Askerlik: Yapıldı}) {@link #MILITARY_STATUS_WORDS} ile ayrılır.
      */
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
@@ -118,7 +193,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             "saglik raporu", "kronik hastalik", "engellilik durumu",
             "tc kimlik no", "t c kimlik no", "kimlik no", "ucret beklentisi",
             "maas beklentisi", "fotograf", "referans", "referanslar",
-            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu");
+            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu",
+            "askerlik", "askerlik durumu", "askerlik hizmeti",
+            "askerlik bilgisi", "askerlik bilgileri", "askerlik yukumlulugu");
 
     /**
      * Aynı taban hizasındaki iki kolon PDFBox'tan TEK satır olarak gelebilir
@@ -625,7 +702,19 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      *
      * @return tarih deseni yoksa {@code null}
      */
-    private static DateLine splitDateLine(String text) {
+    private static DateLine splitDateLine(String rawText) {
+        // #242 A: ay+yıl önce tek biçime çevrilir; aksi halde "Eyl 2022" satırından
+        // yalnız "2022" çıkar ve AY SESSİZCE KAYBOLUR.
+        String text = normalizeMonthYear(rawText);
+        Matcher month = MONTH_RANGE.matcher(text);
+        if (month.find()) {
+            return new DateLine(month.group(), stripAround(text, month.start(), month.end()));
+        }
+        Matcher singleMonth = SINGLE_MONTH.matcher(text);
+        if (singleMonth.find()) {
+            return new DateLine(singleMonth.group(),
+                    stripAround(text, singleMonth.start(), singleMonth.end()));
+        }
         Matcher range = YEAR_RANGE.matcher(text);
         if (range.find()) {
             return new DateLine(range.group(), stripAround(text, range.start(), range.end()));
@@ -1054,11 +1143,39 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static boolean isProtected(String normalizedLabel) {
         boolean labelShaped = normalizedLabel.length() <= MAX_HEADING_CHARS
                 && normalizedLabel.split(" ").length <= MAX_HEADING_TOKENS;
-        return PROTECTED_LABELS.stream().anyMatch(label ->
+        boolean listed = PROTECTED_LABELS.stream().anyMatch(label ->
                 normalizedLabel.equals(label)
                         || (labelShaped
                                 && label.indexOf(' ') >= 0
                                 && normalizedLabel.startsWith(label + " ")));
+        return listed || (labelShaped && militaryServiceStatusLine(normalizedLabel));
+    }
+
+    /**
+     * Askerlik yükümlülüğü durumu sözlüğü (kapalı küme, aksansız normalize).
+     *
+     * <p>Türkçe'de bu durum sayılı sözcükle ifade edilir; iş unvanı sözcükleri
+     * (şube, daire, başkan, komutanlık…) bu kümede YOKTUR. Ayrım bu yüzden
+     * etiketin kelime sayısıyla değil DEĞERLE yapılır: {@code Askerlik: Yapıldı}
+     * korumalıdır, {@code Askerlik Şube Başkanı} unvandır ve korunmaz.
+     */
+    private static final Set<String> MILITARY_STATUS_WORDS = Set.of(
+            "yapildi", "yapilmadi", "yapilmis", "yapti", "yapmadi", "yapiyor",
+            "yapacak", "tamamlandi", "tamamlanmadi", "tecil", "tecilli",
+            "muaf", "muafiyet", "muaftir", "bedelli", "terhis", "yukumlu",
+            "askerligini", "sevk", "ertelendi", "ertelenmis", "beklemede");
+
+    /**
+     * {@code Askerlik <durum>} biçimi: etiket tek kelime olduğu için önek
+     * eşleşmesi kapalıdır (gerekçe {@link #PROTECTED_LABELS} javadoc'unda),
+     * ayrım {@link #MILITARY_STATUS_WORDS} ile yapılır.
+     */
+    private static boolean militaryServiceStatusLine(String normalizedLabel) {
+        if (!normalizedLabel.startsWith("askerlik ")) return false;
+        for (String token : normalizedLabel.split(" ")) {
+            if (MILITARY_STATUS_WORDS.contains(token)) return true;
+        }
+        return false;
     }
 
     private static String normalizeLabel(String value) {

@@ -50,10 +50,16 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
             "/api/v1/candidate/applications/[^/]+/withdraw";
     private static final String CANDIDATE_OFFER_RESPONSE_PATH =
             "/api/v1/candidate/applications/[^/]+/offers/[^/]+/response";
+    /** #235 giriş uçları: kod isteği mail gönderir, doğrulama kod dener. */
+    private static final String LOGIN_REQUEST_PATH = "/api/v1/candidate/login/request";
+    private static final String LOGIN_VERIFY_PATH = "/api/v1/candidate/login/verify";
+    private static final String LOGIN_APPLICATIONS_PATH = "/api/v1/candidate/login/applications";
 
     static final String SUBMISSION_BUCKET = "public-application-submit";
     static final String CANDIDATE_READ_BUCKET = "candidate-application-read";
     static final String CANDIDATE_MUTATION_BUCKET = "candidate-application-mutate";
+    static final String LOGIN_REQUEST_BUCKET = "candidate-login-request";
+    static final String LOGIN_VERIFY_BUCKET = "candidate-login-verify";
 
     /**
      * Okuma bütçesi mutasyondan geniş: portal her yenilemede durum + görüşme +
@@ -64,6 +70,16 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
      */
     static final int CANDIDATE_READ_LIMIT = 120;
     static final int CANDIDATE_MUTATION_LIMIT = 20;
+
+    /**
+     * Giriş bütçeleri (10 dk pencere, IP başına): kod isteği DAR (her istek
+     * mail gönderebilir — 10 istek zaten adres-başına DB kotasının üstünde);
+     * doğrulama biraz geniş (yanlış kod yazan aday + yeni kod turu), asıl
+     * brute-force sınırı challenge'ın DB'deki 5-deneme sayacıdır; oturumla
+     * liste okuma portal yenilemesiyle ölçülür, mevcut okuma bütçesini paylaşır.
+     */
+    static final int LOGIN_REQUEST_LIMIT = 10;
+    static final int LOGIN_VERIFY_LIMIT = 30;
 
     /**
      * @param limitOverride bu uca özel üst sınır; {@code null} ise limiter'ın
@@ -88,6 +104,13 @@ final class PublicApplicationRateLimitFilter extends OncePerRequestFilter {
      * yapılandırılmış sınırı korur (davranış değişmez).
      */
     private static final List<Rule> RULES = List.of(
+            // Login yolları sabit dizedir (path parametresi yok) — okuma
+            // kalıbıyla prefix çakışması olmadığı için sıra serbest; yine de
+            // mutasyon bloğunun başında dursunlar ki kalıp korunmuş kalsın.
+            new Rule("POST", LOGIN_REQUEST_PATH, LOGIN_REQUEST_BUCKET, LOGIN_REQUEST_LIMIT),
+            new Rule("POST", LOGIN_VERIFY_PATH, LOGIN_VERIFY_BUCKET, LOGIN_VERIFY_LIMIT),
+            new Rule("GET", LOGIN_APPLICATIONS_PATH, CANDIDATE_READ_BUCKET,
+                    CANDIDATE_READ_LIMIT),
             new Rule("PUT", CANDIDATE_WITHDRAW_PATH, CANDIDATE_MUTATION_BUCKET,
                     CANDIDATE_MUTATION_LIMIT),
             new Rule("POST", CANDIDATE_OFFER_RESPONSE_PATH, CANDIDATE_MUTATION_BUCKET,
