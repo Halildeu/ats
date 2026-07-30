@@ -133,7 +133,12 @@ class ApplicationApiController {
                     description = "YYYY veya YYYY-AA (ör. 2019, 2022-09). Biçim hassasiyeti taşır; "
                             + "yapısal GÖRÜNEN değer geçerli olmalıdır.") String startDate,
             @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}(-(0[1-9]|1[0-2]))?$",
-                    description = "Boş = devam ediyor.") String endDate,
+                    description = "Bitiş tarihi. Süregelen iş için BOŞ bırakılır ve "
+                            + "ongoing=true gönderilir.") String endDate,
+            @Schema(description = "#242 C: iş hâlâ sürüyor. Boş bitiş tarihi 'bilinmiyor' "
+                    + "demektir; süregelenlik ayrı bir beyandır ve toplu hesapta bitiş "
+                    + "BUGÜN kabul edilir. Sunucu 'Devam ediyor'/'Halen'/'Present' gibi "
+                    + "değerleri bitiş alanından buraya taşır.") Boolean ongoing,
             @Schema(maxLength = 4000) String description) {}
 
     /** #215: tek bir eğitim girdisi. */
@@ -146,7 +151,9 @@ class ApplicationApiController {
             @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
                     description = "YYYY (ör. 2016).") String startYear,
             @Schema(maxLength = 40, pattern = "^(?![0-9-]+$)|^\\d{4}$",
-                    description = "Boş = devam ediyor.") String endYear,
+                    description = "Bitiş yılı. Öğrenim sürüyorsa BOŞ + ongoing=true.")
+                    String endYear,
+            @Schema(description = "#242 C: öğrenim hâlâ sürüyor.") Boolean ongoing,
             @Schema(maxLength = 4000) String description) {}
 
     @Schema(name = "ApplicationSubmitRequest",
@@ -658,10 +665,11 @@ class ApplicationApiController {
                 app.phone(), app.city(), app.linkedIn(), app.portfolio(), app.summary(),
                 app.experience(), app.education(),
                 app.experienceEntries().stream().map(e -> new ExperienceEntryBody(
-                        e.title(), e.company(), e.startDate(), e.endDate(), e.description())).toList(),
+                        e.title(), e.company(), e.startDate(), e.endDate(), e.ongoing(),
+                        e.description())).toList(),
                 app.educationEntries().stream().map(e -> new EducationEntryBody(
                         e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
-                        e.description())).toList(),
+                        e.ongoing(), e.description())).toList(),
                 app.languages(), app.certifications(),
                 app.skills(), app.note(), app.status().name(),
                 app.version(), app.createdAt(), app.updatedAt());
@@ -723,7 +731,8 @@ class ApplicationApiController {
         if (body.experienceEntries() == null) return List.of();
         return body.experienceEntries().stream()
                 .map(e -> new ApplicationIntakeService.ExperienceEntry(
-                        e.title(), e.company(), e.startDate(), e.endDate(), e.description()))
+                        e.title(), e.company(), e.startDate(), e.endDate(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
                 .toList();
     }
 
@@ -731,7 +740,8 @@ class ApplicationApiController {
         if (body.educationEntries() == null) return List.of();
         return body.educationEntries().stream()
                 .map(e -> new ApplicationIntakeService.EducationEntry(
-                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(), e.description()))
+                        e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
+                        Boolean.TRUE.equals(e.ongoing()), e.description()))
                 .toList();
     }
 }
