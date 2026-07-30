@@ -1,5 +1,7 @@
 package com.ats.app.web;
 
+import com.ats.application.ApplicationQuestion;
+import com.ats.application.QuestionTextAdvisor;
 import com.ats.application.JobPosting;
 import com.ats.application.JobPostingService;
 import com.ats.application.JobPostingService.JobDraft;
@@ -37,11 +39,14 @@ class JobPostingApiController {
     private final TenantAccess tenantAccess;
     private final RecruiterAuthorization authorization;
 
+    private final QuestionTextAdvisor questionAdvisor;
+
     JobPostingApiController(JobPostingService service, TenantAccess tenantAccess,
-            RecruiterAuthorization authorization) {
+            RecruiterAuthorization authorization, QuestionTextAdvisor questionAdvisor) {
         this.service = service;
         this.tenantAccess = tenantAccess;
         this.authorization = authorization;
+        this.questionAdvisor = questionAdvisor;
     }
 
     @Schema(name = "RecruiterJobCreateRequest",
@@ -69,7 +74,40 @@ class JobPostingApiController {
             List<String> applicationFields,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"kvkk-application-v1"})
-            String noticeVersion) {}
+            String noticeVersion,
+            @ArraySchema(maxItems = 10, arraySchema = @Schema(
+                    description = "#240: ilana özel başvuru soruları. Boş/yok = soru sorulmaz."))
+            List<JobQuestionBody> questions) {}
+
+    /**
+     * #240 dilim A: ilana özel başvuru sorusu. YALNIZ soru — otomatik eleme
+     * kapsam dışıdır (EU AI Act + KVKK insan kontrolü ilkesi); cevaplar İK'ya
+     * gösterilir, karar insanda kalır.
+     */
+    @Schema(name = "RecruiterJobQuestion",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record JobQuestionBody(
+            @Schema(description = "Adayın gördüğü sıra. Sunucu 1..n olarak YENİDEN "
+                    + "numaralandırır; boşluklu/çakışan değer gönderilebilir.",
+                    minimum = "1", maximum = "10") Integer position,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 5, maxLength = 300)
+            String text,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    allowableValues = {"SHORT_TEXT", "LONG_TEXT", "YES_NO", "SINGLE_CHOICE"})
+            String kind,
+            @Schema(description = "Zorunlu soru: aday cevaplamadan gönderemez.") Boolean required,
+            @ArraySchema(maxItems = 8, schema = @Schema(maxLength = 120),
+                    arraySchema = @Schema(description = "Yalnız SINGLE_CHOICE için; "
+                            + "2..8 benzersiz seçenek. Diğer tiplerde yok sayılır."))
+            List<String> options) {}
+
+    @Schema(name = "RecruiterJobQuestionWarning",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record JobQuestionWarningBody(
+            @Schema(description = "Uyarının ait olduğu sorunun sırası") int position,
+            @Schema(description = "Korunan kategori ya da ADVISOR_UNAVAILABLE") String category,
+            @Schema(description = "Sinyal türü. Eşleşen HAM METİN taşınmaz — screening "
+                    + "modülünün açık sınırı.") String signal) {}
 
     @Schema(name = "RecruiterJobUpdateRequest",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -99,7 +137,10 @@ class JobPostingApiController {
             List<String> applicationFields,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"kvkk-application-v1"})
-            String noticeVersion) {}
+            String noticeVersion,
+            @ArraySchema(maxItems = 10, arraySchema = @Schema(
+                    description = "#240: ilana özel başvuru soruları. Boş/yok = soru sorulmaz."))
+            List<JobQuestionBody> questions) {}
 
     @Schema(name = "RecruiterJobTransitionRequest",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -129,6 +170,13 @@ class JobPostingApiController {
             List<String> applicationFields,
             @Schema(allowableValues = {"kvkk-application-v1"})
             String noticeVersion,
+            @ArraySchema(maxItems = 10) List<JobQuestionBody> questions,
+            @ArraySchema(arraySchema = @Schema(description = "#240: soru metni korunan bir "
+                    + "özelliği çağrıştırıyorsa uyarı. YAZMA yanıtlarında dolar; okuma "
+                    + "yanıtlarında daima boştur (uyarı kayıt anının bulgusudur). Kaydı "
+                    + "ENGELLEMEZ — karar İK'da. Boş liste 'uyarı yok' demektir; motor "
+                    + "kullanılamıyorsa ADVISOR_UNAVAILABLE gelir, sessiz 'temiz' YOK."))
+            List<JobQuestionWarningBody> questionWarnings,
             @Schema(allowableValues = {"DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "ARCHIVED"})
             String status,
             boolean applyEnabled,
@@ -201,7 +249,7 @@ class JobPostingApiController {
         JobDraft draft = body == null ? null : new JobDraft(
                 body.slug(), body.title(), body.team(), body.location(), body.mode(),
                 body.employmentType(), body.summary(), body.highlights(),
-                body.applicationFields(), body.noticeVersion());
+                body.applicationFields(), body.noticeVersion(), questions(body.questions()));
         var tenant = tenantAccess.tenant(auth);
         Outcome<MutationResult> out = service.create(
                 tenant, tenantAccess.actor(auth), idempotencyKey, draft);
@@ -235,7 +283,7 @@ class JobPostingApiController {
         JobDraft draft = new JobDraft(
                 body.slug(), body.title(), body.team(), body.location(), body.mode(),
                 body.employmentType(), body.summary(), body.highlights(),
-                body.applicationFields(), body.noticeVersion());
+                body.applicationFields(), body.noticeVersion(), questions(body.questions()));
         var tenant = tenantAccess.tenant(auth);
         Outcome<MutationResult> out = service.update(
                 tenant, tenantAccess.actor(auth), jobId,
@@ -274,21 +322,28 @@ class JobPostingApiController {
         return mutation(out, HttpStatus.OK, optionalPublicHandle(tenant));
     }
 
-    private static ResponseEntity<?> mutation(
+    /**
+     * #240: uyarılar YAZMA yanıtında döner. Kaydı engellemez; kararı İK verir.
+     * Kaydedilen sorular üzerinden hesaplanır (istemcinin gönderdiği ham liste
+     * üzerinden değil) — böylece normalizasyondan sonra gerçekte NE kaydedildiyse
+     * onun uyarısı görünür.
+     */
+    private ResponseEntity<?> mutation(
             Outcome<MutationResult> out, HttpStatus successStatus, String publicHandle) {
         if (out instanceof Outcome.Fail<MutationResult> fail) return OutcomeHttp.fail(fail);
         MutationResult result = ((Outcome.Ok<MutationResult>) out).value();
         if (result.state() == MutationState.CREATED) {
             return ResponseEntity.status(successStatus).cacheControl(CacheControl.noStore())
-                    .body(dto(result.job(), publicHandle));
+                    .body(dto(result.job(), publicHandle, warnings(result)));
         }
         if (result.state() == MutationState.UPDATED) {
             return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                    .body(dto(result.job(), publicHandle));
+                    .body(dto(result.job(), publicHandle, warnings(result)));
         }
         if (result.state() == MutationState.REPLAYED) {
             return ResponseEntity.ok().header("X-ATS-Replay", "true")
-                    .cacheControl(CacheControl.noStore()).body(dto(result.job(), publicHandle));
+                    .cacheControl(CacheControl.noStore())
+                    .body(dto(result.job(), publicHandle, warnings(result)));
         }
         if (result.state() == MutationState.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -304,11 +359,52 @@ class JobPostingApiController {
     }
 
     private static RecruiterJobResponse dto(JobPosting job, String publicHandle) {
+        return dto(job, publicHandle, List.of());
+    }
+
+    private static RecruiterJobResponse dto(
+            JobPosting job, String publicHandle, List<QuestionTextAdvisor.Warning> warnings) {
         return new RecruiterJobResponse(
                 job.jobId(), publicHandle, job.slug(), job.title(), job.team(), job.location(), job.mode(),
                 job.employmentType(), job.summary(), job.highlights(), job.applicationFields(),
-                job.noticeVersion(), job.status().name(),
+                job.noticeVersion(), questionBodies(job.questions()),
+                warnings.stream().map(w -> new JobQuestionWarningBody(
+                        w.position(), w.category(), w.signal())).toList(),
+                job.status().name(),
                 job.applyEnabled(), job.version(), job.createdAt(), job.updatedAt());
+    }
+
+    /**
+     * Gövde -> domain. Bilinmeyen tip {@code null} kalır ve doğrulama onu
+     * reddeder (fail-closed): sessizce SHORT_TEXT'e düşmek, İK'nın seçmediği
+     * bir cevap biçimini adaya göstermek olurdu.
+     */
+    private static List<ApplicationQuestion> questions(List<JobQuestionBody> bodies) {
+        if (bodies == null) return List.of();
+        List<ApplicationQuestion> out = new java.util.ArrayList<>(bodies.size());
+        for (int i = 0; i < bodies.size(); i++) {
+            JobQuestionBody b = bodies.get(i);
+            if (b == null) continue;
+            out.add(new ApplicationQuestion(
+                    b.position() == null ? i + 1 : b.position(),
+                    b.text(),
+                    ApplicationQuestion.kindOf(b.kind()),
+                    Boolean.TRUE.equals(b.required()),
+                    b.options()));
+        }
+        return out;
+    }
+
+    private static List<JobQuestionBody> questionBodies(List<ApplicationQuestion> questions) {
+        return questions.stream()
+                .map(q -> new JobQuestionBody(q.position(), q.text(), q.kind().name(),
+                        q.required(), q.options().isEmpty() ? null : q.options()))
+                .toList();
+    }
+
+    private List<QuestionTextAdvisor.Warning> warnings(MutationResult result) {
+        return result.job() == null || result.job().questions().isEmpty()
+                ? List.of() : questionAdvisor.review(result.job().questions());
     }
 
     private String optionalPublicHandle(com.ats.kernel.Ids.TenantId tenantId) {

@@ -18,10 +18,22 @@ public interface JobPostingStore {
             String summary,
             List<String> highlights,
             List<String> applicationFields,
-            String noticeVersion) {
+            String noticeVersion,
+            List<ApplicationQuestion> questions) {
         public Content {
             highlights = highlights == null ? List.of() : List.copyOf(highlights);
             applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+            // #240: ilana özel başvuru soruları. Sıra adayın gördüğü sıradır.
+            questions = questions == null ? List.of() : List.copyOf(questions);
+        }
+
+        /** Geriye uyumlu kurucu: sorusuz ilan (mevcut çağrı yerleri kırılmaz). */
+        public Content(
+                String slug, String title, String team, String location, String mode,
+                String employmentType, String summary, List<String> highlights,
+                List<String> applicationFields, String noticeVersion) {
+            this(slug, title, team, location, mode, employmentType, summary, highlights,
+                    applicationFields, noticeVersion, List.of());
         }
     }
 

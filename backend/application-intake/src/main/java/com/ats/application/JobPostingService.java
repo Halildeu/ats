@@ -48,10 +48,21 @@ public final class JobPostingService {
             String summary,
             List<String> highlights,
             List<String> applicationFields,
-            String noticeVersion) {
+            String noticeVersion,
+            List<ApplicationQuestion> questions) {
         public JobDraft {
             highlights = highlights == null ? List.of() : List.copyOf(highlights);
             applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+            questions = questions == null ? List.of() : List.copyOf(questions);
+        }
+
+        /** Geriye uyumlu kurucu: sorusuz ilan. */
+        public JobDraft(
+                String slug, String title, String team, String location, String mode,
+                String employmentType, String summary, List<String> highlights,
+                List<String> applicationFields, String noticeVersion) {
+            this(slug, title, team, location, mode, employmentType, summary, highlights,
+                    applicationFields, noticeVersion, List.of());
         }
     }
 
@@ -157,7 +168,8 @@ public final class JobPostingService {
                 normalizedSlug,
                 trim(raw.title()), trim(raw.team()), trim(raw.location()), trim(raw.mode()),
                 trim(raw.employmentType()), trim(raw.summary()), normalizeHighlights(raw.highlights()),
-                normalizeApplicationFields(raw.applicationFields()), trim(raw.noticeVersion()));
+                normalizeApplicationFields(raw.applicationFields()), trim(raw.noticeVersion()),
+                normalizeQuestions(raw.questions()));
         if (!slugOptional && value.slug() == null) return invalid("slug güncellemede zorunlu");
         if (value.slug() != null && !validSlug(value.slug())) return invalid("slug geçersiz");
         if (!between(value.title(), 2, 180)) return invalid("title 2..180 karakter olmalı");
@@ -185,13 +197,26 @@ public final class JobPostingService {
         if (!CURRENT_NOTICE_VERSION.equals(value.noticeVersion())) {
             return invalid("noticeVersion desteklenen güncel sürüm olmalı");
         }
+        // #240: soru sayısı, metin uzunluğu, seçenek kümesi ve SIRA bütünlüğü.
+        if (value.questions().size() > ApplicationQuestion.MAX_PER_JOB) {
+            return invalid("ilan başına en fazla "
+                    + ApplicationQuestion.MAX_PER_JOB + " başvuru sorusu olabilir");
+        }
+        if (value.questions().stream().anyMatch(q -> !q.valid())) {
+            return invalid("başvuru sorusu geçersiz: metin "
+                    + ApplicationQuestion.MIN_TEXT_LENGTH + ".."
+                    + ApplicationQuestion.MAX_TEXT_LENGTH
+                    + " karakter, tip kapalı küme, tek-seçim sorusu "
+                    + ApplicationQuestion.MIN_OPTIONS + ".."
+                    + ApplicationQuestion.MAX_OPTIONS + " benzersiz seçenek ister");
+        }
         return Outcome.ok(value);
     }
 
     private static Content content(JobDraft value, String slug) {
         return new Content(slug, value.title(), value.team(), value.location(), value.mode(),
                 value.employmentType(), value.summary(), value.highlights(),
-                value.applicationFields(), value.noticeVersion());
+                value.applicationFields(), value.noticeVersion(), value.questions());
     }
 
     private static String digest(String operation, String jobId, int expectedVersion, JobDraft value) {
@@ -285,6 +310,26 @@ public final class JobPostingService {
 
     private static boolean between(String value, int min, int max) {
         return value != null && value.length() >= min && value.length() <= max;
+    }
+
+    /**
+     * #240: sıra YENİDEN NUMARALANIR (1..n, boşluksuz). İK arayüzü sürükle-bırak
+     * ile boşluklu ya da çakışan pozisyon gönderebilir; adayın gördüğü sırayı
+     * istemcinin disiplinine bırakmak, aynı ilanı iki istemcide farklı sırada
+     * göstermek demektir. Boş metinli satır (İK ekleyip doldurmadı) atılır.
+     */
+    private static List<ApplicationQuestion> normalizeQuestions(List<ApplicationQuestion> raw) {
+        if (raw == null) return List.of();
+        List<ApplicationQuestion> ordered = raw.stream()
+                .filter(q -> q != null && !q.text().isBlank())
+                .sorted(java.util.Comparator.comparingInt(ApplicationQuestion::position))
+                .toList();
+        List<ApplicationQuestion> out = new java.util.ArrayList<>(ordered.size());
+        for (int i = 0; i < ordered.size(); i++) {
+            ApplicationQuestion q = ordered.get(i);
+            out.add(new ApplicationQuestion(i + 1, q.text(), q.kind(), q.required(), q.options()));
+        }
+        return List.copyOf(out);
     }
 
     private static <T> Outcome<T> invalid(String reason) {

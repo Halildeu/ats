@@ -71,6 +71,72 @@ class JobPostingServiceTest {
     }
 
     @Test
+    void questions_are_renumbered_so_the_candidate_order_is_the_servers_decision() {
+        // İK arayüzü sürükle-bırak ile boşluklu/çakışan pozisyon gönderebilir.
+        // Sırayı istemcinin disiplinine bırakmak, aynı ilanı iki istemcide farklı
+        // sırada göstermek demektir.
+        CapturingStore store = new CapturingStore();
+        JobDraft withQuestions = withQuestions(java.util.List.of(
+                question(7, "Tam zamanlı çalışabilir misiniz?"),
+                question(2, "Neden bu pozisyon ilginizi çekti?"),
+                question(7, "İkinci bir dil biliyor musunuz?")));
+
+        assertTrue(service(store).create(TENANT, ACTOR, IDEM, withQuestions).isOk());
+        java.util.List<ApplicationQuestion> saved = store.create.content().questions();
+        assertEquals(java.util.List.of(1, 2, 3),
+                saved.stream().map(ApplicationQuestion::position).toList(),
+                "sıra 1..n olarak yeniden numaralanmalı");
+        assertEquals("Neden bu pozisyon ilginizi çekti?", saved.get(0).text(),
+                "küçük pozisyon öne gelmeli");
+    }
+
+    @Test
+    void blank_question_rows_are_dropped_and_the_per_job_limit_is_enforced() {
+        CapturingStore store = new CapturingStore();
+        assertTrue(service(store).create(TENANT, ACTOR, IDEM, withQuestions(java.util.List.of(
+                question(1, "Tam zamanlı çalışabilir misiniz?"),
+                question(2, "   ")))).isOk());
+        assertEquals(1, store.create.content().questions().size(),
+                "İK satır ekleyip doldurmadıysa o satır kaydedilmez");
+
+        java.util.List<ApplicationQuestion> tooMany = new java.util.ArrayList<>();
+        for (int i = 1; i <= ApplicationQuestion.MAX_PER_JOB + 1; i++) {
+            tooMany.add(question(i, "Geçerli bir başvuru sorusu " + i));
+        }
+        var over = service(new CapturingStore()).create(
+                TENANT, ACTOR, IDEM, withQuestions(tooMany));
+        assertTrue(over instanceof Outcome.Fail<?> fail
+                        && fail.code() == OutcomeCode.INVALID
+                        && fail.reason().contains("en fazla"),
+                "ilan başına üst sınır aşılamaz: " + over);
+    }
+
+    @Test
+    void an_invalid_question_rejects_the_whole_job_write() {
+        // Yarım geçerli bir soru kümesini kaydetmek, adaya cevabı olmayan bir alan
+        // göstermek demektir.
+        var out = service(new CapturingStore()).create(TENANT, ACTOR, IDEM,
+                withQuestions(java.util.List.of(new ApplicationQuestion(
+                        1, "Hangi vardiyayı tercih edersiniz?",
+                        ApplicationQuestion.Kind.SINGLE_CHOICE, true,
+                        java.util.List.of("Gündüz")))));
+        assertTrue(out instanceof Outcome.Fail<?> fail && fail.code() == OutcomeCode.INVALID,
+                "tek seçenekli seçim sorusu reddedilmeli: " + out);
+    }
+
+    private static ApplicationQuestion question(int position, String text) {
+        return new ApplicationQuestion(
+                position, text, ApplicationQuestion.Kind.SHORT_TEXT, false, java.util.List.of());
+    }
+
+    private static JobDraft withQuestions(java.util.List<ApplicationQuestion> questions) {
+        JobDraft base = draft(null);
+        return new JobDraft(base.slug(), base.title(), base.team(), base.location(), base.mode(),
+                base.employmentType(), base.summary(), base.highlights(),
+                base.applicationFields(), base.noticeVersion(), questions);
+    }
+
+    @Test
     void update_requires_explicit_slug_and_expected_version() {
         var missingSlug = service(new CapturingStore()).update(
                 TENANT, ACTOR, "job_" + "A".repeat(24), 0, "job-update-key-1234", draft(null));

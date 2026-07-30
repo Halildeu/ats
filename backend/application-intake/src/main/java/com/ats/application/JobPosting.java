@@ -17,6 +17,7 @@ public record JobPosting(
         List<String> highlights,
         List<String> applicationFields,
         String noticeVersion,
+        List<ApplicationQuestion> questions,
         JobPostingStatus status,
         boolean applyEnabled,
         int version,
@@ -26,6 +27,8 @@ public record JobPosting(
     public JobPosting {
         highlights = highlights == null ? List.of() : List.copyOf(highlights);
         applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+        // #240: ilana özel başvuru soruları; boş liste "soru yok" demektir.
+        questions = questions == null ? List.of() : List.copyOf(questions);
         if (noticeVersion == null || noticeVersion.isBlank()) {
             throw new IllegalArgumentException("noticeVersion zorunlu");
         }
@@ -34,5 +37,17 @@ public record JobPosting(
             throw new IllegalArgumentException("applyEnabled/status invariant bozuk");
         }
         if (version < 0) throw new IllegalArgumentException("version negatif olamaz");
+    }
+
+    /** Geriye uyumlu kurucu: sorusuz ilan (mevcut çağrı yerleri kırılmaz). */
+    public JobPosting(
+            TenantId tenantId, String jobId, String slug, String title, String team,
+            String location, String mode, String employmentType, String summary,
+            List<String> highlights, List<String> applicationFields, String noticeVersion,
+            JobPostingStatus status, boolean applyEnabled, int version,
+            String createdAt, String updatedAt) {
+        this(tenantId, jobId, slug, title, team, location, mode, employmentType, summary,
+                highlights, applicationFields, noticeVersion, List.of(), status, applyEnabled,
+                version, createdAt, updatedAt);
     }
 }

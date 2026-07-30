@@ -1,5 +1,6 @@
 package com.ats.persistence;
 
+import com.ats.application.ApplicationQuestion;
 import com.ats.application.ApplicationIntakeService;
 import com.ats.application.ResumeImportService;
 import com.ats.kernel.JsonCodec;
@@ -70,6 +71,58 @@ final class Pg {
 
     private static void putIfPresent(Map<String, JsonValue> row, String key, String value) {
         if (value != null && !value.isEmpty()) row.put(key, JsonValue.of(value));
+    }
+
+    /**
+     * #240: sorular kanonik JSON'a. Sıra ALAN olarak yazılır (dizi sırasına
+     * güvenmek yetmez: jsonb okuma yolları sırayı korur ama açık `position`
+     * olmadan "3. soruyu 1. yap" işlemi sessizce başka bir soruyu taşır).
+     */
+    static String questionsToJson(List<ApplicationQuestion> questions) {
+        List<JsonValue> items = new ArrayList<>();
+        for (ApplicationQuestion q : questions) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            row.put("position", JsonValue.of((double) q.position()));
+            row.put("text", JsonValue.of(q.text()));
+            row.put("kind", JsonValue.of(q.kind().name()));
+            row.put("required", JsonValue.of(q.required()));
+            if (!q.options().isEmpty()) {
+                row.put("options", new JsonValue.JsonArray(
+                        q.options().stream().map(JsonValue::of).toList()));
+            }
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    /**
+     * Sorular JSONB'den. Bilinmeyen tip ya da bozuk şekil SESSİZCE yutulmaz:
+     * okuma fail eder — İK'ya "soru yok" göstermek, yanlış soru göstermekten
+     * daha iyi değil (#215 C'deki aynı gerekçe).
+     */
+    static List<ApplicationQuestion> questionsFromJson(String json) throws SQLException {
+        List<ApplicationQuestion> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            if (!(item instanceof JsonValue.JsonObject obj)) {
+                throw new SQLException("jsonb soru nesnesi bekleniyordu");
+            }
+            Map<String, JsonValue> v = obj.values();
+            String kindRaw = v.get("kind") instanceof JsonValue.JsonString k ? k.value() : null;
+            ApplicationQuestion.Kind kind = ApplicationQuestion.kindOf(kindRaw);
+            if (kind == null) throw new SQLException("soru tipi kapalı küme dışında: " + kindRaw);
+            int position = v.get("position") instanceof JsonValue.JsonNumber n
+                    ? (int) n.value() : 0;
+            String text = v.get("text") instanceof JsonValue.JsonString t ? t.value() : "";
+            boolean required = v.get("required") instanceof JsonValue.JsonBool b && b.value();
+            List<String> options = new ArrayList<>();
+            if (v.get("options") instanceof JsonValue.JsonArray arr) {
+                for (JsonValue o : arr.items()) {
+                    if (o instanceof JsonValue.JsonString os) options.add(os.value());
+                }
+            }
+            out.add(new ApplicationQuestion(position, text, kind, required, options));
+        }
+        return List.copyOf(out);
     }
 
     static String stringsToJson(List<String> values) {
