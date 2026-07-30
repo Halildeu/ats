@@ -172,6 +172,20 @@ public interface ApplicationStore {
     /** Public ref + token digest birlikte zorunlu; uyuşmazlık her zaman NOT_FOUND. */
     Outcome<CandidateStatusView> findCandidateStatus(String publicRef, String candidateAccessDigest);
 
+    /**
+     * #242 D: toplu deneyim hesabı için YALNIZ deneyim girdileri. PII-minimize:
+     * ad, e-posta, telefon, şehir dönmez — toplu hesap kimliği bilmek zorunda
+     * değildir ve bilmemesi gerekir.
+     *
+     * <p>Fail-closed varsayılan: bu yeteneği uygulamayan bir store, sessizce
+     * BOŞ liste dönüp "hiç deneyim yok" gibi bir sonuç üretmez.
+     */
+    default Outcome<java.util.List<java.util.List<ApplicationIntakeService.ExperienceEntry>>>
+            experienceEntriesForCoverage(TenantId tenant) {
+        return Outcome.fail(com.ats.kernel.OutcomeCode.NOT_CONFIGURED,
+                "toplu deneyim hesabı bu store'da desteklenmiyor");
+    }
+
     Outcome<ApplicationPage> listRecruiterApplications(
             TenantId tenantId, String jobSlug, ApplicationStatus status, int page, int size);
 
