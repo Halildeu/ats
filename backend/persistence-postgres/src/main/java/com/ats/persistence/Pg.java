@@ -40,6 +40,10 @@ final class Pg {
             putIfPresent(row, "company", e.company());
             putIfPresent(row, "startDate", e.startDate());
             putIfPresent(row, "endDate", e.endDate());
+            // #242 C: süregelenlik yalnız DOĞRU olduğunda yazılır — "false" değeri
+            // her satıra eklemek, eski satırlarla yeni satırları ayırt edilemez
+            // kılar ve boş-alan-yazmama kuralını bozar.
+            if (e.ongoing()) row.put("ongoing", JsonValue.of(true));
             putIfPresent(row, "description", e.description());
             items.add(new JsonValue.JsonObject(row));
         }
@@ -57,6 +61,7 @@ final class Pg {
             putIfPresent(row, "field", e.field());
             putIfPresent(row, "startYear", e.startYear());
             putIfPresent(row, "endYear", e.endYear());
+            if (e.ongoing()) row.put("ongoing", JsonValue.of(true));
             putIfPresent(row, "description", e.description());
             items.add(new JsonValue.JsonObject(row));
         }
@@ -105,6 +110,17 @@ final class Pg {
         }
     }
 
+    /**
+     * #242 C: {@code ongoing} JSON'da boolean'dır. {@link #entryFields} yalnız
+     * dizeleri topladığı için ayrı okunur — aksi hâlde bayrak SESSİZCE düşerdi
+     * ve süregelen iş, bitişi bilinmeyen iş gibi görünürdü (hesap onu yok sayar).
+     */
+    private static boolean entryFlag(JsonValue item, String key) {
+        return item instanceof JsonValue.JsonObject obj
+                && obj.values().get(key) instanceof JsonValue.JsonBool b
+                && b.value();
+    }
+
     static List<ApplicationIntakeService.ExperienceEntry> experienceEntriesFromJson(String json)
             throws SQLException {
         List<ApplicationIntakeService.ExperienceEntry> out = new ArrayList<>();
@@ -112,7 +128,7 @@ final class Pg {
             Map<String, String> f = entryFields(item);
             out.add(new ApplicationIntakeService.ExperienceEntry(
                     f.get("title"), f.get("company"), f.get("startDate"),
-                    f.get("endDate"), f.get("description")));
+                    f.get("endDate"), entryFlag(item, "ongoing"), f.get("description")));
         }
         return out;
     }
@@ -124,7 +140,8 @@ final class Pg {
             Map<String, String> f = entryFields(item);
             out.add(new ApplicationIntakeService.EducationEntry(
                     f.get("school"), f.get("degree"), f.get("field"),
-                    f.get("startYear"), f.get("endYear"), f.get("description")));
+                    f.get("startYear"), f.get("endYear"), entryFlag(item, "ongoing"),
+                    f.get("description")));
         }
         return out;
     }

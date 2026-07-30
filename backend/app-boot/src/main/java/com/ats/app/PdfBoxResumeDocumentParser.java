@@ -69,40 +69,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * Ay bulunamazsa değer yıl olarak kalır — uydurulmuş bir ay, eksik aydan
      * kötüdür (yanlışlığı görünmez olur).
      */
-    private static final Map<String, String> MONTHS = monthLexicon();
-
-    private static Map<String, String> monthLexicon() {
-        Map<String, String> m = new HashMap<>();
-        String[][] tr = {
-            {"ocak", "oca", "01"}, {"şubat", "şub", "02"}, {"mart", "mar", "03"},
-            {"nisan", "nis", "04"}, {"mayıs", "may", "05"}, {"haziran", "haz", "06"},
-            {"temmuz", "tem", "07"}, {"ağustos", "ağu", "08"}, {"eylül", "eyl", "09"},
-            {"ekim", "eki", "10"}, {"kasım", "kas", "11"}, {"aralık", "ara", "12"},
-        };
-        for (String[] row : tr) {
-            m.put(row[0], row[2]);
-            m.put(row[1], row[2]);
-            // Türkçe'ye özgü harfler kaybolmuş CV metinleri yaygın ("subat",
-            // "agustos", "eylul") — PDF çıkarımı sık sık aksanı düşürüyor.
-            m.put(deaccent(row[0]), row[2]);
-            m.put(deaccent(row[1]), row[2]);
-        }
-        String[][] en = {
-            {"january", "jan", "01"}, {"february", "feb", "02"}, {"march", "mar", "03"},
-            {"april", "apr", "04"}, {"may", "may", "05"}, {"june", "jun", "06"},
-            {"july", "jul", "07"}, {"august", "aug", "08"}, {"september", "sep", "09"},
-            {"october", "oct", "10"}, {"november", "nov", "11"}, {"december", "dec", "12"},
-        };
-        for (String[] row : en) {
-            m.putIfAbsent(row[0], row[2]);
-            m.putIfAbsent(row[1], row[2]);
-        }
-        return Map.copyOf(m);
-    }
+    private static final Map<String, String> MONTHS =
+            com.ats.application.ResumeDateNormalizer.MONTHS;
 
     private static String deaccent(String value) {
-        return value.replace("ş", "s").replace("ğ", "g").replace("ı", "i")
-                .replace("ü", "u").replace("ö", "o").replace("ç", "c");
+        return com.ats.application.ResumeDateNormalizer.deaccent(value);
     }
 
     /** "Eyl 2022" / "Eylül 2022" / "09/2022" / "2022-09" → "2022-09". */
