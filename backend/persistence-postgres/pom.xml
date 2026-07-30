@@ -16,7 +16,7 @@
        migration'ı test/composition katmanı çağırır. Testler Testcontainers-PG16 (ADR karar-5). -->
 
   <properties>
-    <postgresql.version>42.7.11</postgresql.version>
+    <postgresql.version>42.7.12</postgresql.version>
     <flyway.version>10.20.1</flyway.version>
     <testcontainers.version>1.20.4</testcontainers.version>
   </properties>
