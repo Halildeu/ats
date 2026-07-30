@@ -10,6 +10,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -31,6 +33,12 @@ import org.springframework.web.client.RestClientException;
  */
 @Component
 final class GraphOtpMailSender implements OtpMailSender {
+
+    // #237: gönderim/token hatası daha önce yalnız Outcome.reason'a gidiyordu,
+    // hiçbir yere loglanmıyordu — 503'ün sebebi operatör için görünmezdi.
+    // Log satırı yalnız exception + sınıf adı taşır; email/kod/Graph cevap
+    // gövdesi buraya da yazılmaz (dosya başındaki fail-closed disiplinle aynı).
+    private static final Logger LOG = LoggerFactory.getLogger("ats.ops");
 
     private final RestClient http;
     private final Clock clock;
@@ -86,6 +94,8 @@ final class GraphOtpMailSender implements OtpMailSender {
         try {
             token = accessToken();
         } catch (RestClientException | IllegalStateException ex) {
+            LOG.warn("candidate-login mail token acquisition failed: {}",
+                    ex.getClass().getSimpleName(), ex);
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED, "mail token acquisition failed");
         }
         // Kod YALNIZ mail gövdesine girer. Gövde düz metin — HTML şablonu yok,
@@ -112,6 +122,8 @@ final class GraphOtpMailSender implements OtpMailSender {
             return Outcome.ok(null);
         } catch (RestClientException ex) {
             // Cevap gövdesi bilerek yazılmaz; sınıf adı teşhis için yeter.
+            LOG.warn("candidate-login mail delivery failed: {}",
+                    ex.getClass().getSimpleName(), ex);
             return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
                     "mail delivery failed: " + ex.getClass().getSimpleName());
         }
