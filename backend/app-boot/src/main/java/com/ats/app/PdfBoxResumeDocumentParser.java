@@ -69,40 +69,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * Ay bulunamazsa değer yıl olarak kalır — uydurulmuş bir ay, eksik aydan
      * kötüdür (yanlışlığı görünmez olur).
      */
-    private static final Map<String, String> MONTHS = monthLexicon();
-
-    private static Map<String, String> monthLexicon() {
-        Map<String, String> m = new HashMap<>();
-        String[][] tr = {
-            {"ocak", "oca", "01"}, {"şubat", "şub", "02"}, {"mart", "mar", "03"},
-            {"nisan", "nis", "04"}, {"mayıs", "may", "05"}, {"haziran", "haz", "06"},
-            {"temmuz", "tem", "07"}, {"ağustos", "ağu", "08"}, {"eylül", "eyl", "09"},
-            {"ekim", "eki", "10"}, {"kasım", "kas", "11"}, {"aralık", "ara", "12"},
-        };
-        for (String[] row : tr) {
-            m.put(row[0], row[2]);
-            m.put(row[1], row[2]);
-            // Türkçe'ye özgü harfler kaybolmuş CV metinleri yaygın ("subat",
-            // "agustos", "eylul") — PDF çıkarımı sık sık aksanı düşürüyor.
-            m.put(deaccent(row[0]), row[2]);
-            m.put(deaccent(row[1]), row[2]);
-        }
-        String[][] en = {
-            {"january", "jan", "01"}, {"february", "feb", "02"}, {"march", "mar", "03"},
-            {"april", "apr", "04"}, {"may", "may", "05"}, {"june", "jun", "06"},
-            {"july", "jul", "07"}, {"august", "aug", "08"}, {"september", "sep", "09"},
-            {"october", "oct", "10"}, {"november", "nov", "11"}, {"december", "dec", "12"},
-        };
-        for (String[] row : en) {
-            m.putIfAbsent(row[0], row[2]);
-            m.putIfAbsent(row[1], row[2]);
-        }
-        return Map.copyOf(m);
-    }
+    private static final Map<String, String> MONTHS =
+            com.ats.application.ResumeDateNormalizer.MONTHS;
 
     private static String deaccent(String value) {
-        return value.replace("ş", "s").replace("ğ", "g").replace("ı", "i")
-                .replace("ü", "u").replace("ö", "o").replace("ç", "c");
+        return com.ats.application.ResumeDateNormalizer.deaccent(value);
     }
 
     /** "Eyl 2022" / "Eylül 2022" / "09/2022" / "2022-09" → "2022-09". */
@@ -206,6 +177,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * sayısız unvanda geçer (İş Sağlığı ve Güvenliği Uzmanı, Sağlık Teknikeri).
      * Korunması gereken şey adayın SAĞLIK DURUMU'dur, "sağlık" kelimesi değil;
      * o yüzden çok kelimeli biçimler açıkça listelendi.
+     *
+     * <p>Askerlik (#214): Türkiye'de standart CV alanı ve iki korumalı kategoriye
+     * VEKİL — yalnız erkekler yükümlü olduğu için cinsiyet, muafiyetler ağırlıkla
+     * sağlık gerekçeli olduğu için sağlık/engellilik. Bu yüzden CV'den forma
+     * önerilmez. Bare "askerlik" YALNIZ tam eşleşmedir; önek eşleşmesi açılamaz,
+     * çünkü `Askerlik Şube Başkanı` gerçek bir iş unvanıdır ve bastırılırsa
+     * "saglik" hatası tekrarlanır. Etiketin tek kelime kaldığı biçimler
+     * ({@code Askerlik: Yapıldı}) {@link #MILITARY_STATUS_WORDS} ile ayrılır.
      */
     private static final Set<String> PROTECTED_LABELS = Set.of(
             "dogum tarihi", "dogum yeri", "yas", "cinsiyet", "medeni durum",
@@ -214,7 +193,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             "saglik raporu", "kronik hastalik", "engellilik durumu",
             "tc kimlik no", "t c kimlik no", "kimlik no", "ucret beklentisi",
             "maas beklentisi", "fotograf", "referans", "referanslar",
-            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu");
+            "adres", "adres bilgisi", "adres bilgileri", "tam adres", "posta kodu",
+            "askerlik", "askerlik durumu", "askerlik hizmeti",
+            "askerlik bilgisi", "askerlik bilgileri", "askerlik yukumlulugu");
 
     /**
      * Aynı taban hizasındaki iki kolon PDFBox'tan TEK satır olarak gelebilir
@@ -1162,11 +1143,39 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static boolean isProtected(String normalizedLabel) {
         boolean labelShaped = normalizedLabel.length() <= MAX_HEADING_CHARS
                 && normalizedLabel.split(" ").length <= MAX_HEADING_TOKENS;
-        return PROTECTED_LABELS.stream().anyMatch(label ->
+        boolean listed = PROTECTED_LABELS.stream().anyMatch(label ->
                 normalizedLabel.equals(label)
                         || (labelShaped
                                 && label.indexOf(' ') >= 0
                                 && normalizedLabel.startsWith(label + " ")));
+        return listed || (labelShaped && militaryServiceStatusLine(normalizedLabel));
+    }
+
+    /**
+     * Askerlik yükümlülüğü durumu sözlüğü (kapalı küme, aksansız normalize).
+     *
+     * <p>Türkçe'de bu durum sayılı sözcükle ifade edilir; iş unvanı sözcükleri
+     * (şube, daire, başkan, komutanlık…) bu kümede YOKTUR. Ayrım bu yüzden
+     * etiketin kelime sayısıyla değil DEĞERLE yapılır: {@code Askerlik: Yapıldı}
+     * korumalıdır, {@code Askerlik Şube Başkanı} unvandır ve korunmaz.
+     */
+    private static final Set<String> MILITARY_STATUS_WORDS = Set.of(
+            "yapildi", "yapilmadi", "yapilmis", "yapti", "yapmadi", "yapiyor",
+            "yapacak", "tamamlandi", "tamamlanmadi", "tecil", "tecilli",
+            "muaf", "muafiyet", "muaftir", "bedelli", "terhis", "yukumlu",
+            "askerligini", "sevk", "ertelendi", "ertelenmis", "beklemede");
+
+    /**
+     * {@code Askerlik <durum>} biçimi: etiket tek kelime olduğu için önek
+     * eşleşmesi kapalıdır (gerekçe {@link #PROTECTED_LABELS} javadoc'unda),
+     * ayrım {@link #MILITARY_STATUS_WORDS} ile yapılır.
+     */
+    private static boolean militaryServiceStatusLine(String normalizedLabel) {
+        if (!normalizedLabel.startsWith("askerlik ")) return false;
+        for (String token : normalizedLabel.split(" ")) {
+            if (MILITARY_STATUS_WORDS.contains(token)) return true;
+        }
+        return false;
     }
 
     private static String normalizeLabel(String value) {

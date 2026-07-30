@@ -69,30 +69,79 @@ public final class ApplicationIntakeService {
             ApplicationStatus.WITHDRAWN, Set.of());
 
     /**
+     * #242 D: toplu deneyim hesabının sonucu — ve KAPSAMI.
+     *
+     * <p>Kapsam alanları isteğe bağlı DEĞİL. Kapsamsız bir ortalama, güven veren
+     * yanlış bir sayıdır: 100 kaydın 30'u hesaplanamıyorsa "ortalama deneyim"
+     * o 30'u yok sayar ve çıkan sayı doğru görünür. Bu yüzden uç, toplamı
+     * kapsam sayıları olmadan DÖNDÜRMEZ.
+     *
+     * @param asOf süregelen işlerin bitişi olarak kullanılan ay ({@code YYYY-MM});
+     *     süregelen süreler her ay artar, dolayısıyla sonuç bu değere bağlıdır ve
+     *     onsuz yorumlanamaz
+     */
+    public record ExperienceCoverage(
+            int applications,
+            int entries,
+            int computable,
+            int monthPrecision,
+            int yearPrecision,
+            int ongoing,
+            int uncomputable,
+            long totalMonths,
+            String asOf) {}
+
+    /**
      * #215: bir iş deneyimi girdisi. Aday formda bunları çoğaltır (LinkedIn/kariyer.net
-     * modeli). Tarihler serbest metin: CV'ler "Eyl 2018 - Tem 2018", "Temmuz 2019 -
-     * Devam Ediyor", "2019-2023" gibi çok farklı biçimler kullanıyor ve bunları tek bir
-     * tarih tipine zorlamak adayın yazdığını kaybetmek olur.
+     * modeli).
+     *
+     * <p>#242 dilim C: tarihler artık <b>kanonik</b>dir. Normalizasyon tam burada,
+     * kurucuda yapılır — böylece hangi yoldan gelirse gelsin (form gönderimi, CV
+     * içe aktarımı, taslak, veritabanı okuması) girdi <b>her zaman</b> aynı dili
+     * konuşur. Tek bir yazma yolunu normalize etmek, unutulan ikinci yolun karışık
+     * veri üretmesine kapı bırakırdı.
+     *
+     * <p>Çevrilemeyen değer ham hâliyle KORUNUR (boşaltılmaz); şekli zaten
+     * "hesaplanamaz" der. "Devam ediyor" gibi süregelenlik işaretleri ise tarih
+     * alanından çıkarılıp {@code ongoing} alanına taşınır: süregelen bir işin
+     * süresi hesaplanabilir (bitiş = bugün), dolayısıyla onu "ayrıştırılamadı"
+     * kutusuna atmak ölçülebilir veriyi çöpe atmak olurdu.
      */
     public record ExperienceEntry(
             String title,
             String company,
             String startDate,
             String endDate,
+            boolean ongoing,
             String description) {
 
         public ExperienceEntry {
             title = trimToEmpty(title);
             company = trimToEmpty(company);
-            startDate = trimToEmpty(startDate);
-            endDate = trimToEmpty(endDate);
             description = trimToEmpty(description);
+            ResumeDateNormalizer.Normalized start =
+                    ResumeDateNormalizer.normalize(startDate);
+            ResumeDateNormalizer.Normalized end =
+                    ResumeDateNormalizer.normalize(endDate);
+            // Başlangıç alanına yazılmış süregelenlik işareti anlamsızdır; ham
+            // değeri korur, hesaba girmez.
+            startDate = start.precision() == ResumeDateNormalizer.Precision.ONGOING
+                    ? trimToEmpty(startDate) : start.value();
+            endDate = end.value();
+            ongoing = ongoing || end.precision() == ResumeDateNormalizer.Precision.ONGOING;
+        }
+
+        /** Geriye uyumlu kurucu: süregelenlik bitiş değerinden türetilir. */
+        public ExperienceEntry(
+                String title, String company, String startDate, String endDate,
+                String description) {
+            this(title, company, startDate, endDate, false, description);
         }
 
         /** Boş girdi kaydedilmez; aday satır ekleyip doldurmadan gönderebilir. */
         public boolean blank() {
             return title.isEmpty() && company.isEmpty() && startDate.isEmpty()
-                    && endDate.isEmpty() && description.isEmpty();
+                    && endDate.isEmpty() && !ongoing && description.isEmpty();
         }
     }
 
@@ -103,21 +152,85 @@ public final class ApplicationIntakeService {
             String field,
             String startYear,
             String endYear,
+            boolean ongoing,
             String description) {
 
         public EducationEntry {
             school = trimToEmpty(school);
             degree = trimToEmpty(degree);
             field = trimToEmpty(field);
-            startYear = trimToEmpty(startYear);
-            endYear = trimToEmpty(endYear);
             description = trimToEmpty(description);
+            ResumeDateNormalizer.Normalized start =
+                    ResumeDateNormalizer.normalize(startYear);
+            ResumeDateNormalizer.Normalized end = ResumeDateNormalizer.normalize(endYear);
+            startYear = start.precision() == ResumeDateNormalizer.Precision.ONGOING
+                    ? trimToEmpty(startYear) : start.value();
+            endYear = end.value();
+            // Öğrenim de sürebilir ("devam ediyor"); aynı ayrım eğitimde de gerekli.
+            ongoing = ongoing || end.precision() == ResumeDateNormalizer.Precision.ONGOING;
+        }
+
+        /** Geriye uyumlu kurucu: süregelenlik bitiş değerinden türetilir. */
+        public EducationEntry(
+                String school, String degree, String field, String startYear,
+                String endYear, String description) {
+            this(school, degree, field, startYear, endYear, false, description);
         }
 
         public boolean blank() {
             return school.isEmpty() && degree.isEmpty() && field.isEmpty()
-                    && startYear.isEmpty() && endYear.isEmpty() && description.isEmpty();
+                    && startYear.isEmpty() && endYear.isEmpty() && !ongoing
+                    && description.isEmpty();
         }
+    }
+
+    /**
+     * #242 D: kiracı genelinde deneyim süresi toplamı + kapsam.
+     *
+     * <p>Ölçek notu (dürüstlük): hesap girdileri Java tarafında toplar; pilot
+     * ölçeğinde (yüzlerce başvuru) bu doğru ve yeterlidir. Kayıt sayısı büyürse
+     * hesap SQL'e taşınabilir — dilim C'den sonra değerler kanonik olduğu için
+     * bu taşıma ayrıştırma gerektirmez, yalnız şekle bakar.
+     */
+    public Outcome<ExperienceCoverage> experienceCoverage(
+            TenantId tenant, java.time.YearMonth requestedAsOf) {
+        // asOf'u servis çözer: saat servisin (test edilebilir Clock), controller'ın değil.
+        java.time.YearMonth asOf = requestedAsOf != null ? requestedAsOf
+                : java.time.YearMonth.from(clock.instant().atZone(java.time.ZoneOffset.UTC));
+        Outcome<java.util.List<java.util.List<ExperienceEntry>>> out =
+                store.experienceEntriesForCoverage(tenant);
+        if (out instanceof Outcome.Fail<java.util.List<java.util.List<ExperienceEntry>>> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        java.util.List<java.util.List<ExperienceEntry>> perApplication =
+                ((Outcome.Ok<java.util.List<java.util.List<ExperienceEntry>>>) out).value();
+        int entries = 0;
+        int computable = 0;
+        int month = 0;
+        int year = 0;
+        int ongoing = 0;
+        int uncomputable = 0;
+        long totalMonths = 0;
+        for (java.util.List<ExperienceEntry> application : perApplication) {
+            for (ExperienceEntry entry : application) {
+                entries++;
+                ExperienceDuration.Result r = ExperienceDuration.of(entry, asOf);
+                if (r.months().isEmpty()) {
+                    uncomputable++;
+                    continue;
+                }
+                computable++;
+                totalMonths += r.months().getAsInt();
+                switch (r.basis()) {
+                    case MONTH -> month++;
+                    case YEAR -> year++;
+                    case ONGOING -> ongoing++;
+                    default -> { }
+                }
+            }
+        }
+        return Outcome.ok(new ExperienceCoverage(perApplication.size(), entries, computable,
+                month, year, ongoing, uncomputable, totalMonths, asOf.toString()));
     }
 
     private static String trimToEmpty(String value) {
@@ -235,7 +348,7 @@ public final class ApplicationIntakeService {
                 StringBuilder sb = new StringBuilder();
                 if (!e.title().isEmpty()) sb.append(e.title());
                 if (!e.company().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.company());
-                String span = dateSpan(e.startDate(), e.endDate());
+                String span = dateSpan(e.startDate(), e.ongoing() ? ONGOING_TEXT : e.endDate());
                 if (!span.isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(span);
                 if (!e.description().isEmpty()) sb.append(sb.isEmpty() ? "" : "\n").append(e.description());
                 return sb.toString();
@@ -249,12 +362,19 @@ public final class ApplicationIntakeService {
                 if (!e.school().isEmpty()) sb.append(e.school());
                 if (!e.degree().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.degree());
                 if (!e.field().isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(e.field());
-                String span = dateSpan(e.startYear(), e.endYear());
+                String span = dateSpan(e.startYear(), e.ongoing() ? ONGOING_TEXT : e.endYear());
                 if (!span.isEmpty()) sb.append(sb.isEmpty() ? "" : " - ").append(span);
                 if (!e.description().isEmpty()) sb.append(sb.isEmpty() ? "" : "\n").append(e.description());
                 return sb.toString();
             }).collect(java.util.stream.Collectors.joining("\n\n"));
         }
+
+        /**
+         * #242 C: süregelenlik tarih alanından çıkarıldı, ama İK'nın gördüğü tek
+         * dizeli görünüm anlamını kaybetmemeli — "2022-09 - " diye yarım kalan bir
+         * aralık, "hâlâ çalışıyor" bilgisini görünmez kılardı.
+         */
+        static final String ONGOING_TEXT = "Devam ediyor";
 
         private static String dateSpan(String from, String to) {
             if (from.isEmpty() && to.isEmpty()) return "";
