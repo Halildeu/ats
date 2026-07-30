@@ -22,6 +22,14 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <junit.version>5.10.2</junit.version>
+    <!--
+      Güvenlik: JDBC sürücüsü TEK kaynaktan. Sürüm daha önce iki yerde
+      bildiriliyordu — persistence-postgres'te property, app-boot'ta ELLE sabit.
+      Dependabot yalnız property'yi yükseltebildiği için app-boot geride kaldı ve
+      aynı CVE iki ayrı uyarı olarak açıldı (alert #11 + #12). Property parent'a
+      taşındı; bundan sonra tek bump iki modülü de kapatır.
+    -->
+    <postgresql.version>42.7.12</postgresql.version>
     <archunit.version>1.3.0</archunit.version>
   </properties>
 
