@@ -86,7 +86,8 @@
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <version>42.7.11</version>
+      <!-- Sürüm parent'taki tek kaynaktan; elle sabit sürüm yazılmaz (bkz. parent). -->
+      <version>${postgresql.version}</version>
       <scope>runtime</scope>
     </dependency>
     <!-- Candidate CV import adapter: parser is isolated behind ResumeDocumentParser;
