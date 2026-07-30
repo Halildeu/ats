@@ -247,6 +247,33 @@ public final class PostgresApplicationStore implements ApplicationStore {
         }
     }
 
+    /**
+     * #242 D: toplu deneyim hesabı için YALNIZ girdi dizisi okunur — ad, e-posta,
+     * telefon, şehir sorguya hiç girmez (PII-minimize). Silinmiş kişisel veri
+     * (KVKK) kapsam dışıdır; boş girdi dizisi olan satırlar da sorguya girmez,
+     * ama "başvuru sayısı" onları saymaz — bu ayrım kapsam raporunda görünür.
+     */
+    @Override
+    public Outcome<List<List<ApplicationIntakeService.ExperienceEntry>>>
+            experienceEntriesForCoverage(TenantId tenantId) {
+        String sql = "SELECT a.experience_entries::text FROM ats_application a"
+                + " WHERE a.tenant_id = ? AND a.personal_data_erased_at IS NULL"
+                + " AND a.experience_entries <> '[]'::jsonb"
+                + " ORDER BY a.created_at, a.application_id";
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, tenantId.value());
+            List<List<ApplicationIntakeService.ExperienceEntry>> out = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(Pg.experienceEntriesFromJson(rs.getString(1)));
+                }
+            }
+            return Outcome.ok(List.copyOf(out));
+        } catch (SQLException ex) {
+            return Pg.sqlFail(ex);
+        }
+    }
+
     @Override
     public Outcome<RecruiterApplicationDetail> findRecruiterApplication(
             TenantId tenantId, String publicRef) {

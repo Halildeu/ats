@@ -42,7 +42,11 @@ class V21LegacyEntryDateNormalizationTest {
     private static final PostgreSQLContainer<?> PG = new PostgreSQLContainer<>("postgres:16-alpine");
 
     private static PGSimpleDataSource ds;
-    private static final String[] HEX_DIGESTS = {"a".repeat(64), "b".repeat(64), "c".repeat(64)};
+    private static final String[] HEX_DIGESTS = {"a".repeat(64), "b".repeat(64), "c".repeat(64),
+        "d".repeat(64), "e".repeat(64)};
+    /** Kapsam testi AYRI kiracıda: store sorgusu kiracı-kapsamlı olduğu için bu,
+     * geri-alma testinin mutasyonundan tam izolasyon sağlar (test sırası belirsiz). */
+    private static final String COVERAGE_TENANT = "tenant-v21-coverage";
     private static int seeded;
 
     private static final String TENANT = "tenant-v21";
@@ -88,6 +92,18 @@ class V21LegacyEntryDateNormalizationTest {
         insertApplication(EMPTY_ENTRIES, "[]", "[]");
         insertApplication(ROLLBACK_ROW, """
                 [{"title": "A", "startDate": "Eyl 2022", "endDate": "Devam ediyor"}]""", "[]");
+
+        // Kapsam ölçümü için ayrı kiracı: ay + yıl + süregelen + hesaplanamaz karışımı.
+        exec("INSERT INTO ats_job_posting (tenant_id, job_id, slug, title, team, location,"
+                + " mode, employment_type, summary, published) VALUES ('" + COVERAGE_TENANT
+                + "', '" + JOB + "', 'v21-kapsam', 'V21 Kapsam', 'Takim', 'Istanbul',"
+                + " 'HYBRID', 'FULL_TIME', 'ozet', false)");
+        insertApplication(COVERAGE_TENANT, "app_" + "C".repeat(24), """
+                [{"title": "ay", "startDate": "2022-09", "endDate": "2024-03"},
+                 {"title": "yil", "startDate": "2019", "endDate": "2020"},
+                 {"title": "suregelen", "startDate": "Eyl 2022", "endDate": "Devam ediyor"},
+                 {"title": "hesaplanamaz", "startDate": "2016 güz", "endDate": "2019"}]""", "[]");
+        insertApplication(COVERAGE_TENANT, "app_" + "D".repeat(24), "[]", "[]");
 
         // 3) V21'i koş.
         Flyway.configure().dataSource(ds).load().migrate();
@@ -208,6 +224,41 @@ class V21LegacyEntryDateNormalizationTest {
                 "geri alma ham değeri gerçekten geri koymalı");
     }
 
+    @Test
+    void coverage_query_is_pii_minimized_and_every_bucket_is_reported() throws SQLException {
+        // #242 D: kapsam raporu OLMADAN toplam anlamsızdır — 100 kaydın 30'u
+        // hesaplanamıyorsa "ortalama deneyim" onları yok sayar ve doğru görünür.
+        var store = new PostgresApplicationStore(ds);
+        var out = store.experienceEntriesForCoverage(new com.ats.kernel.Ids.TenantId(COVERAGE_TENANT));
+        var perApplication = ((com.ats.kernel.Outcome.Ok<java.util.List<java.util.List<
+                com.ats.application.ApplicationIntakeService.ExperienceEntry>>>) out).value();
+
+        assertEquals(1, perApplication.size(),
+                "girdisi olmayan başvuru sorguya girmez ama 'hesaplanamaz' diye de sayılmaz");
+        assertEquals(4, perApplication.get(0).size());
+
+        java.time.YearMonth asOf = java.time.YearMonth.of(2026, 7);
+        var buckets = new java.util.EnumMap<com.ats.application.ExperienceDuration.Basis, Integer>(
+                com.ats.application.ExperienceDuration.Basis.class);
+        long totalMonths = 0;
+        for (var entry : perApplication.get(0)) {
+            var r = com.ats.application.ExperienceDuration.of(entry, asOf);
+            buckets.merge(r.basis(), 1, Integer::sum);
+            if (r.months().isPresent()) totalMonths += r.months().getAsInt();
+        }
+
+        assertEquals(1, buckets.get(com.ats.application.ExperienceDuration.Basis.MONTH),
+                "iki ucu ay hassasiyetli girdi");
+        assertEquals(1, buckets.get(com.ats.application.ExperienceDuration.Basis.YEAR),
+                "yıl hassasiyetli girdi AYRI sayılmalı — toplamın ne kadarı kaba veri");
+        assertEquals(1, buckets.get(com.ats.application.ExperienceDuration.Basis.ONGOING),
+                "süregelen girdi asOf ile hesaplanır");
+        assertEquals(1, buckets.get(com.ats.application.ExperienceDuration.Basis.UNCOMPUTABLE),
+                "hesaplanamaz girdi SIFIR sayılmaz, ayrı raporlanır");
+        // 19 (2022-09..2024-03) + 24 (2019..2020 tam yıllar) + 47 (2022-09..2026-07)
+        assertEquals(19 + 24 + 47, totalMonths, "yalnız hesaplanabilirler toplanır");
+    }
+
     /**
      * DB'deki HAM değeri okur. Kasıtlı olarak {@code Pg.experienceEntriesFromJson}
      * KULLANILMAZ: o yol record kurucusundan geçer ve tarihi kendisi normalize
@@ -240,13 +291,19 @@ class V21LegacyEntryDateNormalizationTest {
 
     private static void insertApplication(String publicRef, String experience, String education)
             throws SQLException {
+        insertApplication(TENANT, publicRef, experience, education);
+    }
+
+    private static void insertApplication(
+            String tenant, String publicRef, String experience, String education)
+            throws SQLException {
         // Erişim digest'i başvuruya özgü (unique) VE hex olmalı (CHECK): sabit bir
         // digest'i iki satırda kullanmak da, hex olmayan bir harf de fixture'ı kırar.
         String digest = HEX_DIGESTS[seeded++];
         exec("INSERT INTO ats_application (tenant_id, application_id, public_ref, job_id,"
                 + " full_name, status, candidate_access_digest, notice_version,"
                 + " notice_accepted_at, accuracy_confirmed_at, created_at, updated_at,"
-                + " experience_entries, education_entries) VALUES ('" + TENANT + "',"
+                + " experience_entries, education_entries) VALUES ('" + tenant + "',"
                 + " gen_random_uuid(), '" + publicRef + "', '" + JOB + "', 'Sentetik Aday',"
                 + " 'SUBMITTED', '" + digest + "', 'v1', now(), now(), now(), now(),"
                 + " '" + experience + "'::jsonb, '" + education + "'::jsonb)");

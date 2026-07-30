@@ -69,6 +69,29 @@ public final class ApplicationIntakeService {
             ApplicationStatus.WITHDRAWN, Set.of());
 
     /**
+     * #242 D: toplu deneyim hesabının sonucu — ve KAPSAMI.
+     *
+     * <p>Kapsam alanları isteğe bağlı DEĞİL. Kapsamsız bir ortalama, güven veren
+     * yanlış bir sayıdır: 100 kaydın 30'u hesaplanamıyorsa "ortalama deneyim"
+     * o 30'u yok sayar ve çıkan sayı doğru görünür. Bu yüzden uç, toplamı
+     * kapsam sayıları olmadan DÖNDÜRMEZ.
+     *
+     * @param asOf süregelen işlerin bitişi olarak kullanılan ay ({@code YYYY-MM});
+     *     süregelen süreler her ay artar, dolayısıyla sonuç bu değere bağlıdır ve
+     *     onsuz yorumlanamaz
+     */
+    public record ExperienceCoverage(
+            int applications,
+            int entries,
+            int computable,
+            int monthPrecision,
+            int yearPrecision,
+            int ongoing,
+            int uncomputable,
+            long totalMonths,
+            String asOf) {}
+
+    /**
      * #215: bir iş deneyimi girdisi. Aday formda bunları çoğaltır (LinkedIn/kariyer.net
      * modeli).
      *
@@ -159,6 +182,55 @@ public final class ApplicationIntakeService {
                     && startYear.isEmpty() && endYear.isEmpty() && !ongoing
                     && description.isEmpty();
         }
+    }
+
+    /**
+     * #242 D: kiracı genelinde deneyim süresi toplamı + kapsam.
+     *
+     * <p>Ölçek notu (dürüstlük): hesap girdileri Java tarafında toplar; pilot
+     * ölçeğinde (yüzlerce başvuru) bu doğru ve yeterlidir. Kayıt sayısı büyürse
+     * hesap SQL'e taşınabilir — dilim C'den sonra değerler kanonik olduğu için
+     * bu taşıma ayrıştırma gerektirmez, yalnız şekle bakar.
+     */
+    public Outcome<ExperienceCoverage> experienceCoverage(
+            TenantId tenant, java.time.YearMonth requestedAsOf) {
+        // asOf'u servis çözer: saat servisin (test edilebilir Clock), controller'ın değil.
+        java.time.YearMonth asOf = requestedAsOf != null ? requestedAsOf
+                : java.time.YearMonth.from(clock.instant().atZone(java.time.ZoneOffset.UTC));
+        Outcome<java.util.List<java.util.List<ExperienceEntry>>> out =
+                store.experienceEntriesForCoverage(tenant);
+        if (out instanceof Outcome.Fail<java.util.List<java.util.List<ExperienceEntry>>> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        java.util.List<java.util.List<ExperienceEntry>> perApplication =
+                ((Outcome.Ok<java.util.List<java.util.List<ExperienceEntry>>>) out).value();
+        int entries = 0;
+        int computable = 0;
+        int month = 0;
+        int year = 0;
+        int ongoing = 0;
+        int uncomputable = 0;
+        long totalMonths = 0;
+        for (java.util.List<ExperienceEntry> application : perApplication) {
+            for (ExperienceEntry entry : application) {
+                entries++;
+                ExperienceDuration.Result r = ExperienceDuration.of(entry, asOf);
+                if (r.months().isEmpty()) {
+                    uncomputable++;
+                    continue;
+                }
+                computable++;
+                totalMonths += r.months().getAsInt();
+                switch (r.basis()) {
+                    case MONTH -> month++;
+                    case YEAR -> year++;
+                    case ONGOING -> ongoing++;
+                    default -> { }
+                }
+            }
+        }
+        return Outcome.ok(new ExperienceCoverage(perApplication.size(), entries, computable,
+                month, year, ongoing, uncomputable, totalMonths, asOf.toString()));
     }
 
     private static String trimToEmpty(String value) {

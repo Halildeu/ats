@@ -471,6 +471,62 @@ class ApplicationApiController {
                 result.page(), result.size(), result.total()));
     }
 
+    /**
+     * #242 D: toplu deneyim hesabı. KAPSAM alanları yanıtın zorunlu parçasıdır —
+     * kapsamsız bir ortalama, güven veren yanlış bir sayıdır.
+     */
+    @Schema(name = "ExperienceCoverageResponse",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record ExperienceCoverageDto(
+            @Schema(description = "Deneyim girdisi olan başvuru sayısı") int applications,
+            @Schema(description = "Toplam deneyim girdisi") int entries,
+            @Schema(description = "Süresi hesaplanabilen girdi") int computable,
+            @Schema(description = "İki ucu da ay hassasiyetli girdi") int monthPrecision,
+            @Schema(description = "En az bir ucu yıl hassasiyetli girdi; süre yıl "
+                    + "sınırlarına yuvarlanır") int yearPrecision,
+            @Schema(description = "Bitişi asOf kabul edilen süregelen girdi") int ongoing,
+            @Schema(description = "Hesaba GİRMEYEN girdi (uç yok ya da çevrilemedi)")
+                    int uncomputable,
+            @Schema(description = "Hesaplanabilir girdilerin toplam süresi (ay)") long totalMonths,
+            @Schema(description = "Süregelen işlerin bitişi olarak kullanılan ay (YYYY-MM). "
+                    + "Süregelen süreler her ay artar; sonuç bu değer olmadan yorumlanamaz.")
+                    String asOf) {}
+
+    @GetMapping("/api/v1/recruiter/applications/experience-coverage")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Toplu deneyim hesabı + kapsam",
+                    content = @Content(schema = @Schema(implementation = ExperienceCoverageDto.class))),
+            @ApiResponse(responseCode = "400", description = "asOf biçimi YYYY-MM olmalı"),
+            @ApiResponse(responseCode = "401", description = "Kimlik doğrulanmadı"),
+            @ApiResponse(responseCode = "403", description = "ATS başvuru görüntüleme yetkisi yok"),
+            @ApiResponse(responseCode = "503", description = "Yetki doğrulama servisi kullanılamıyor")
+    })
+    ResponseEntity<?> experienceCoverage(Authentication auth,
+            @RequestParam(value = "asOf", required = false) String asOf) {
+        Outcome<Void> allowed = authorization.require(
+                auth, RecruiterAuthorization.Permission.APPLICATION_VIEW);
+        if (allowed instanceof Outcome.Fail<Void> fail) return OutcomeHttp.fail(fail);
+        java.time.YearMonth month;
+        try {
+            // null = "servisin saatini kullan"; servis kendi Clock'unu bilir.
+            month = asOf == null || asOf.isBlank() ? null : java.time.YearMonth.parse(asOf.trim());
+        } catch (java.time.format.DateTimeParseException ex) {
+            return OutcomeHttp.fail(new Outcome.Fail<Void>(
+                    com.ats.kernel.OutcomeCode.INVALID, "asOf biçimi YYYY-MM olmalı"));
+        }
+        Outcome<ApplicationIntakeService.ExperienceCoverage> out =
+                service.experienceCoverage(tenantAccess.tenant(auth), month);
+        if (out instanceof Outcome.Fail<ApplicationIntakeService.ExperienceCoverage> fail) {
+            return OutcomeHttp.fail(fail);
+        }
+        ApplicationIntakeService.ExperienceCoverage c =
+                ((Outcome.Ok<ApplicationIntakeService.ExperienceCoverage>) out).value();
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+                new ExperienceCoverageDto(c.applications(), c.entries(), c.computable(),
+                        c.monthPrecision(), c.yearPrecision(), c.ongoing(), c.uncomputable(),
+                        c.totalMonths(), c.asOf()));
+    }
+
     @GetMapping("/api/v1/recruiter/applications/{publicRef}")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Tenant-bound başvuru detayı",
