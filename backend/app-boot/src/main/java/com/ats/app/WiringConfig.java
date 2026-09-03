@@ -286,8 +286,10 @@ class WiringConfig {
 
     @Bean
     ProtectedAttributeScreener protectedAttributeScreener() {
+        // #214: paspolicy_v1'e MILITARY_SERVICE_STATUS eklenmedi (geçmiş tarama kayıtları v1
+        // digest'ine bağlı — v1 donmuş kalır). Canlı tarama artık paspolicy_v2 kullanır.
         return ProtectedAttributeScreener.fromClasspath(
-                "screening/protected-attribute-screening-policy.v1.json");
+                "screening/protected-attribute-screening-policy.v2.json");
     }
 
     @Bean

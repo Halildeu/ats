@@ -7,7 +7,7 @@ import { loadPolicy, screen } from "../../scripts/lib/protected-screening-policy
 /**
  * ATS 156-a — protected-attribute screening ORTAK golden-corpus (Node tarafı).
  *
- * Aynı kanonik registry ({@code protected-attribute-screening-policy.v1.json}) + aynı golden-corpus
+ * Aynı kanonik registry ({@code protected-attribute-screening-policy.v2.json}) + aynı golden-corpus
  * fixture'ı Java-test (GoldenCorpusTest) ile PAYLAŞILIR. Bu dosya registry-güdümlü tarayıcının bir
  * TS/Node-portunu koşar; her corpus vakası Java ile AYNI (kategori, sinyal, orijinal-span, coverage,
  * dil ekseni) sonucu üretmelidir → iki-bağımsız-motor drift'i corpus ile makine-yakalanır.
@@ -19,8 +19,8 @@ import { loadPolicy, screen } from "../../scripts/lib/protected-screening-policy
  */
 
 const REPO = (rel: string) => fileURLToPath(new URL("../../" + rel, import.meta.url));
-const REGISTRY_PATH = REPO("backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v1.json");
-const CORPUS_PATH = REPO("backend/compliance-screening/src/test/resources/screening/screening-golden-corpus.v1.json");
+const REGISTRY_PATH = REPO("backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v2.json");
+const CORPUS_PATH = REPO("backend/compliance-screening/src/test/resources/screening/screening-golden-corpus.v2.json");
 
 interface CorpusFinding { category: string; signal: string; start: number; end: number; segmentIndex: number | null; }
 

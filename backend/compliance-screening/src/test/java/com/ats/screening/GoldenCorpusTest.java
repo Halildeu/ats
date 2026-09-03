@@ -25,8 +25,8 @@ import org.junit.jupiter.api.Test;
  */
 class GoldenCorpusTest {
 
-    private static final String REGISTRY = "screening/protected-attribute-screening-policy.v1.json";
-    private static final String CORPUS = "screening/screening-golden-corpus.v1.json";
+    private static final String REGISTRY = "screening/protected-attribute-screening-policy.v2.json";
+    private static final String CORPUS = "screening/screening-golden-corpus.v2.json";
 
     private final ProtectedAttributeScreener loaded = ProtectedAttributeScreener.fromClasspath(REGISTRY);
     private final ProtectedAttributeScreener unavailable = ProtectedAttributeScreener.unavailable();

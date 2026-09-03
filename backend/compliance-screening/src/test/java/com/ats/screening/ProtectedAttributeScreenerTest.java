@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 /** Tarayıcı saf-çekirdek davranışı: leksik eşleşme, soru-kalıbı, safe-strip, kapsam, dil ekseni, orijinal-span. */
 class ProtectedAttributeScreenerTest {
 
-    private static final String RESOURCE = "screening/protected-attribute-screening-policy.v1.json";
+    private static final String RESOURCE = "screening/protected-attribute-screening-policy.v2.json";
 
     private final ProtectedAttributeScreener screener = ProtectedAttributeScreener.fromClasspath(RESOURCE);
 
@@ -178,9 +178,9 @@ class ProtectedAttributeScreenerTest {
     }
 
     @Test
-    void policy_ref_is_v1_and_run_id_is_present() {
+    void policy_ref_is_v2_and_run_id_is_present() {
         ScreeningResult r = screener.screen("merhaba", ScreeningSourceKind.FREE_TEXT, "tr");
-        assertEquals("paspolicy_v1", r.policyRef().value());
+        assertEquals("paspolicy_v2", r.policyRef().value());
         assertTrue(ScreeningRunId.isValid(r.runId().value()));
         assertTrue(r.isClear());
     }

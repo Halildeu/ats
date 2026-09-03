@@ -45,13 +45,13 @@ class StructuralGuaranteeTest {
     @Test
     void protected_category_is_the_closed_composite_compliance_taxonomy() {
         // BİLEŞİK korumalı/işe-alım-uyum taksonomisi (KVKK m.6 + geniş işe-alım-ayrımcılık ekseni) —
-        // TAMAMEN KVKK m.6 kümesi DEĞİL; kapalı 13-üye.
-        assertEquals(13, ProtectedCategory.values().length);
+        // TAMAMEN KVKK m.6 kümesi DEĞİL; kapalı 14-üye (#214: MILITARY_SERVICE_STATUS eklendi).
+        assertEquals(14, ProtectedCategory.values().length);
         assertEquals(Set.of(
                 "AGE", "RELIGION_BELIEF", "ETHNICITY_RACE", "TRADE_UNION", "HEALTH_DISABILITY",
                 "SEX_GENDER_ORIENTATION", "MARITAL_PARENTAL_STATUS", "POLITICAL_OPINION",
                 "PHILOSOPHICAL_BELIEF", "CRIMINAL_RECORD", "NATIVE_LANGUAGE_ACCENT",
-                "ASSOCIATION_MEMBERSHIP", "PREGNANCY_MATERNITY"),
+                "ASSOCIATION_MEMBERSHIP", "PREGNANCY_MATERNITY", "MILITARY_SERVICE_STATUS"),
                 names(ProtectedCategory.values()));
     }
 
