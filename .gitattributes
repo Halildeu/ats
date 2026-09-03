@@ -1,0 +1,6 @@
+# screening policy/corpus dosyaları SHA-256 digest ile pinlenir (GoldenCorpusTest +
+# screening-corpus.contract.test.ts, Java<->Node drift-guard). CRLF/LF farkı digest'i
+# değiştirir; Windows'ta core.autocrlf=true ile bu dosyalar sessizce CRLF'e dönüşüp
+# CI'daki (Linux, LF) digest'ten sapabiliyordu. LF'e sabitleniyor.
+backend/compliance-screening/src/main/resources/screening/*.json text eol=lf
+backend/compliance-screening/src/test/resources/screening/*.json text eol=lf

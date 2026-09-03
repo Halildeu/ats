@@ -1,6 +1,6 @@
 {
   "policyRef": "paspolicy_v2",
-  "policyDigest": "sha256:88d8eecb2406f599acee30df5d98e7af94717c5df4c82f96674010d1655dbda1",
+  "policyDigest": "sha256:48406c21fc3d0be9f11fc67ccb9003514f6b270ed4be30575613a40bc039808c",
   "note": "ORTAK regresyon korpusu (Java-test + Node-CI aynı vakaları koşar). expectedFindings span'leri ORİJİNAL UTF-16 ofsetleridir; segmentIndex null = segment bağlamı yok. Coverage SUPPORTED dışında bulgu-boş olsa da CLEAR değildir. 'language' = çağıranın BEYAN ettiği BCP-47 dil-tag; base-tag policy dilinde değilse VEYA baskın-yazım Latin değilse UNSUPPORTED_LANGUAGE.",
   "cases": [
     { "id": "dp-1", "group": "direct_positive", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "en",
