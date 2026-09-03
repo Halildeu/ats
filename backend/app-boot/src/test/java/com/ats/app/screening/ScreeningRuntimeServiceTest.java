@@ -39,7 +39,7 @@ class ScreeningRuntimeServiceTest {
         InMemoryEventSink events = new InMemoryEventSink();
         ScreeningRuntimeService service = new ScreeningRuntimeService(
                 ProtectedAttributeScreener.fromClasspath(
-                        "screening/protected-attribute-screening-policy.v1.json"),
+                        "screening/protected-attribute-screening-policy.v2.json"),
                 evidence, transcripts, new InMemoryCitationStore(), events, Clock.systemUTC());
 
         Outcome<ScreeningRuntimeService.ScreeningView> out = service.screen(
@@ -136,7 +136,7 @@ class ScreeningRuntimeServiceTest {
             InMemoryEventSink events) {
         return new ScreeningRuntimeService(
                 ProtectedAttributeScreener.fromClasspath(
-                        "screening/protected-attribute-screening-policy.v1.json"),
+                        "screening/protected-attribute-screening-policy.v2.json"),
                 evidence, transcripts, citations, events, Clock.systemUTC());
     }
 

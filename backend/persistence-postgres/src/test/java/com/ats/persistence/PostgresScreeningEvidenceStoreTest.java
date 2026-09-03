@@ -433,7 +433,7 @@ class PostgresScreeningEvidenceStoreTest {
         TenantId a = tenant();
         TenantId b = tenant();
         ProtectedAttributeScreener screener = ProtectedAttributeScreener.fromClasspath(
-                "screening/protected-attribute-screening-policy.v1.json");
+                "screening/protected-attribute-screening-policy.v2.json");
         ScreeningResult ra = screener.screen("Kaç yaşındasınız?", ScreeningSourceKind.FREE_TEXT, "tr");
         ScreeningResult rb = screener.screen("Kaç yaşındasınız?", ScreeningSourceKind.FREE_TEXT, "tr");
         assertNotEquals(ra.runId(), rb.runId());

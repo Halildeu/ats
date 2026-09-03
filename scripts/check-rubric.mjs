@@ -4,7 +4,7 @@
  *
  *  1. Minimal JSON-Schema validator (no-dep, $ref/$defs/pattern/maxLength/maxItems; unsupported-kw FAIL).
  *  2. PROTECTED-ATTRIBUTE taraması TEK KANONİK registry'den TÜREVLİDİR (term-düzeyi single-source):
- *     `scripts/lib/protected-screening-policy.mjs` kanonik `protected-attribute-screening-policy.v1.json`'dan
+ *     `scripts/lib/protected-screening-policy.mjs` kanonik `protected-attribute-screening-policy.v2.json`'dan
  *     protected-term + safe-phrase üretir; bu script İKİNCİ bir regex/term registry'si TUTMAZ. Böylece
  *     policy'ye eklenen/çıkarılan bir TERİM (yalnız kategori-ADI değil) otomatik yansır — Java kernel +
  *     Node-corpus + bu guard aynı fiziksel terim kümesini tüketir (iki-bağımsız-vokabüler drift'i imkânsız).
@@ -40,7 +40,7 @@ const norm = (s) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "
 const SCORING = [/score|skor|puan/, /weight|agirlik/, /\brank|ranking|siralama/, /rating/, /affect|sentiment|emotion|duygu/];
 
 // Korumalı-özellik taraması: TEK kanonik policy'den türevli (ikinci registry YOK).
-const CANONICAL_POLICY = join(REPO, "backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v1.json");
+const CANONICAL_POLICY = join(REPO, "backend/compliance-screening/src/main/resources/screening/protected-attribute-screening-policy.v2.json");
 const POLICY = loadPolicy(CANONICAL_POLICY);
 
 // Kategori kodu → okunur TR etiketi (YALNIZ mesaj/gösterim; eşleşme mantığı %100 policy'den gelir,
@@ -59,6 +59,7 @@ const CODE_TO_LABEL = {
   NATIVE_LANGUAGE_ACCENT: "ana-dil/aksan",
   ASSOCIATION_MEMBERSHIP: "dernek/vakıf üyeliği",
   PREGNANCY_MATERNITY: "hamilelik",
+  MILITARY_SERVICE_STATUS: "askerlik durumu",
 };
 
 /**
@@ -206,4 +207,4 @@ if (errors.length > 0) {
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
-console.log(`rubric OK — job-related criteria; protected-attribute (kanonik policy'den TÜREVLİ, term-single-source) + scoring/affect (rubric-özel ayrı kural) key+value+schema-key reddi; criterion tekil; self-test 30 neg + 3 allow doğrulandı; korumalı-özellik ${POLICY.categories.length}/13 kategori TEK kanonik registry'nin TERİMLERİYLE bağlı (ikinci regex-registry YOK).`);
+console.log(`rubric OK — job-related criteria; protected-attribute (kanonik policy'den TÜREVLİ, term-single-source) + scoring/affect (rubric-özel ayrı kural) key+value+schema-key reddi; criterion tekil; self-test 30 neg + 3 allow doğrulandı; korumalı-özellik ${POLICY.categories.length} kategori (TAM küme) TEK kanonik registry'nin TERİMLERİYLE bağlı (ikinci regex-registry YOK).`);

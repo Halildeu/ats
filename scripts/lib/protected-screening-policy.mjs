@@ -2,7 +2,7 @@
  * ATS 156-a — ORTAK korumalı-özellik tarama motoru (Node tarafı, TEK kaynak).
  *
  * Bu modül protected-term + safe-phrase tarama davranışını KANONİK registry JSON'undan
- * (`protected-attribute-screening-policy.v1.json`) türetir; İKİNCİ bir regex/term registry'si
+ * (`protected-attribute-screening-policy.v2.json`) türetir; İKİNCİ bir regex/term registry'si
  * YOKTUR. Hem `scripts/check-rubric.mjs` (rubric-artifact drift-guard) hem
  * `contracts/test/screening-corpus.contract.test.ts` (golden-corpus parite) bu motoru kullanır →
  * policy'ye eklenen/çıkarılan bir TERİM her iki tarafta da otomatik yansır (term-düzeyi

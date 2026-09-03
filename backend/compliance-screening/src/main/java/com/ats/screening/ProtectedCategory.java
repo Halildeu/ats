@@ -23,5 +23,10 @@ public enum ProtectedCategory {
     CRIMINAL_RECORD,
     NATIVE_LANGUAGE_ACCENT,
     ASSOCIATION_MEMBERSHIP,
-    PREGNANCY_MATERNITY
+    PREGNANCY_MATERNITY,
+    // #214: askerlik durumu iki zaten-korumalı eksene vekildir — Türkiye'de yalnız erkekler
+    // yükümlü (SEX_GENDER_ORIENTATION vekili) ve "muaf" değeri çoğunlukla sağlık gerekçelidir
+    // (HEALTH_DISABILITY vekili). paspolicy_v2 ile eklendi (v1 geriye dönük değiştirilmedi —
+    // geçmiş tarama kayıtları v1 digest'ine bağlı).
+    MILITARY_SERVICE_STATUS
 }

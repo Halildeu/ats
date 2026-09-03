@@ -9,13 +9,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * BLOCKER 3 (Codex 019f57cb) — policy YÜKLEME fail-closed sözleşmesi: korumalı-kategori kümesi
- * TAM (13/13) olmalı ve {@code supportedLanguages} FORMAT-doğrulanmalı. Tek-AGE gibi kısmi bir
+ * TAM (14/14) olmalı ve {@code supportedLanguages} FORMAT-doğrulanmalı. Tek-AGE gibi kısmi bir
  * policy'nin geçmesi (religion/health SUPPORTED+CLEAR gösterip) YASAK.
  */
 class ScreeningPolicyLoadTest {
 
-    /** 13 kapalı kategorinin her biri için tek WORD terim (normalize-idempotent ASCII). */
-    private static final List<String[]> ALL_13 = List.of(
+    /** 14 kapalı kategorinin her biri için tek WORD terim (normalize-idempotent ASCII). */
+    private static final List<String[]> ALL_14 = List.of(
             new String[] {"AGE", "yas"},
             new String[] {"RELIGION_BELIEF", "din"},
             new String[] {"ETHNICITY_RACE", "irk"},
@@ -28,7 +28,8 @@ class ScreeningPolicyLoadTest {
             new String[] {"CRIMINAL_RECORD", "sabika"},
             new String[] {"NATIVE_LANGUAGE_ACCENT", "aksan"},
             new String[] {"ASSOCIATION_MEMBERSHIP", "dernek"},
-            new String[] {"PREGNANCY_MATERNITY", "hamile"});
+            new String[] {"PREGNANCY_MATERNITY", "hamile"},
+            new String[] {"MILITARY_SERVICE_STATUS", "askerlik"});
 
     private static String cat(String code, String term) {
         return "{\"code\":\"" + code + "\",\"terms\":[{\"text\":\"" + term + "\",\"kind\":\"WORD\"}]}";
@@ -53,16 +54,16 @@ class ScreeningPolicyLoadTest {
     }
 
     @Test
-    void full_13_categories_loads() {
-        ScreeningPolicy p = ScreeningPolicy.fromJson(policyJson(cats(ALL_13), "[\"tr\",\"en\"]"));
-        assertEquals(13, p.categories().size());
+    void full_14_categories_loads() {
+        ScreeningPolicy p = ScreeningPolicy.fromJson(policyJson(cats(ALL_14), "[\"tr\",\"en\"]"));
+        assertEquals(14, p.categories().size());
         assertEquals(ProtectedCategory.values().length, p.categories().size());
     }
 
     @Test
     void missing_category_is_rejected() {
-        // AGE çıkarılmış (12/13) → religion/health'in "desteklenmediği" sessiz-boşluk YASAK.
-        String twelve = cats(ALL_13.subList(1, ALL_13.size()));
+        // AGE çıkarılmış (13/14) → religion/health'in "desteklenmediği" sessiz-boşluk YASAK.
+        String twelve = cats(ALL_14.subList(1, ALL_14.size()));
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> ScreeningPolicy.fromJson(policyJson(twelve, "[\"tr\"]")));
         assertTrue(ex.getMessage().contains("TAM") || ex.getMessage().contains("eksik"),
@@ -78,14 +79,14 @@ class ScreeningPolicyLoadTest {
 
     @Test
     void duplicate_category_is_rejected() {
-        String dup = cats(ALL_13) + "," + cat("AGE", "yasi");
+        String dup = cats(ALL_14) + "," + cat("AGE", "yasi");
         assertThrows(IllegalStateException.class,
                 () -> ScreeningPolicy.fromJson(policyJson(dup, "[\"tr\"]")));
     }
 
     @Test
     void unknown_category_is_rejected() {
-        String withUnknown = cats(ALL_13.subList(0, 12)) + "," + cat("MADE_UP_AXIS", "foo");
+        String withUnknown = cats(ALL_14.subList(0, 12)) + "," + cat("MADE_UP_AXIS", "foo");
         assertThrows(IllegalStateException.class,
                 () -> ScreeningPolicy.fromJson(policyJson(withUnknown, "[\"tr\"]")));
     }
@@ -94,16 +95,16 @@ class ScreeningPolicyLoadTest {
     void malformed_supported_language_is_rejected() {
         // "9" primary-subtag [a-z]{2,3} biçimini ihlal eder → FORMAT-RED (yalnız parse/sakla değil).
         assertThrows(IllegalStateException.class,
-                () -> ScreeningPolicy.fromJson(policyJson(cats(ALL_13), "[\"tr\",\"9\"]")));
+                () -> ScreeningPolicy.fromJson(policyJson(cats(ALL_14), "[\"tr\",\"9\"]")));
         // Alt-çizgi ayraç (tr_TR) da geçersiz.
         assertThrows(IllegalStateException.class,
-                () -> ScreeningPolicy.fromJson(policyJson(cats(ALL_13), "[\"tr_TR\"]")));
+                () -> ScreeningPolicy.fromJson(policyJson(cats(ALL_14), "[\"tr_TR\"]")));
     }
 
     @Test
     void well_formed_region_subtag_is_accepted() {
         // tr-TR / en-US gibi bölge alt-tag'leri FORMAT-geçerli (base(-alt-tag)*).
-        ScreeningPolicy p = ScreeningPolicy.fromJson(policyJson(cats(ALL_13), "[\"tr-TR\",\"en-US\"]"));
+        ScreeningPolicy p = ScreeningPolicy.fromJson(policyJson(cats(ALL_14), "[\"tr-TR\",\"en-US\"]"));
         assertTrue(p.supportedLanguages().contains("tr-TR"));
     }
 }
