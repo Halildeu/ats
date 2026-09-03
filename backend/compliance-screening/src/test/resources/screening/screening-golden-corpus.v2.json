@@ -1,6 +1,6 @@
 {
   "policyRef": "paspolicy_v2",
-  "policyDigest": "sha256:48406c21fc3d0be9f11fc67ccb9003514f6b270ed4be30575613a40bc039808c",
+  "policyDigest": "sha256:922f11b4c7b2ad1a9cf7ded0db77b8a4e99289a514aa5d4afd17673820c2f234",
   "note": "ORTAK regresyon korpusu (Java-test + Node-CI aynı vakaları koşar). expectedFindings span'leri ORİJİNAL UTF-16 ofsetleridir; segmentIndex null = segment bağlamı yok. Coverage SUPPORTED dışında bulgu-boş olsa da CLEAR değildir. 'language' = çağıranın BEYAN ettiği BCP-47 dil-tag; base-tag policy dilinde değilse VEYA baskın-yazım Latin değilse UNSUPPORTED_LANGUAGE.",
   "cases": [
     { "id": "dp-1", "group": "direct_positive", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "en",
@@ -84,6 +84,10 @@
       "text": "single source of truth ve message queue", "expectedCoverage": "SUPPORTED", "expectedFindings": [] },
     { "id": "fp-5", "group": "false_positive", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "tr",
       "text": "sucuk severim, çocukluk anısı güzeldi", "expectedCoverage": "SUPPORTED", "expectedFindings": [] },
+    { "id": "fp-6", "group": "false_positive", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "tr",
+      "text": "KDV muafiyet süreçlerinde deneyimli.", "expectedCoverage": "SUPPORTED", "expectedFindings": [] },
+    { "id": "fp-7", "group": "false_positive", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "en",
+      "text": "Military logistics systems engineer.", "expectedCoverage": "SUPPORTED", "expectedFindings": [] },
 
     { "id": "ce-1", "group": "coverage_edge", "sourceKind": "FREE_TEXT", "screener": "loaded", "language": "ar",
       "text": "هل أنت متزوج", "expectedCoverage": "UNSUPPORTED_LANGUAGE", "expectedFindings": [] },

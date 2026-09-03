@@ -228,11 +228,6 @@
         { "text": "askerlik", "kind": "WORD" },
         { "text": "askerliginiz", "kind": "WORD" },
         { "text": "asker", "kind": "WORD" },
-        { "text": "tecil", "kind": "WORD" },
-        { "text": "tecilli", "kind": "WORD" },
-        { "text": "muaf", "kind": "WORD" },
-        { "text": "muafiyet", "kind": "WORD" },
-        { "text": "military", "kind": "WORD" },
         { "text": "conscript", "kind": "STEM", "minLen": 9 },
         { "text": "askerlik durumu", "kind": "PHRASE" },
         { "text": "askerlik durumunuz", "kind": "PHRASE" },
@@ -242,7 +237,12 @@
         { "text": "askerlik yapildi mi", "kind": "PHRASE" },
         { "text": "askerlik yapilmadi", "kind": "PHRASE" },
         { "text": "tecil durumu", "kind": "PHRASE" },
+        { "text": "askerlik tecili", "kind": "PHRASE" },
+        { "text": "askerlik muafiyeti", "kind": "PHRASE" },
+        { "text": "askerlikten muaf", "kind": "PHRASE" },
         { "text": "military service", "kind": "PHRASE" },
+        { "text": "military exemption", "kind": "PHRASE" },
+        { "text": "military deferment", "kind": "PHRASE" },
         { "text": "military status", "kind": "PHRASE" }
       ]
     }
