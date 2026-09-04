@@ -158,6 +158,41 @@ class JobPostingQuestionsTest {
                                 new Option(null, "Uzaktan")))))).isOk());
     }
 
+    /**
+     * P1 (review): sahiplik OKUNAMADIĞINDA hiçbir şey yazılmamalı.
+     *
+     * <p>{@code store.find} yalnız NOT_FOUND değil, DB/IO gibi operasyonel hatalar da
+     * döndürebilir. Bunları "sahiplenilmiş kimlik yok" saymak sessizce tehlikeliydi:
+     * kimliksiz bir update gövdesi, sahiplik doğrulanamadığı hâlde yeni kimlikler üretip
+     * yazma aşamasına ilerliyor ve mevcut soru kimliklerini değiştirebiliyordu.
+     */
+    @Test
+    void update_fails_closed_when_ownership_cannot_be_read() {
+        CapturingStore store = seeded(List.of(new ApplicationQuestion(
+                "q_" + "A".repeat(16), 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())));
+        store.findFailure = OutcomeCode.NOT_CONFIGURED;
+
+        Outcome<MutationResult> out = service(store).update(
+                TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                // kimliksiz gövde: eski hâlde yeni kimlikler üretip yazmaya geçerdi
+                draft("bir-ilan", List.of(question(1, "Birinci soru", Kind.SHORT_TEXT))));
+
+        assertFalse(out.isOk(), "sahiplik okunamazken update yazmamalı");
+        assertEquals(OutcomeCode.NOT_CONFIGURED, ((Outcome.Fail<MutationResult>) out).code(),
+                "okuma hatasının kodu aynen yayılmalı");
+        assertFalse(store.updateCalled, "store.update HİÇ çağrılmamalı");
+    }
+
+    /** Doğrulanmış NOT_FOUND ise akış eskisi gibi sürer; store kendi NOT_FOUND'unu döndürür. */
+    @Test
+    void update_still_reaches_the_store_when_the_posting_is_verifiably_absent() {
+        CapturingStore store = new CapturingStore();
+
+        assertTrue(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(question(1, "Birinci soru", Kind.SHORT_TEXT)))).isOk());
+        assertTrue(store.updateCalled);
+    }
+
     /** Sahiplenilmiş kimlik korunur; yeni öğe kimliğini sunucudan alır. */
     @Test
     void update_keeps_owned_ids_and_mints_ids_for_newly_added_questions() {
@@ -400,8 +435,12 @@ class JobPostingQuestionsTest {
 
         /** Sahiplik okuması buradan gelir; tohumlanmamışsa ilan yok sayılır. */
         JobPosting existing;
+        /** Operasyonel okuma hatası (DB/IO) benzetimi; NOT_FOUND ile aynı şey DEĞİL. */
+        OutcomeCode findFailure;
+        boolean updateCalled;
 
         @Override public Outcome<JobPosting> find(TenantId tenantId, String jobId) {
+            if (findFailure != null) return Outcome.fail(findFailure, "okunamadı");
             return existing == null ? Outcome.fail(OutcomeCode.NOT_FOUND, "yok") : Outcome.ok(existing);
         }
 
@@ -416,6 +455,7 @@ class JobPostingQuestionsTest {
 
         @Override public Outcome<MutationResult> update(UpdateCommand command) {
             this.update = command;
+            this.updateCalled = true;
             return Outcome.ok(new MutationResult(MutationState.UPDATED, null));
         }
 

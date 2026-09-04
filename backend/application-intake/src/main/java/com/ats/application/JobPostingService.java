@@ -130,8 +130,13 @@ public final class JobPostingService {
             return invalid("tenant/actor/jobId/expectedVersion geçersiz");
         }
         if (!validIdempotency(idempotencyKey)) return invalidIdempotency();
-        Outcome<Normalized> checked =
-                normalizeAndValidate(raw, false, ownershipOf(tenantId, jobId));
+        // Sahiplik okunamıyorsa hiçbir şey yazılmaz (fail-closed).
+        Outcome<IdOwnership> ownership = ownershipOf(tenantId, jobId);
+        if (ownership instanceof Outcome.Fail<IdOwnership> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        Outcome<Normalized> checked = normalizeAndValidate(
+                raw, false, ((Outcome.Ok<IdOwnership>) ownership).value());
         if (checked instanceof Outcome.Fail<Normalized> fail) {
             return Outcome.fail(fail.code(), fail.reason());
         }
@@ -307,16 +312,29 @@ public final class JobPostingService {
     }
 
     /**
-     * Güncellemede sahiplik, ilanın KAYITLI hâlinden okunur. İlan bulunamazsa sahiplenilmiş
-     * kimlik yoktur: kimlik gönderen istek reddedilir, göndermeyen istek eskisi gibi akar ve
-     * store {@code NOT_FOUND} döndürür. Okuma ile yazma arasındaki yarış CAS {@code version}
-     * ile kapalıdır — ilan değiştiyse update zaten VERSION_CONFLICT verir.
+     * Güncellemede sahiplik, ilanın KAYITLI hâlinden okunur.
+     *
+     * <p><b>Fail-closed.</b> {@code store.find} yalnız {@code NOT_FOUND} değil, DB/IO gibi
+     * operasyonel hatalar da döndürebilir. Bu hataları "sahiplenilmiş kimlik yok" saymak
+     * sessizce tehlikeliydi: kimliksiz bir update gövdesi, sahiplik OKUNAMADIĞI hâlde yeni
+     * kimlikler üretip yazma aşamasına ilerleyebiliyor ve mevcut soru kimliklerini
+     * değiştirebiliyordu. Artık yalnız DOĞRULANMIŞ {@code NOT_FOUND} "sahiplik yok" anlamına
+     * gelir (o durumda update zaten store'dan NOT_FOUND alır); diğer her hata aynı kod ve
+     * sebeple yukarı yayılır.
+     *
+     * <p>Okuma ile yazma arasındaki yarış CAS {@code version} ile kapalıdır — ilan değiştiyse
+     * update zaten VERSION_CONFLICT verir.
      */
-    private IdOwnership ownershipOf(TenantId tenantId, String jobId) {
+    private Outcome<IdOwnership> ownershipOf(TenantId tenantId, String jobId) {
         Outcome<JobPosting> found = store.find(tenantId, jobId);
-        return found instanceof Outcome.Ok<JobPosting> ok
-                ? IdOwnership.of(ok.value().questions())
-                : IdOwnership.none();
+        if (found instanceof Outcome.Ok<JobPosting> ok) {
+            return Outcome.ok(IdOwnership.of(ok.value().questions()));
+        }
+        Outcome.Fail<JobPosting> fail = (Outcome.Fail<JobPosting>) found;
+        if (fail.code() == OutcomeCode.NOT_FOUND) {
+            return Outcome.ok(IdOwnership.none());
+        }
+        return Outcome.fail(fail.code(), fail.reason());
     }
 
     /** İlan geneline yayılan değişmezler; tek soruya bakarak karara bağlanamaz. */
