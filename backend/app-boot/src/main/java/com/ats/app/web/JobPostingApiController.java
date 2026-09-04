@@ -1,10 +1,12 @@
 package com.ats.app.web;
 
+import com.ats.application.ApplicationQuestion;
 import com.ats.application.JobPosting;
 import com.ats.application.JobPostingService;
 import com.ats.application.JobPostingService.JobDraft;
 import com.ats.application.JobPostingStore.MutationResult;
 import com.ats.application.JobPostingStore.MutationState;
+import com.ats.application.QuestionTextAdvisor;
 import com.ats.kernel.Outcome;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
@@ -36,13 +38,52 @@ class JobPostingApiController {
     private final JobPostingService service;
     private final TenantAccess tenantAccess;
     private final RecruiterAuthorization authorization;
+    private final QuestionTextAdvisor questionAdvisor;
 
     JobPostingApiController(JobPostingService service, TenantAccess tenantAccess,
-            RecruiterAuthorization authorization) {
+            RecruiterAuthorization authorization, QuestionTextAdvisor questionAdvisor) {
         this.service = service;
         this.tenantAccess = tenantAccess;
         this.authorization = authorization;
+        this.questionAdvisor = questionAdvisor;
     }
+
+    @Schema(name = "RecruiterJobQuestionOption",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record RecruiterJobQuestionOption(
+            @Schema(description = "Sunucu uretimli sabit kimlik; yeni secenekte bos birakilir")
+            String optionId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 1, maxLength = 120)
+            String label) {}
+
+    /**
+     * #240 A: ilana ozel basvuru sorusu. {@code questionId} KIMLIK, {@code order} yalniz
+     * gorunum sirasidir - yeniden siralama kimligi degistirmez.
+     */
+    @Schema(name = "RecruiterJobQuestion",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record RecruiterJobQuestion(
+            @Schema(description = "Sunucu uretimli sabit kimlik; yeni soruda bos birakilir")
+            String questionId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "10")
+            Integer order,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 2, maxLength = 500)
+            String text,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {
+                    "SHORT_TEXT", "LONG_TEXT", "YES_NO", "SINGLE_CHOICE"})
+            String kind,
+            boolean required,
+            @ArraySchema(maxItems = 8,
+                    schema = @Schema(implementation = RecruiterJobQuestionOption.class))
+            List<RecruiterJobQuestionOption> options) {}
+
+    /**
+     * Korunan-ozellik uyarisi: ENGELLEMEZ, gorunur kilar. {@code COVERAGE_UNKNOWN} kategorisi
+     * "taranamadi" demektir ve sessiz-temiz uretmemek icin vardir.
+     */
+    @Schema(name = "RecruiterJobQuestionWarning",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record RecruiterJobQuestionWarning(String questionId, String category, String signal) {}
 
     @Schema(name = "RecruiterJobCreateRequest",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -67,6 +108,9 @@ class JobPostingApiController {
                     "fullName", "email", "phone", "city", "linkedIn", "portfolio",
                     "summary", "experience", "education", "skills", "note"}))
             List<String> applicationFields,
+            @ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = RecruiterJobQuestion.class))
+            List<RecruiterJobQuestion> questions,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"kvkk-application-v1"})
             String noticeVersion) {}
@@ -97,6 +141,9 @@ class JobPostingApiController {
                     "fullName", "email", "phone", "city", "linkedIn", "portfolio",
                     "summary", "experience", "education", "skills", "note"}))
             List<String> applicationFields,
+            @ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = RecruiterJobQuestion.class))
+            List<RecruiterJobQuestion> questions,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     allowableValues = {"kvkk-application-v1"})
             String noticeVersion) {}
@@ -127,6 +174,11 @@ class JobPostingApiController {
                     "fullName", "email", "phone", "city", "linkedIn", "portfolio",
                     "summary", "experience", "education", "skills", "note"}))
             List<String> applicationFields,
+            @ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = RecruiterJobQuestion.class))
+            List<RecruiterJobQuestion> questions,
+            @ArraySchema(schema = @Schema(implementation = RecruiterJobQuestionWarning.class))
+            List<RecruiterJobQuestionWarning> questionWarnings,
             @Schema(allowableValues = {"kvkk-application-v1"})
             String noticeVersion,
             @Schema(allowableValues = {"DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "ARCHIVED"})
@@ -201,7 +253,7 @@ class JobPostingApiController {
         JobDraft draft = body == null ? null : new JobDraft(
                 body.slug(), body.title(), body.team(), body.location(), body.mode(),
                 body.employmentType(), body.summary(), body.highlights(),
-                body.applicationFields(), body.noticeVersion());
+                body.applicationFields(), toDomain(body.questions()), body.noticeVersion());
         var tenant = tenantAccess.tenant(auth);
         Outcome<MutationResult> out = service.create(
                 tenant, tenantAccess.actor(auth), idempotencyKey, draft);
@@ -235,7 +287,7 @@ class JobPostingApiController {
         JobDraft draft = new JobDraft(
                 body.slug(), body.title(), body.team(), body.location(), body.mode(),
                 body.employmentType(), body.summary(), body.highlights(),
-                body.applicationFields(), body.noticeVersion());
+                body.applicationFields(), toDomain(body.questions()), body.noticeVersion());
         var tenant = tenantAccess.tenant(auth);
         Outcome<MutationResult> out = service.update(
                 tenant, tenantAccess.actor(auth), jobId,
@@ -274,7 +326,7 @@ class JobPostingApiController {
         return mutation(out, HttpStatus.OK, optionalPublicHandle(tenant));
     }
 
-    private static ResponseEntity<?> mutation(
+    private ResponseEntity<?> mutation(
             Outcome<MutationResult> out, HttpStatus successStatus, String publicHandle) {
         if (out instanceof Outcome.Fail<MutationResult> fail) return OutcomeHttp.fail(fail);
         MutationResult result = ((Outcome.Ok<MutationResult>) out).value();
@@ -303,12 +355,55 @@ class JobPostingApiController {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
-    private static RecruiterJobResponse dto(JobPosting job, String publicHandle) {
+    private RecruiterJobResponse dto(JobPosting job, String publicHandle) {
         return new RecruiterJobResponse(
                 job.jobId(), publicHandle, job.slug(), job.title(), job.team(), job.location(), job.mode(),
                 job.employmentType(), job.summary(), job.highlights(), job.applicationFields(),
+                fromDomain(job.questions()), warnings(job.questions()),
                 job.noticeVersion(), job.status().name(),
                 job.applyEnabled(), job.version(), job.createdAt(), job.updatedAt());
+    }
+
+    /**
+     * Istek DTO'sundan domaine. Kimlikler BOS gelebilir (yeni soru/secenek) - sunucu atar;
+     * dolu gelirse KORUNUR, cunku kimlik reorder/edit boyunca sabit kalmalidir.
+     */
+    private static List<ApplicationQuestion> toDomain(List<RecruiterJobQuestion> questions) {
+        if (questions == null) return List.of();
+        List<ApplicationQuestion> out = new java.util.ArrayList<>();
+        for (RecruiterJobQuestion q : questions) {
+            if (q == null) continue;
+            List<ApplicationQuestion.Option> options = new java.util.ArrayList<>();
+            if (q.options() != null) {
+                for (RecruiterJobQuestionOption option : q.options()) {
+                    if (option == null) continue;
+                    options.add(new ApplicationQuestion.Option(option.optionId(), option.label()));
+                }
+            }
+            out.add(new ApplicationQuestion(
+                    q.questionId(), q.order() == null ? 0 : q.order(), q.text(),
+                    ApplicationQuestion.kindOf(q.kind()), q.required(), options));
+        }
+        return List.copyOf(out);
+    }
+
+    private static List<RecruiterJobQuestion> fromDomain(List<ApplicationQuestion> questions) {
+        return questions.stream()
+                .map(q -> new RecruiterJobQuestion(
+                        q.questionId(), q.order(), q.text(), q.kind().name(), q.required(),
+                        q.options().stream()
+                                .map(o -> new RecruiterJobQuestionOption(o.optionId(), o.label()))
+                                .toList()))
+                .toList();
+    }
+
+    /** Advisor sozlesmesi: uyarir, engellemez; sessiz temiz uretmez. */
+    private List<RecruiterJobQuestionWarning> warnings(List<ApplicationQuestion> questions) {
+        if (questions.isEmpty()) return List.of();
+        List<QuestionTextAdvisor.Warning> reviewed = questionAdvisor.review(questions);
+        return reviewed == null ? List.of() : reviewed.stream()
+                .map(w -> new RecruiterJobQuestionWarning(w.questionId(), w.category(), w.signal()))
+                .toList();
     }
 
     private String optionalPublicHandle(com.ats.kernel.Ids.TenantId tenantId) {

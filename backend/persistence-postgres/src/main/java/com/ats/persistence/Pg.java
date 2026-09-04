@@ -1,6 +1,7 @@
 package com.ats.persistence;
 
 import com.ats.application.ApplicationIntakeService;
+import com.ats.application.ApplicationQuestion;
 import com.ats.application.ResumeImportService;
 import com.ats.kernel.JsonCodec;
 import com.ats.kernel.JsonValue;
@@ -70,6 +71,78 @@ final class Pg {
 
     private static void putIfPresent(Map<String, JsonValue> row, String key, String value) {
         if (value != null && !value.isEmpty()) row.put(key, JsonValue.of(value));
+    }
+
+    /**
+     * #240 A: sorular kanonik JSON'a. {@code order} AÇIK ALAN olarak yazılır — dizi sırasına
+     * güvenmek yetmez; kimlik ise {@code questionId}'dir, sıra değil.
+     */
+    static String questionsToJson(List<ApplicationQuestion> questions) {
+        List<JsonValue> items = new ArrayList<>();
+        for (ApplicationQuestion q : questions) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            row.put("questionId", JsonValue.of(q.questionId()));
+            row.put("order", JsonValue.of((double) q.order()));
+            row.put("text", JsonValue.of(q.text()));
+            row.put("kind", JsonValue.of(q.kind().name()));
+            row.put("required", JsonValue.of(q.required()));
+            if (!q.options().isEmpty()) {
+                List<JsonValue> options = new ArrayList<>();
+                for (ApplicationQuestion.Option option : q.options()) {
+                    Map<String, JsonValue> item = new LinkedHashMap<>();
+                    item.put("optionId", JsonValue.of(option.optionId()));
+                    item.put("label", JsonValue.of(option.label()));
+                    options.add(new JsonValue.JsonObject(item));
+                }
+                row.put("options", new JsonValue.JsonArray(options));
+            }
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    /**
+     * Sorular JSONB'den. Bilinmeyen tip ya da bozuk şekil SESSİZCE yutulmaz: okuma fail eder —
+     * İK'ya "soru yok" göstermek, yanlış soru göstermekten daha iyi değil. Kimliksiz satır da
+     * okunmaz; kimliksiz soru dilim B/C'de cevabını bağlayamaz.
+     */
+    static List<ApplicationQuestion> questionsFromJson(String json) throws SQLException {
+        List<ApplicationQuestion> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            if (!(item instanceof JsonValue.JsonObject obj)) {
+                throw new SQLException("jsonb soru nesnesi bekleniyordu");
+            }
+            Map<String, JsonValue> v = obj.values();
+            String kindRaw = v.get("kind") instanceof JsonValue.JsonString k ? k.value() : null;
+            ApplicationQuestion.Kind kind = ApplicationQuestion.kindOf(kindRaw);
+            if (kind == null) throw new SQLException("soru tipi kapalı küme dışında: " + kindRaw);
+            String questionId =
+                    v.get("questionId") instanceof JsonValue.JsonString q ? q.value() : null;
+            if (questionId == null || !ApplicationQuestion.QUESTION_ID.matcher(questionId).matches()) {
+                throw new SQLException("kayıtlı soruda questionId eksik/bozuk");
+            }
+            int order = v.get("order") instanceof JsonValue.JsonNumber n ? (int) n.value() : 0;
+            String text = v.get("text") instanceof JsonValue.JsonString t ? t.value() : "";
+            boolean required = v.get("required") instanceof JsonValue.JsonBool b && b.value();
+            List<ApplicationQuestion.Option> options = new ArrayList<>();
+            if (v.get("options") instanceof JsonValue.JsonArray arr) {
+                for (JsonValue o : arr.items()) {
+                    if (!(o instanceof JsonValue.JsonObject oo)) {
+                        throw new SQLException("jsonb seçenek nesnesi bekleniyordu");
+                    }
+                    String optionId = oo.values().get("optionId") instanceof JsonValue.JsonString s
+                            ? s.value() : null;
+                    String label = oo.values().get("label") instanceof JsonValue.JsonString s
+                            ? s.value() : null;
+                    if (optionId == null || label == null) {
+                        throw new SQLException("kayıtlı seçenekte optionId/label eksik");
+                    }
+                    options.add(new ApplicationQuestion.Option(optionId, label));
+                }
+            }
+            out.add(new ApplicationQuestion(questionId, order, text, kind, required, options));
+        }
+        return List.copyOf(out);
     }
 
     static String stringsToJson(List<String> values) {

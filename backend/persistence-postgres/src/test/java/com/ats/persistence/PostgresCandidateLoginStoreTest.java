@@ -252,6 +252,7 @@ class PostgresCandidateLoginStoreTest {
                 "Giriş dikey dilimi için yayınlanmış ilan.",
                 List.of("Ürün"),
                 JobPostingService.DEFAULT_APPLICATION_FIELDS,
+                List.of(),
                 JobPostingService.CURRENT_NOTICE_VERSION);
         var created = jobs.create(new CreateCommand(
                 TENANT, RECRUITER, jobId, "job-login-" + jobId, "6" + "a".repeat(63),

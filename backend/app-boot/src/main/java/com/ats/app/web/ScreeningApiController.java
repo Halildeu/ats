@@ -188,7 +188,11 @@ class ScreeningApiController {
                         auth, id, idempotencyKey, body);
                 case CITATION_CLAIM -> screenCitation(
                         auth, id, idempotencyKey, body);
-                case INTERVIEW_NOTE, RUBRIC_TEXT, FREE_TEXT -> Outcome.fail(
+                // JOB_APPLICATION_QUESTION (#240 A) bilinçli olarak BURADA KAPALI: taslak ilan
+                // sorusu WORM kanıt üretmez, yalnız kaydeden İK'ya uyarı döner. Public runtime
+                // ucundan çağrılabilir olsaydı, kanıt-hattı olmayan bir kaynak kanıt gibi
+                // görünürdü.
+                case INTERVIEW_NOTE, RUBRIC_TEXT, JOB_APPLICATION_QUESTION, FREE_TEXT -> Outcome.fail(
                         OutcomeCode.UNSUPPORTED_IN_GATE,
                         "kaynak türü kanonik server-side store gelene kadar kapalı");
             };

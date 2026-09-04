@@ -142,7 +142,8 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                         UPDATE ats_job_posting
                            SET slug = ?, title = ?, team = ?, location = ?, mode = ?,
                                employment_type = ?, summary = ?, highlights = ?::jsonb,
-                               application_fields = ?::jsonb, notice_version = ?,
+                               application_fields = ?::jsonb, questions = ?::jsonb,
+                               notice_version = ?,
                                version = version + 1, updated_by = ?, updated_at = ?
                          WHERE tenant_id = ? AND job_id = ? AND version = ?
                         """;
@@ -284,6 +285,7 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                        response_snapshot ->> 'summary' AS snapshot_summary,
                        (response_snapshot -> 'highlights')::text AS snapshot_highlights,
                        (response_snapshot -> 'applicationFields')::text AS snapshot_application_fields,
+                       (response_snapshot -> 'questions')::text AS snapshot_questions,
                        response_snapshot ->> 'noticeVersion' AS snapshot_notice_version,
                        response_snapshot ->> 'status' AS snapshot_status,
                        response_snapshot ->> 'applyEnabled' AS snapshot_apply_enabled,
@@ -320,10 +322,11 @@ public final class PostgresJobPostingStore implements JobPostingStore {
         String sql = """
                 INSERT INTO ats_job_posting
                     (tenant_id, job_id, slug, title, team, location, mode, employment_type,
-                     summary, highlights, application_fields, notice_version,
+                     summary, highlights, application_fields, questions, notice_version,
                      published, status, apply_enabled, version,
                      created_by, updated_by, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, false, 'DRAFT', false, 0,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?,
+                        false, 'DRAFT', false, 0,
                         ?, ?, ?, ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -379,6 +382,7 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                            'summary', j.summary,
                            'highlights', j.highlights,
                            'applicationFields', j.application_fields,
+                           'questions', j.questions,
                            'noticeVersion', j.notice_version,
                            'status', j.status,
                            'applyEnabled', j.apply_enabled,
@@ -426,7 +430,7 @@ public final class PostgresJobPostingStore implements JobPostingStore {
         return """
                 SELECT tenant_id, job_id, slug, title, team, location, mode,
                        employment_type, summary, highlights::text,
-                       application_fields::text, notice_version, status,
+                       application_fields::text, questions::text, notice_version, status,
                        apply_enabled, version, created_at, updated_at
                   FROM ats_job_posting
                 """;
@@ -438,7 +442,8 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                 rs.getString("slug"), rs.getString("title"), rs.getString("team"),
                 rs.getString("location"), rs.getString("mode"), rs.getString("employment_type"),
                 rs.getString("summary"), Pg.stringsFromJson(rs.getString("highlights")),
-                Pg.stringsFromJson(rs.getString("application_fields")), rs.getString("notice_version"),
+                Pg.stringsFromJson(rs.getString("application_fields")),
+                Pg.questionsFromJson(rs.getString("questions")), rs.getString("notice_version"),
                 JobPostingStatus.valueOf(rs.getString("status")), rs.getBoolean("apply_enabled"),
                 rs.getInt("version"), iso(rs, "created_at"), iso(rs, "updated_at"));
     }
@@ -453,6 +458,7 @@ public final class PostgresJobPostingStore implements JobPostingStore {
                     rs.getString("snapshot_employment_type"), rs.getString("snapshot_summary"),
                     Pg.stringsFromJson(rs.getString("snapshot_highlights")),
                     Pg.stringsFromJson(rs.getString("snapshot_application_fields")),
+                    Pg.questionsFromJson(rs.getString("snapshot_questions")),
                     rs.getString("snapshot_notice_version"),
                     JobPostingStatus.valueOf(rs.getString("snapshot_status")),
                     rs.getBoolean("snapshot_apply_enabled"), rs.getInt("snapshot_version"),
@@ -478,6 +484,7 @@ public final class PostgresJobPostingStore implements JobPostingStore {
         ps.setString(i++, content.summary());
         ps.setString(i++, Pg.stringsToJson(content.highlights()));
         ps.setString(i++, Pg.stringsToJson(content.applicationFields()));
+        ps.setString(i++, Pg.questionsToJson(content.questions()));
         ps.setString(i++, content.noticeVersion());
         return i;
     }

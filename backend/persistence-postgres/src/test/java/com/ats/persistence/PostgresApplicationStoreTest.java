@@ -457,6 +457,7 @@ class PostgresApplicationStoreTest {
                 "Sentetik başvuru dikey dilimi için yayınlanmış ilan.",
                 List.of("Ürün", "Araştırma"),
                 JobPostingService.DEFAULT_APPLICATION_FIELDS,
+                List.of(),
                 JobPostingService.CURRENT_NOTICE_VERSION);
         var created = jobs.create(new CreateCommand(
                 tenant, RECRUITER, jobId, "job-create-" + jobId, "a".repeat(64), content, NOW))

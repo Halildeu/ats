@@ -63,7 +63,8 @@ class JobPostingServiceTest {
         JobDraft noisyTitle = new JobDraft(
                 null, "  Senior   Product -- Manager  ", original.team(), original.location(),
                 original.mode(), original.employmentType(), original.summary(),
-                original.highlights(), original.applicationFields(), original.noticeVersion());
+                original.highlights(), original.applicationFields(), original.questions(),
+                original.noticeVersion());
 
         assertTrue(service(store).create(TENANT, ACTOR, IDEM, noisyTitle).isOk());
         assertTrue(store.create.content().slug()
@@ -132,7 +133,7 @@ class JobPostingServiceTest {
                 valid.slug(), valid.title(), valid.team(), valid.location(), valid.mode(),
                 valid.employmentType(), valid.summary(), valid.highlights(),
                 valid.applicationFields().stream().filter(field -> !"email".equals(field)).toList(),
-                valid.noticeVersion());
+                valid.questions(), valid.noticeVersion());
         assertFalse(service(new CapturingStore()).create(TENANT, ACTOR, IDEM, missingCore).isOk());
 
         var unknown = new java.util.ArrayList<>(valid.applicationFields());
@@ -140,14 +141,14 @@ class JobPostingServiceTest {
         assertFalse(service(new CapturingStore()).create(TENANT, ACTOR, IDEM,
                 new JobDraft(valid.slug(), valid.title(), valid.team(), valid.location(), valid.mode(),
                         valid.employmentType(), valid.summary(), valid.highlights(), unknown,
-                        valid.noticeVersion())).isOk());
+                        valid.questions(), valid.noticeVersion())).isOk());
 
         var duplicate = new java.util.ArrayList<>(valid.applicationFields());
         duplicate.set(duplicate.size() - 1, "email");
         assertFalse(service(new CapturingStore()).create(TENANT, ACTOR, IDEM,
                 new JobDraft(valid.slug(), valid.title(), valid.team(), valid.location(), valid.mode(),
                         valid.employmentType(), valid.summary(), valid.highlights(), duplicate,
-                        valid.noticeVersion())).isOk());
+                        valid.questions(), valid.noticeVersion())).isOk());
     }
 
     private static JobPostingService service(JobPostingStore store) {
@@ -165,6 +166,7 @@ class JobPostingServiceTest {
                 "Kullanıcı ihtiyaçlarını ölçülebilir ürün sonuçlarına dönüştürün.",
                 List.of(" Ürün keşfi ", "Ürün keşfi", "Yol haritası"),
                 JobPostingService.DEFAULT_APPLICATION_FIELDS,
+                List.of(),
                 JobPostingService.CURRENT_NOTICE_VERSION);
     }
 
@@ -206,7 +208,7 @@ class JobPostingServiceTest {
             var c = command.content();
             return new JobPosting(command.tenantId(), command.jobId(), c.slug(), c.title(), c.team(),
                     c.location(), c.mode(), c.employmentType(), c.summary(), c.highlights(),
-                    c.applicationFields(), c.noticeVersion(),
+                    c.applicationFields(), c.questions(), c.noticeVersion(),
                     JobPostingStatus.DRAFT, false, 0, command.occurredAt(), command.occurredAt());
         }
     }
