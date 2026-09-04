@@ -40,7 +40,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
         String sql = """
                 SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
                        j.employment_type, j.summary, j.highlights::text,
-                       j.application_fields::text, j.notice_version, j.status,
+                       j.application_fields::text, j.questions::text, j.notice_version, j.status,
                        j.apply_enabled, j.version, j.created_at, j.updated_at
                   FROM ats_job_posting j
                   JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
@@ -64,7 +64,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
         String sql = """
                 SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
                        j.employment_type, j.summary, j.highlights::text,
-                       j.application_fields::text, j.notice_version, j.status,
+                       j.application_fields::text, j.questions::text, j.notice_version, j.status,
                        j.apply_enabled, j.version, j.created_at, j.updated_at
                   FROM ats_job_posting j
                   JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
@@ -827,7 +827,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
         String sql = canonicalHandle ? """
                 SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
                        j.employment_type, j.summary, j.highlights::text,
-                       j.application_fields::text, j.notice_version, j.status,
+                       j.application_fields::text, j.questions::text, j.notice_version, j.status,
                        j.apply_enabled, j.version, j.created_at, j.updated_at
                   FROM ats_job_posting j
                   JOIN ats_career_site c ON c.tenant_id = j.tenant_id
@@ -837,7 +837,7 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 """ : """
                 SELECT j.tenant_id, j.job_id, j.slug, j.title, j.team, j.location, j.mode,
                        j.employment_type, j.summary, j.highlights::text,
-                       j.application_fields::text, j.notice_version, j.status,
+                       j.application_fields::text, j.questions::text, j.notice_version, j.status,
                        j.apply_enabled, j.version, j.created_at, j.updated_at
                   FROM ats_job_posting j
                   JOIN ats_career_site c ON c.tenant_id = j.tenant_id AND c.active = true
