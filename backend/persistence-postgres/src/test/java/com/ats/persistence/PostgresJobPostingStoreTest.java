@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.ats.application.ApplicationQuestion;
 import com.ats.application.ApplicationStore;
+import com.ats.application.JobPosting;
 import com.ats.application.JobPostingStatus;
 import com.ats.application.JobPostingStore;
 import com.ats.application.JobPostingStore.Content;
@@ -460,12 +462,104 @@ class PostgresJobPostingStoreTest {
         }
     }
 
+    /**
+     * #240 A / V23: sorular JSONB'ye yazılır ve AYNI yapıyla geri okunur — kimlikler,
+     * sıra ve seçenekler dahil. Sorusuz ilan {@code []} okur ({@code null} DEĞİL); replay
+     * gövdesi de aynı yapıyı taşır, aksi hâlde idempotent tekrar soruları kaybettirirdi.
+     */
+    @Test
+    void questions_round_trip_through_jsonb_and_replay_snapshot() throws Exception {
+        String jobId = "job_" + "Q".repeat(24);
+        List<ApplicationQuestion> questions = List.of(
+                new ApplicationQuestion("q_" + "A".repeat(16), 1, "Kaç yıllık deneyiminiz var?",
+                        ApplicationQuestion.Kind.SHORT_TEXT, true, List.of()),
+                new ApplicationQuestion("q_" + "B".repeat(16), 2, "Çalışma modu tercihiniz?",
+                        ApplicationQuestion.Kind.SINGLE_CHOICE, false, List.of(
+                                new ApplicationQuestion.Option("qo_" + "A".repeat(12), "Ofis"),
+                                new ApplicationQuestion.Option("qo_" + "B".repeat(12), "Uzaktan"))));
+
+        Content withQuestions = new Content(
+                "sorulu-ilan", "Sorulu İlan", "Platform", "İstanbul", "Hibrit", "Tam zamanlı",
+                "Güvenilir ve ölçeklenebilir platform ürünlerini ekiplerle birlikte geliştirin.",
+                List.of("Java"), com.ats.application.JobPostingService.DEFAULT_APPLICATION_FIELDS,
+                questions, com.ats.application.JobPostingService.CURRENT_NOTICE_VERSION);
+
+        String key = "job-questions-key-0001";
+        var created = jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, key, "q".repeat(64), withQuestions, NOW));
+        assertTrue(created.isOk());
+
+        var found = jobs.find(TENANT, jobId);
+        assertTrue(found.isOk());
+        assertEquals(questions,
+                ((com.ats.kernel.Outcome.Ok<JobPosting>) found).value().questions());
+
+        // idempotent replay aynı soruları taşır
+        var replay = jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, key, "q".repeat(64), withQuestions, NOW));
+        assertTrue(replay.isOk());
+        MutationResult result = ((com.ats.kernel.Outcome.Ok<MutationResult>) replay).value();
+        assertEquals(MutationState.REPLAYED, result.state());
+        assertEquals(questions, result.job().questions());
+    }
+
+    /** V23 geriye uyumluluk: soru kolonu eklenmeden önce yazılmış satır {@code []} okur. */
+    @Test
+    void jobs_written_without_questions_read_back_as_an_empty_list() throws Exception {
+        String jobId = "job_" + "E".repeat(24);
+        assertTrue(jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "job-questions-key-0002", "e".repeat(64),
+                content("sorusuz-ilan", "Sorusuz İlan"), NOW)).isOk());
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement(
+                "UPDATE ats_job_posting SET questions = DEFAULT WHERE tenant_id=? AND job_id=?")) {
+            ps.setString(1, TENANT.value());
+            ps.setString(2, jobId);
+            ps.executeUpdate();
+        }
+
+        var found = jobs.find(TENANT, jobId);
+        assertTrue(found.isOk());
+        assertEquals(List.of(),
+                ((com.ats.kernel.Outcome.Ok<JobPosting>) found).value().questions());
+    }
+
+    /**
+     * Üst sınır ŞEMADA da durur: uygulama doğrulaması atlanıp doğrudan SQL ile 11 soru
+     * yazılmaya çalışılırsa DB reddeder (aday formu 200 soruyla açılmasın).
+     */
+    @Test
+    void database_check_rejects_more_than_ten_questions() throws Exception {
+        String jobId = "job_" + "L".repeat(24);
+        assertTrue(jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "job-questions-key-0003", "l".repeat(64),
+                content("sinir-ilani", "Sınır İlanı"), NOW)).isOk());
+
+        StringBuilder array = new StringBuilder("[");
+        for (int i = 0; i < 11; i++) {
+            if (i > 0) array.append(',');
+            array.append("{\"questionId\":\"q_").append("A".repeat(15)).append(i)
+                    .append("\",\"order\":").append(i + 1)
+                    .append(",\"text\":\"Soru\",\"kind\":\"SHORT_TEXT\",\"required\":false}");
+        }
+        array.append(']');
+
+        try (var c = ds.getConnection(); var ps = c.prepareStatement(
+                "UPDATE ats_job_posting SET questions = ?::jsonb WHERE tenant_id=? AND job_id=?")) {
+            ps.setString(1, array.toString());
+            ps.setString(2, TENANT.value());
+            ps.setString(3, jobId);
+            assertThrows(SQLException.class, ps::executeUpdate);
+        }
+    }
+
     private static Content content(String slug, String title) {
         return new Content(
                 slug, title, "Platform", "İstanbul", "Hibrit", "Tam zamanlı",
                 "Güvenilir ve ölçeklenebilir platform ürünlerini ekiplerle birlikte geliştirin.",
                 List.of("Java", "Kubernetes"),
                 com.ats.application.JobPostingService.DEFAULT_APPLICATION_FIELDS,
+                List.of(),
                 com.ats.application.JobPostingService.CURRENT_NOTICE_VERSION);
     }
 

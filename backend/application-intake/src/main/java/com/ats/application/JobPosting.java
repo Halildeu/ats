@@ -16,6 +16,7 @@ public record JobPosting(
         String summary,
         List<String> highlights,
         List<String> applicationFields,
+        List<ApplicationQuestion> questions,
         String noticeVersion,
         JobPostingStatus status,
         boolean applyEnabled,
@@ -26,6 +27,8 @@ public record JobPosting(
     public JobPosting {
         highlights = highlights == null ? List.of() : List.copyOf(highlights);
         applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+        // #240 A: soru yok/null geriye uyumlu biçimde BOŞ liste (V23 öncesi ilanlar).
+        questions = questions == null ? List.of() : List.copyOf(questions);
         if (noticeVersion == null || noticeVersion.isBlank()) {
             throw new IllegalArgumentException("noticeVersion zorunlu");
         }

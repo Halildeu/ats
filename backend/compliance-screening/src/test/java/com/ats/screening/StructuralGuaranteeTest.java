@@ -59,8 +59,11 @@ class StructuralGuaranteeTest {
     void screening_source_kind_is_the_closed_lineage_set() {
         // KAPALI köken-kümesi (156-b kapalı-küme dondurmadan önce PIN'lenir). CITATION_CLAIM 156-c
         // üreticisinin kanonik atıf-iddiası kökenidir; FREE_TEXT'e karışmaz (lineage bütünlüğü).
+        // #240 A: JOB_APPLICATION_QUESTION eklendi — ilan sorusu adaya SORULACAK bir metindir,
+        // FREE_TEXT saymak o aciliyeti kaybettirirdi. WORM kanıt hattına GİRMEZ.
         assertEquals(Set.of(
-                "TRANSCRIPT_SEGMENT", "INTERVIEW_NOTE", "RUBRIC_TEXT", "CITATION_CLAIM", "FREE_TEXT"),
+                "TRANSCRIPT_SEGMENT", "INTERVIEW_NOTE", "RUBRIC_TEXT", "CITATION_CLAIM",
+                "JOB_APPLICATION_QUESTION", "FREE_TEXT"),
                 names(ScreeningSourceKind.values()));
     }
 

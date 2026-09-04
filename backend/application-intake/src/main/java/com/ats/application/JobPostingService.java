@@ -17,9 +17,11 @@ import java.text.Normalizer;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /** Tenant-scoped recruiter ilan uygulama servisi (ATS-0022). */
@@ -48,12 +50,24 @@ public final class JobPostingService {
             String summary,
             List<String> highlights,
             List<String> applicationFields,
+            List<ApplicationQuestion> questions,
             String noticeVersion) {
         public JobDraft {
             highlights = highlights == null ? List.of() : List.copyOf(highlights);
             applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+            questions = questions == null ? List.of() : List.copyOf(questions);
         }
     }
+
+    /**
+     * Doğrulanmış taslak + sorulara ait İSTEK digest parçaları.
+     *
+     * <p>Digest parçaları sunucunun ürettiği kimliklerden ÖNCE, istemcinin gönderdiği içerikten
+     * hesaplanır. Aksi hâlde aynı isteğin tekrarı her seferinde yeni rastgele {@code questionId}
+     * üretir, digest değişir ve idempotent tekrar sahte {@code IDEMPOTENCY_CONFLICT}'e düşerdi —
+     * yani retry'ı bozar. Digest isteğin fonksiyonudur, sunucu rastgeleliğinin değil.
+     */
+    private record Normalized(JobDraft value, List<String> questionDigestParts) {}
 
     private final JobPostingStore store;
     private final Clock clock;
@@ -85,20 +99,21 @@ public final class JobPostingService {
 
     public Outcome<MutationResult> create(
             TenantId tenantId, ActorId actorId, String idempotencyKey, JobDraft raw) {
-        Outcome<JobDraft> checked = normalizeAndValidate(raw, true);
-        if (checked instanceof Outcome.Fail<JobDraft> fail) {
+        Outcome<Normalized> checked = normalizeAndValidate(raw, true);
+        if (checked instanceof Outcome.Fail<Normalized> fail) {
             return Outcome.fail(fail.code(), fail.reason());
         }
         if (!validIdentity(tenantId, actorId)) return invalid("tenant/actor geçersiz");
         if (!validIdempotency(idempotencyKey)) return invalidIdempotency();
 
-        JobDraft value = ((Outcome.Ok<JobDraft>) checked).value();
+        Normalized normalized = ((Outcome.Ok<Normalized>) checked).value();
+        JobDraft value = normalized.value();
         String jobId = "job_" + randomUrlToken(18);
         String autoSlug = value.slug() == null
                 ? autoSlug(value.title(), sha256Hex(jobId).substring(0, 8))
                 : value.slug();
         Content content = content(value, autoSlug);
-        String digest = digest("CREATE", null, -1, value);
+        String digest = digest("CREATE", null, -1, value, normalized.questionDigestParts());
         return store.create(new CreateCommand(
                 tenantId, actorId, jobId, idempotencyKey, digest, content,
                 clock.instant().toString()));
@@ -107,18 +122,20 @@ public final class JobPostingService {
     public Outcome<MutationResult> update(
             TenantId tenantId, ActorId actorId, String jobId, int expectedVersion,
             String idempotencyKey, JobDraft raw) {
-        Outcome<JobDraft> checked = normalizeAndValidate(raw, false);
-        if (checked instanceof Outcome.Fail<JobDraft> fail) {
+        Outcome<Normalized> checked = normalizeAndValidate(raw, false);
+        if (checked instanceof Outcome.Fail<Normalized> fail) {
             return Outcome.fail(fail.code(), fail.reason());
         }
         if (!validIdentity(tenantId, actorId) || !validJobId(jobId) || expectedVersion < 0) {
             return invalid("tenant/actor/jobId/expectedVersion geçersiz");
         }
         if (!validIdempotency(idempotencyKey)) return invalidIdempotency();
-        JobDraft value = ((Outcome.Ok<JobDraft>) checked).value();
+        Normalized normalized = ((Outcome.Ok<Normalized>) checked).value();
+        JobDraft value = normalized.value();
         return store.update(new UpdateCommand(
                 tenantId, actorId, jobId, expectedVersion, idempotencyKey,
-                digest("UPDATE", jobId, expectedVersion, value), content(value, value.slug()),
+                digest("UPDATE", jobId, expectedVersion, value, normalized.questionDigestParts()),
+                content(value, value.slug()),
                 clock.instant().toString()));
     }
 
@@ -149,15 +166,30 @@ public final class JobPostingService {
                 digest, clock.instant().toString()));
     }
 
-    private Outcome<JobDraft> normalizeAndValidate(JobDraft raw, boolean slugOptional) {
+    private Outcome<Normalized> normalizeAndValidate(JobDraft raw, boolean slugOptional) {
         if (raw == null) return invalid("ilan gövdesi zorunlu");
         String normalizedSlug = trimToNull(raw.slug());
         if (normalizedSlug != null) normalizedSlug = normalizedSlug.toLowerCase(Locale.ROOT);
+
+        // #240 A: sorular önce SIRALANIR (deterministik okuma), sonra istek digest'i alınır,
+        // en son sunucu kimlikleri atanır. Sıra kritik — gerekçe Normalized javadoc'unda.
+        List<ApplicationQuestion> ordered = sortedByOrder(raw.questions());
+        if (ordered.size() > ApplicationQuestion.MAX_PER_JOB) {
+            return invalid("ilan başına en fazla " + ApplicationQuestion.MAX_PER_JOB + " soru");
+        }
+        List<String> questionDigestParts = questionDigestParts(ordered);
+        List<ApplicationQuestion> questions = assignServerIds(ordered);
+        Outcome<Void> questionCheck = validateQuestions(questions);
+        if (questionCheck instanceof Outcome.Fail<Void> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+
         JobDraft value = new JobDraft(
                 normalizedSlug,
                 trim(raw.title()), trim(raw.team()), trim(raw.location()), trim(raw.mode()),
                 trim(raw.employmentType()), trim(raw.summary()), normalizeHighlights(raw.highlights()),
-                normalizeApplicationFields(raw.applicationFields()), trim(raw.noticeVersion()));
+                normalizeApplicationFields(raw.applicationFields()), questions,
+                trim(raw.noticeVersion()));
         if (!slugOptional && value.slug() == null) return invalid("slug güncellemede zorunlu");
         if (value.slug() != null && !validSlug(value.slug())) return invalid("slug geçersiz");
         if (!between(value.title(), 2, 180)) return invalid("title 2..180 karakter olmalı");
@@ -185,17 +217,92 @@ public final class JobPostingService {
         if (!CURRENT_NOTICE_VERSION.equals(value.noticeVersion())) {
             return invalid("noticeVersion desteklenen güncel sürüm olmalı");
         }
-        return Outcome.ok(value);
+        return Outcome.ok(new Normalized(value, questionDigestParts));
+    }
+
+    /**
+     * Sunucu kimliği atama. İstemcinin gönderdiği kimlik KORUNUR — kimliğin reorder/edit
+     * boyunca sabit kalması sözleşmenin 1. maddesi; yeniden üretmek dilim B/C'de kaydedilmiş
+     * cevapları sorusundan koparırdı. Kimliksiz gelen soru yenidir, kimliğini burada alır.
+     */
+    private List<ApplicationQuestion> assignServerIds(List<ApplicationQuestion> questions) {
+        List<ApplicationQuestion> out = new ArrayList<>();
+        for (ApplicationQuestion question : questions) {
+            String questionId = trimToNull(question.questionId()) == null
+                    ? "q_" + randomUrlToken(12)
+                    : question.questionId();
+            List<ApplicationQuestion.Option> options = new ArrayList<>();
+            for (ApplicationQuestion.Option option : question.options()) {
+                options.add(trimToNull(option.optionId()) == null
+                        ? new ApplicationQuestion.Option("qo_" + randomUrlToken(9), option.label())
+                        : option);
+            }
+            out.add(new ApplicationQuestion(
+                    questionId, question.order(), question.text(), question.kind(),
+                    question.required(), options));
+        }
+        return List.copyOf(out);
+    }
+
+    /** İlan geneline yayılan değişmezler; tek soruya bakarak karara bağlanamaz. */
+    private static Outcome<Void> validateQuestions(List<ApplicationQuestion> questions) {
+        List<String> seenIds = new ArrayList<>();
+        List<Integer> seenOrders = new ArrayList<>();
+        for (ApplicationQuestion question : questions) {
+            String reason = question.invalidReason();
+            if (reason != null) return invalid("soru geçersiz: " + reason);
+            if (seenIds.contains(question.questionId())) {
+                return invalid("questionId ilan içinde benzersiz olmalı");
+            }
+            if (seenOrders.contains(question.order())) {
+                return invalid("order ilan içinde benzersiz olmalı");
+            }
+            seenIds.add(question.questionId());
+            seenOrders.add(question.order());
+        }
+        return Outcome.ok(null);
+    }
+
+    /** Deterministik okuma sırası: {@code order} artan, eşitlikte giriş sırası korunur. */
+    private static List<ApplicationQuestion> sortedByOrder(List<ApplicationQuestion> questions) {
+        List<ApplicationQuestion> out = new ArrayList<>(questions == null ? List.of() : questions);
+        out.removeIf(Objects::isNull);
+        out.sort(Comparator.comparingInt(ApplicationQuestion::order));
+        return List.copyOf(out);
+    }
+
+    /**
+     * İstek digest'inin soru parçaları. Sunucu üretimli kimlikler BURAYA GİRMEZ (istemci kendi
+     * gönderdiyse girer): digest isteğin fonksiyonudur, sunucu rastgeleliğinin değil.
+     */
+    private static List<String> questionDigestParts(List<ApplicationQuestion> questions) {
+        List<String> parts = new ArrayList<>();
+        parts.add(Integer.toString(questions.size()));
+        for (ApplicationQuestion question : questions) {
+            parts.add(nullToEmpty(question.questionId()));
+            parts.add(Integer.toString(question.order()));
+            parts.add(question.kind() == null ? "" : question.kind().name());
+            parts.add(Boolean.toString(question.required()));
+            parts.add(nullToEmpty(question.text()));
+            parts.add(Integer.toString(question.options().size()));
+            for (ApplicationQuestion.Option option : question.options()) {
+                parts.add(nullToEmpty(option.optionId()));
+                parts.add(nullToEmpty(option.label()));
+            }
+        }
+        return List.copyOf(parts);
     }
 
     private static Content content(JobDraft value, String slug) {
         return new Content(slug, value.title(), value.team(), value.location(), value.mode(),
                 value.employmentType(), value.summary(), value.highlights(),
-                value.applicationFields(), value.noticeVersion());
+                value.applicationFields(), value.questions(), value.noticeVersion());
     }
 
-    private static String digest(String operation, String jobId, int expectedVersion, JobDraft value) {
-        return digestParts(List.of(
+    private static String digest(
+            String operation, String jobId, int expectedVersion, JobDraft value,
+            List<String> questionDigestParts) {
+        List<String> parts = new ArrayList<>(List.of(
                 operation,
                 nullToEmpty(jobId),
                 Integer.toString(expectedVersion),
@@ -203,6 +310,10 @@ public final class JobPostingService {
                 value.title(), value.team(), value.location(), value.mode(),
                 value.employmentType(), value.summary(), String.join("\u001f", value.highlights()),
                 String.join("\u001f", value.applicationFields()), value.noticeVersion()));
+        // #240 A: sorular idempotency istek digest'inin parçasıdır — yalnız soruların
+        // değiştiği bir güncelleme "aynı istek" sayılıp sessizce replay edilemez.
+        parts.addAll(questionDigestParts);
+        return digestParts(parts);
     }
 
     private static String digestParts(List<String> parts) {

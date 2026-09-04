@@ -18,10 +18,14 @@ public interface JobPostingStore {
             String summary,
             List<String> highlights,
             List<String> applicationFields,
+            List<ApplicationQuestion> questions,
             String noticeVersion) {
         public Content {
             highlights = highlights == null ? List.of() : List.copyOf(highlights);
             applicationFields = applicationFields == null ? List.of() : List.copyOf(applicationFields);
+            // #240 A: yok/null geriye uyumlu biçimde BOŞ liste — "bilinmiyor" ile "soru yok"
+            // ayrımı kaybolursa aday formu hangi durumda soru göstereceğini bilemez.
+            questions = questions == null ? List.of() : List.copyOf(questions);
         }
     }
 
