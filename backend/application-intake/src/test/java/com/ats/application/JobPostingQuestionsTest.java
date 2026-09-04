@@ -90,13 +90,91 @@ class JobPostingQuestionsTest {
                 question(2, "İkinci soru", Kind.SHORT_TEXT)).isOk());
     }
 
+    /**
+     * P1 (review): biçim deseni kimliğin SUNUCU ÜRETİMLİ olduğunu kanıtlamaz. Yeni ilanda
+     * sahiplenilmiş hiçbir kimlik yoktur; istemcinin uydurduğu kimlik reddedilir.
+     */
     @Test
-    void duplicate_client_supplied_question_id_is_rejected() {
-        String id = "q_" + "A".repeat(16);
-        assertFalse(create(
-                new ApplicationQuestion(id, 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of()),
-                new ApplicationQuestion(id, 2, "İkinci soru", Kind.SHORT_TEXT, false, List.of()))
+    void create_rejects_any_client_supplied_question_id() {
+        assertFalse(create(new ApplicationQuestion(
+                "q_" + "A".repeat(16), 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())).isOk());
+    }
+
+    @Test
+    void create_rejects_any_client_supplied_option_id() {
+        assertFalse(create(new ApplicationQuestion(
+                null, 1, "Tercihiniz nedir?", Kind.SINGLE_CHOICE, true,
+                List.of(new Option("qo_" + "A".repeat(12), "Ofis"), new Option(null, "Uzaktan"))))
                 .isOk());
+    }
+
+    /** Güncellemede aynı sahiplenilmiş kimliğin iki kez gönderilmesi de reddedilir. */
+    @Test
+    void update_rejects_the_same_owned_question_id_twice() {
+        String id = "q_" + "A".repeat(16);
+        CapturingStore store = seeded(List.of(
+                new ApplicationQuestion(id, 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())));
+
+        assertFalse(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(
+                        new ApplicationQuestion(id, 1, "Bir", Kind.SHORT_TEXT, false, List.of()),
+                        new ApplicationQuestion(id, 2, "İki", Kind.SHORT_TEXT, false, List.of()))))
+                .isOk());
+    }
+
+    /**
+     * Sahiplik kontrolünün asıl koruduğu şey: istemci güncellemede mevcut sorunun kimliğini
+     * BAŞKA geçerli bir değerle değiştirip dilim B/C'de kaydedilecek cevapların sorusuyla
+     * bağını koparamamalı.
+     */
+    @Test
+    void update_rejects_a_question_id_that_does_not_belong_to_this_posting() {
+        CapturingStore store = seeded(List.of(new ApplicationQuestion(
+                "q_" + "A".repeat(16), 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())));
+
+        assertFalse(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(new ApplicationQuestion(
+                        "q_" + "Z".repeat(16), 1, "Birinci soru", Kind.SHORT_TEXT, false,
+                        List.of())))).isOk());
+    }
+
+    @Test
+    void update_rejects_an_option_id_borrowed_from_another_question() {
+        String first = "q_" + "A".repeat(16);
+        String second = "q_" + "B".repeat(16);
+        String foreignOption = "qo_" + "B".repeat(12);
+        CapturingStore store = seeded(List.of(
+                new ApplicationQuestion(first, 1, "Tercihiniz nedir?", Kind.SINGLE_CHOICE, false,
+                        List.of(new Option("qo_" + "A".repeat(12), "Ofis"),
+                                new Option("qo_" + "C".repeat(12), "Uzaktan"))),
+                new ApplicationQuestion(second, 2, "Diğer soru", Kind.SINGLE_CHOICE, false,
+                        List.of(new Option(foreignOption, "Evet"),
+                                new Option("qo_" + "D".repeat(12), "Hayır")))));
+
+        assertFalse(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(new ApplicationQuestion(
+                        first, 1, "Tercihiniz nedir?", Kind.SINGLE_CHOICE, false,
+                        List.of(new Option(foreignOption, "Ofis"),
+                                new Option(null, "Uzaktan")))))).isOk());
+    }
+
+    /** Sahiplenilmiş kimlik korunur; yeni öğe kimliğini sunucudan alır. */
+    @Test
+    void update_keeps_owned_ids_and_mints_ids_for_newly_added_questions() {
+        String owned = "q_" + "A".repeat(16);
+        CapturingStore store = seeded(List.of(
+                new ApplicationQuestion(owned, 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())));
+
+        assertTrue(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(
+                        new ApplicationQuestion(owned, 1, "Birinci soru", Kind.SHORT_TEXT, false,
+                                List.of()),
+                        question(2, "Yeni soru", Kind.SHORT_TEXT)))).isOk());
+
+        List<ApplicationQuestion> saved = store.update.content().questions();
+        assertEquals(owned, saved.get(0).questionId());
+        assertNotEquals(owned, saved.get(1).questionId());
+        assertTrue(ApplicationQuestion.QUESTION_ID.matcher(saved.get(1).questionId()).matches());
     }
 
     @Test
@@ -116,8 +194,11 @@ class JobPostingQuestionsTest {
 
     @Test
     void client_supplied_question_id_outside_the_server_format_is_rejected() {
-        assertFalse(create(new ApplicationQuestion(
-                "1", 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())).isOk());
+        CapturingStore store = seeded(List.of(new ApplicationQuestion(
+                "q_" + "A".repeat(16), 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())));
+        assertFalse(service(store).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234",
+                draft("bir-ilan", List.of(new ApplicationQuestion(
+                        "1", 1, "Birinci soru", Kind.SHORT_TEXT, false, List.of())))).isOk());
     }
 
     // --- tip / options çapraz matrisi --------------------------------------------------------
@@ -137,15 +218,22 @@ class JobPostingQuestionsTest {
                 List.of(new Option(null, "Ofis"), new Option(null, "Uzaktan")))).isOk());
     }
 
+    /**
+     * Kapalı tip/options sözleşmesi FAIL-CLOSED'dır. Önceki hâli seçenekleri kurucuda sessizce
+     * boşaltıyordu: "YES_NO + iki seçenek" gibi anlamı belirsiz bir istek 400 yerine BAŞARILI
+     * oluyor ve İK'nın gönderdiği veri sessizce kayboluyordu. Artık açıkça reddedilir.
+     */
     @Test
-    void options_are_dropped_for_every_kind_except_single_choice() {
+    void options_are_rejected_for_every_kind_except_single_choice() {
         for (Kind kind : List.of(Kind.SHORT_TEXT, Kind.LONG_TEXT, Kind.YES_NO)) {
-            CapturingStore store = new CapturingStore();
-            Outcome<MutationResult> out = service(store).create(TENANT, ACTOR, IDEM, draft(List.of(
-                    new ApplicationQuestion(null, 1, "Bir soru", kind, false,
-                            List.of(new Option(null, "Ofis"), new Option(null, "Uzaktan"))))));
-            assertTrue(out.isOk(), kind.name());
-            assertEquals(List.of(), store.create.content().questions().get(0).options(), kind.name());
+            Outcome<MutationResult> out = create(new ApplicationQuestion(
+                    null, 1, "Bir soru", kind, false,
+                    List.of(new Option(null, "Ofis"), new Option(null, "Uzaktan"))));
+            assertFalse(out.isOk(), kind.name() + " seçenek kabul etmemeli");
+        }
+        // Aynı sorular seçeneksiz gönderildiğinde kabul edilir.
+        for (Kind kind : List.of(Kind.SHORT_TEXT, Kind.LONG_TEXT, Kind.YES_NO)) {
+            assertTrue(create(question(1, "Bir soru", kind)).isOk(), kind.name());
         }
     }
 
@@ -184,8 +272,9 @@ class JobPostingQuestionsTest {
         String firstId = created.get(0).questionId();
         String secondId = created.get(1).questionId();
 
-        // aynı sorular: sıra ters çevrildi ve metin düzeltildi — kimlik DEĞİŞMEMELİ
-        CapturingStore after = new CapturingStore();
+        // aynı sorular: sıra ters çevrildi ve metin düzeltildi — kimlik DEĞİŞMEMELİ.
+        // Sahiplik kaydedilmiş ilandan okunur (P1: kimlik sahipliği).
+        CapturingStore after = seeded(created);
         service(after).update(TENANT, ACTOR, JOB_ID, 0, "job-update-key-1234", draft("bir-ilan",
                 List.of(
                         new ApplicationQuestion(secondId, 1, "İkinci soru (düzeltildi)",
@@ -272,6 +361,19 @@ class JobPostingQuestionsTest {
         return out;
     }
 
+    /** Verilen sorulara sahip, kayıtlı bir ilanı olan store. */
+    private static CapturingStore seeded(List<ApplicationQuestion> questions) {
+        CapturingStore store = new CapturingStore();
+        store.existing = new JobPosting(
+                TENANT, JOB_ID, "bir-ilan", "Ürün Yöneticisi", "Ürün ve Deneyim", "İstanbul",
+                "Hibrit", "Tam zamanlı",
+                "Kullanıcı ihtiyaçlarını ölçülebilir ürün sonuçlarına dönüştürün.",
+                List.of("Ürün keşfi"), JobPostingService.DEFAULT_APPLICATION_FIELDS, questions,
+                JobPostingService.CURRENT_NOTICE_VERSION, JobPostingStatus.DRAFT, false, 0,
+                NOW.toString(), NOW.toString());
+        return store;
+    }
+
     private static JobPostingService service(JobPostingStore store) {
         return new JobPostingService(store, Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom());
     }
@@ -296,8 +398,11 @@ class JobPostingQuestionsTest {
             return Outcome.ok(List.of());
         }
 
+        /** Sahiplik okuması buradan gelir; tohumlanmamışsa ilan yok sayılır. */
+        JobPosting existing;
+
         @Override public Outcome<JobPosting> find(TenantId tenantId, String jobId) {
-            return Outcome.fail(OutcomeCode.NOT_FOUND, "yok");
+            return existing == null ? Outcome.fail(OutcomeCode.NOT_FOUND, "yok") : Outcome.ok(existing);
         }
 
         @Override public Outcome<String> findActiveCareerHandle(TenantId tenantId) {

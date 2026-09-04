@@ -81,9 +81,12 @@ public record ApplicationQuestion(
                 if (option != null) normalized.add(option);
             }
         }
-        // Seçenekler yalnız SINGLE_CHOICE için anlamlı; diğer tiplerde taşınması "aslında seçim
-        // sorusuydu" yanılgısı üretir ve cevap sözleşmesini belirsizleştirir.
-        options = kind == Kind.SINGLE_CHOICE ? List.copyOf(normalized) : List.of();
+        // Seçenekler BURADA SESSİZCE DÜŞÜRÜLMEZ. Önceki hâli `SINGLE_CHOICE` dışındaki tiplerde
+        // listeyi boşaltıyordu; bu, kapalı tip/options sözleşmesini FAIL-OPEN yapıyordu:
+        // "YES_NO + iki seçenek" gibi anlamı belirsiz bir istek 400 yerine BAŞARILI oluyor ve
+        // İK'nın gönderdiği veri sessizce kayboluyordu. Artık girdi olduğu gibi taşınır ve
+        // {@link #invalidReason()} bu kombinasyonu açıkça reddeder.
+        options = List.copyOf(normalized);
     }
 
     /**
@@ -106,7 +109,7 @@ public record ApplicationQuestion(
                     + " karakter olmalı";
         }
         if (kind != Kind.SINGLE_CHOICE) {
-            // Kurucu zaten boşaltır; burada koruma amaçlı — sessiz düşürme yerine açık kural.
+            // Sessiz düşürme YOK: seçenek gönderilmişse istek anlamı belirsizdir ve reddedilir.
             return options.isEmpty() ? null : "options yalnız SINGLE_CHOICE için verilebilir";
         }
         if (options.size() < MIN_OPTIONS || options.size() > MAX_OPTIONS) {

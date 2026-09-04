@@ -19,7 +19,9 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -99,7 +101,7 @@ public final class JobPostingService {
 
     public Outcome<MutationResult> create(
             TenantId tenantId, ActorId actorId, String idempotencyKey, JobDraft raw) {
-        Outcome<Normalized> checked = normalizeAndValidate(raw, true);
+        Outcome<Normalized> checked = normalizeAndValidate(raw, true, IdOwnership.none());
         if (checked instanceof Outcome.Fail<Normalized> fail) {
             return Outcome.fail(fail.code(), fail.reason());
         }
@@ -122,14 +124,17 @@ public final class JobPostingService {
     public Outcome<MutationResult> update(
             TenantId tenantId, ActorId actorId, String jobId, int expectedVersion,
             String idempotencyKey, JobDraft raw) {
-        Outcome<Normalized> checked = normalizeAndValidate(raw, false);
-        if (checked instanceof Outcome.Fail<Normalized> fail) {
-            return Outcome.fail(fail.code(), fail.reason());
-        }
+        // Sahiplik okuması tenant/jobId gerektirdiği için bu kontroller gövde
+        // doğrulamasından ÖNCE gelir (P1: kimlik sahipliği).
         if (!validIdentity(tenantId, actorId) || !validJobId(jobId) || expectedVersion < 0) {
             return invalid("tenant/actor/jobId/expectedVersion geçersiz");
         }
         if (!validIdempotency(idempotencyKey)) return invalidIdempotency();
+        Outcome<Normalized> checked =
+                normalizeAndValidate(raw, false, ownershipOf(tenantId, jobId));
+        if (checked instanceof Outcome.Fail<Normalized> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
         Normalized normalized = ((Outcome.Ok<Normalized>) checked).value();
         JobDraft value = normalized.value();
         return store.update(new UpdateCommand(
@@ -166,7 +171,8 @@ public final class JobPostingService {
                 digest, clock.instant().toString()));
     }
 
-    private Outcome<Normalized> normalizeAndValidate(JobDraft raw, boolean slugOptional) {
+    private Outcome<Normalized> normalizeAndValidate(
+            JobDraft raw, boolean slugOptional, IdOwnership ownership) {
         if (raw == null) return invalid("ilan gövdesi zorunlu");
         String normalizedSlug = trimToNull(raw.slug());
         if (normalizedSlug != null) normalizedSlug = normalizedSlug.toLowerCase(Locale.ROOT);
@@ -178,7 +184,11 @@ public final class JobPostingService {
             return invalid("ilan başına en fazla " + ApplicationQuestion.MAX_PER_JOB + " soru");
         }
         List<String> questionDigestParts = questionDigestParts(ordered);
-        List<ApplicationQuestion> questions = assignServerIds(ordered);
+        Outcome<List<ApplicationQuestion>> resolved = resolveIds(ordered, ownership);
+        if (resolved instanceof Outcome.Fail<List<ApplicationQuestion>> fail) {
+            return Outcome.fail(fail.code(), fail.reason());
+        }
+        List<ApplicationQuestion> questions = ((Outcome.Ok<List<ApplicationQuestion>>) resolved).value();
         Outcome<Void> questionCheck = validateQuestions(questions);
         if (questionCheck instanceof Outcome.Fail<Void> fail) {
             return Outcome.fail(fail.code(), fail.reason());
@@ -221,27 +231,92 @@ public final class JobPostingService {
     }
 
     /**
-     * Sunucu kimliği atama. İstemcinin gönderdiği kimlik KORUNUR — kimliğin reorder/edit
-     * boyunca sabit kalması sözleşmenin 1. maddesi; yeniden üretmek dilim B/C'de kaydedilmiş
-     * cevapları sorusundan koparırdı. Kimliksiz gelen soru yenidir, kimliğini burada alır.
+     * Kimlik SAHİPLİĞİ. Biçim deseni ({@code q_…}/{@code qo_…}) yalnız BİÇİMİ doğrular; o
+     * kimliğin sunucu tarafından, BU ilan için üretildiğini KANITLAMAZ. Sahiplik kontrolü
+     * olmadan istemci (a) yeni kayıtta kimlik uydurabilir, (b) güncellemede mevcut bir sorunun
+     * kimliğini başka geçerli bir değerle değiştirip dilim B/C'de kaydedilmiş cevapların
+     * sorusuyla bağını koparabilirdi.
+     *
+     * <p>Bu yüzden kimlik yalnız İLANIN KENDİ mevcut kimlikleri arasından kabul edilir;
+     * geri kalan her şeyi sunucu üretir.
      */
-    private List<ApplicationQuestion> assignServerIds(List<ApplicationQuestion> questions) {
+    private record IdOwnership(boolean update, Map<String, List<String>> optionIdsByQuestionId) {
+
+        /** Create: ilan henüz yok, dolayısıyla sahiplenilmiş hiçbir kimlik yoktur. */
+        static IdOwnership none() {
+            return new IdOwnership(false, Map.of());
+        }
+
+        static IdOwnership of(List<ApplicationQuestion> existing) {
+            Map<String, List<String>> owned = new LinkedHashMap<>();
+            for (ApplicationQuestion question : existing) {
+                owned.put(question.questionId(), question.options().stream()
+                        .map(ApplicationQuestion.Option::optionId).toList());
+            }
+            return new IdOwnership(true, Map.copyOf(owned));
+        }
+
+        boolean ownsQuestion(String questionId) {
+            return optionIdsByQuestionId.containsKey(questionId);
+        }
+
+        boolean ownsOption(String questionId, String optionId) {
+            return optionIdsByQuestionId.getOrDefault(questionId, List.of()).contains(optionId);
+        }
+    }
+
+    /**
+     * Kimlik çözümü: istemcinin gönderdiği kimlik YALNIZ bu ilana aitse korunur (reorder/edit
+     * boyunca sabit kalması sözleşmenin 1. maddesi), aksi hâlde istek reddedilir. Kimliksiz
+     * gelen öğe yenidir ve kimliğini sunucudan alır.
+     */
+    private Outcome<List<ApplicationQuestion>> resolveIds(
+            List<ApplicationQuestion> questions, IdOwnership ownership) {
         List<ApplicationQuestion> out = new ArrayList<>();
         for (ApplicationQuestion question : questions) {
-            String questionId = trimToNull(question.questionId()) == null
-                    ? "q_" + randomUrlToken(12)
-                    : question.questionId();
+            String claimedId = trimToNull(question.questionId());
+            if (claimedId != null && !ownership.ownsQuestion(claimedId)) {
+                return invalid(ownership.update()
+                        ? "questionId bu ilana ait değil; kimlikleri sunucu üretir"
+                        : "yeni ilanda questionId gönderilemez; kimlikleri sunucu üretir");
+            }
+            String questionId = claimedId == null ? "q_" + randomUrlToken(12) : claimedId;
+
             List<ApplicationQuestion.Option> options = new ArrayList<>();
             for (ApplicationQuestion.Option option : question.options()) {
-                options.add(trimToNull(option.optionId()) == null
-                        ? new ApplicationQuestion.Option("qo_" + randomUrlToken(9), option.label())
-                        : option);
+                String claimedOptionId = trimToNull(option.optionId());
+                if (claimedOptionId == null) {
+                    options.add(new ApplicationQuestion.Option(
+                            "qo_" + randomUrlToken(9), option.label()));
+                    continue;
+                }
+                // Seçenek kimliği ancak AYNI sorunun mevcut seçeneğiyse korunur; başka bir
+                // sorunun seçeneğini devralmak da cevap bağını koparır.
+                if (claimedId == null || !ownership.ownsOption(claimedId, claimedOptionId)) {
+                    return invalid(ownership.update()
+                            ? "optionId bu soruya ait değil; kimlikleri sunucu üretir"
+                            : "yeni ilanda optionId gönderilemez; kimlikleri sunucu üretir");
+                }
+                options.add(option);
             }
             out.add(new ApplicationQuestion(
                     questionId, question.order(), question.text(), question.kind(),
                     question.required(), options));
         }
-        return List.copyOf(out);
+        return Outcome.ok(List.copyOf(out));
+    }
+
+    /**
+     * Güncellemede sahiplik, ilanın KAYITLI hâlinden okunur. İlan bulunamazsa sahiplenilmiş
+     * kimlik yoktur: kimlik gönderen istek reddedilir, göndermeyen istek eskisi gibi akar ve
+     * store {@code NOT_FOUND} döndürür. Okuma ile yazma arasındaki yarış CAS {@code version}
+     * ile kapalıdır — ilan değiştiyse update zaten VERSION_CONFLICT verir.
+     */
+    private IdOwnership ownershipOf(TenantId tenantId, String jobId) {
+        Outcome<JobPosting> found = store.find(tenantId, jobId);
+        return found instanceof Outcome.Ok<JobPosting> ok
+                ? IdOwnership.of(ok.value().questions())
+                : IdOwnership.none();
     }
 
     /** İlan geneline yayılan değişmezler; tek soruya bakarak karara bağlanamaz. */
