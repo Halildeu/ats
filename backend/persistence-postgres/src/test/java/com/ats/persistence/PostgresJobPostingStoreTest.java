@@ -486,8 +486,8 @@ class PostgresJobPostingStoreTest {
 
         String key = "job-questions-key-0001";
         var created = jobs.create(new CreateCommand(
-                TENANT, ACTOR, jobId, key, "q".repeat(64), withQuestions, NOW));
-        assertTrue(created.isOk());
+                TENANT, ACTOR, jobId, key, "7".repeat(64), withQuestions, NOW));
+        assertTrue(created.isOk(), () -> String.valueOf(created));
 
         var found = jobs.find(TENANT, jobId);
         assertTrue(found.isOk());
@@ -496,7 +496,7 @@ class PostgresJobPostingStoreTest {
 
         // idempotent replay aynı soruları taşır
         var replay = jobs.create(new CreateCommand(
-                TENANT, ACTOR, jobId, key, "q".repeat(64), withQuestions, NOW));
+                TENANT, ACTOR, jobId, key, "7".repeat(64), withQuestions, NOW));
         assertTrue(replay.isOk());
         MutationResult result = ((com.ats.kernel.Outcome.Ok<MutationResult>) replay).value();
         assertEquals(MutationState.REPLAYED, result.state());
@@ -507,9 +507,10 @@ class PostgresJobPostingStoreTest {
     @Test
     void jobs_written_without_questions_read_back_as_an_empty_list() throws Exception {
         String jobId = "job_" + "E".repeat(24);
-        assertTrue(jobs.create(new CreateCommand(
-                TENANT, ACTOR, jobId, "job-questions-key-0002", "e".repeat(64),
-                content("sorusuz-ilan", "Sorusuz İlan"), NOW)).isOk());
+        var seeded = jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "job-questions-key-0002", "8".repeat(64),
+                content("sorusuz-ilan", "Sorusuz İlan"), NOW));
+        assertTrue(seeded.isOk(), () -> String.valueOf(seeded));
 
         try (var c = ds.getConnection(); var ps = c.prepareStatement(
                 "UPDATE ats_job_posting SET questions = DEFAULT WHERE tenant_id=? AND job_id=?")) {
@@ -530,10 +531,11 @@ class PostgresJobPostingStoreTest {
      */
     @Test
     void database_check_rejects_more_than_ten_questions() throws Exception {
-        String jobId = "job_" + "L".repeat(24);
-        assertTrue(jobs.create(new CreateCommand(
-                TENANT, ACTOR, jobId, "job-questions-key-0003", "l".repeat(64),
-                content("sinir-ilani", "Sınır İlanı"), NOW)).isOk());
+        String jobId = "job_" + "M".repeat(24);
+        var seeded = jobs.create(new CreateCommand(
+                TENANT, ACTOR, jobId, "job-questions-key-0003", "9".repeat(64),
+                content("sinir-ilani", "Sınır İlanı"), NOW));
+        assertTrue(seeded.isOk(), () -> String.valueOf(seeded));
 
         StringBuilder array = new StringBuilder("[");
         for (int i = 0; i < 11; i++) {
