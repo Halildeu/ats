@@ -451,6 +451,125 @@ class PostgresApplicationStoreTest {
                 ApplicationIntakeService.NOTICE_VERSION, NOW, NOW, null, null);
     }
 
+    // --- #240 B: cevaplar ilanın satır-kilitli soru sözleşmesine karşı -----------------------
+
+    private static final String QT = "q_" + "T".repeat(16);      // SHORT_TEXT, zorunlu
+    private static final String QC = "q_" + "C".repeat(16);      // SINGLE_CHOICE, isteğe bağlı
+    private static final String OPT_OFFICE = "qo_" + "O".repeat(12);
+    private static final String OPT_REMOTE = "qo_" + "R".repeat(12);
+
+    @Test
+    void answers_round_trip_with_job_version_and_question_snapshot() throws SQLException {
+        publishJobWithQuestions(TENANT, "job-questions-1", "sorulu-ilan");
+        String publicRef = "app_" + "Q".repeat(24);
+        var result = applications.submit(new SubmitCommand(TENANT, HANDLE, "sorulu-ilan", publicRef,
+                "7".repeat(64), "idem-answers-000001", "e".repeat(64),
+                answered(List.of(
+                        new ApplicationIntakeService.Answer(QT, "İki hafta içinde", null, null),
+                        new ApplicationIntakeService.Answer(QC, null, null, OPT_REMOTE))), NOW))
+                .asOptional().orElseThrow();
+        assertEquals(com.ats.application.ApplicationStore.SubmitState.CREATED, result.state());
+        int liveVersion = jobs.find(TENANT, "job-questions-1").asOptional().orElseThrow().version();
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                SELECT answers::text, job_version, questions_snapshot::text
+                  FROM ats_application WHERE public_ref = ?
+                """)) {
+            ps.setString(1, publicRef);
+            try (var rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                var answers = Pg.answersFromJson(rs.getString(1));
+                assertEquals(2, answers.size());
+                assertEquals("İki hafta içinde", answers.get(0).text());
+                assertEquals(OPT_REMOTE, answers.get(1).optionId(),
+                        "cevap seçenek KİMLİĞİNE bağlanır, etikete değil");
+                assertEquals(liveVersion, rs.getInt(2), "başvuru anındaki ilan CAS sürümü");
+                var snapshot = Pg.questionsFromJson(rs.getString(3));
+                assertEquals(2, snapshot.size());
+                assertEquals("Ne zaman başlayabilirsiniz?", snapshot.get(0).text(),
+                        "soru METNİ snapshot'ta — İK sonradan düzenlese de cevap yorumlanabilir");
+            }
+        }
+    }
+
+    @Test
+    void answers_are_checked_against_the_locked_posting() throws SQLException {
+        publishJobWithQuestions(TENANT, "job-questions-2", "sorulu-ilan-2");
+        assertRejected("sorulu-ilan-2", "R", "idem-answers-000002",
+                List.of(new ApplicationIntakeService.Answer(QC, null, null, OPT_OFFICE)),
+                "zorunlu ilan sorusu cevaplanmadı");
+        assertRejected("sorulu-ilan-2", "S", "idem-answers-000003",
+                List.of(new ApplicationIntakeService.Answer(QT, "x", null, null),
+                        new ApplicationIntakeService.Answer("q_" + "Z".repeat(16), "x", null, null)),
+                "ilan soruları değişti");
+        assertRejected("sorulu-ilan-2", "U", "idem-answers-000004",
+                List.of(new ApplicationIntakeService.Answer(QT, null, true, null)),
+                "metin cevabı ister");
+        assertRejected("sorulu-ilan-2", "V", "idem-answers-000005",
+                List.of(new ApplicationIntakeService.Answer(QT, "x", null, null),
+                        new ApplicationIntakeService.Answer(QC, null, null, "qo_" + "X".repeat(12))),
+                "ilan seçenekleri değişti");
+        assertRejected("sorulu-ilan-2", "W", "idem-answers-000006",
+                List.of(new ApplicationIntakeService.Answer(QT, "x".repeat(201), null, null)),
+                "en fazla 200");
+        assertEquals(0, countBySlug("sorulu-ilan-2"), "reddedilen başvurulardan hiçbiri yazılmadı");
+    }
+
+    private static void assertRejected(String slug, String refLetter, String key,
+            List<ApplicationIntakeService.Answer> answers, String expected) {
+        var out = applications.submit(new SubmitCommand(TENANT, HANDLE, slug,
+                "app_" + refLetter.repeat(24), "9".repeat(64), key, "f".repeat(64),
+                answered(answers), NOW));
+        assertTrue(out instanceof com.ats.kernel.Outcome.Fail<?> f && f.reason().contains(expected),
+                "beklenen '" + expected + "', gelen: " + out);
+    }
+
+    private static Submission answered(List<ApplicationIntakeService.Answer> answers) {
+        var s = submission("Cevaplı Aday");
+        return new Submission(
+                s.fullName(), s.email(), s.phone(), s.city(), s.linkedIn(), s.portfolio(),
+                s.summary(), s.experience(), s.education(), s.skills(), s.note(),
+                s.noticeVersion(), s.noticeAcceptedAt(), s.accuracyConfirmedAt(),
+                s.resumeImportId(), s.resumeDraftVersion(), s.experienceEntries(),
+                s.educationEntries(), s.languages(), s.certifications(), answers);
+    }
+
+    private static void publishJobWithQuestions(TenantId tenant, String jobId, String slug) {
+        var questions = List.of(
+                new com.ats.application.ApplicationQuestion(QT, 1, "Ne zaman başlayabilirsiniz?",
+                        com.ats.application.ApplicationQuestion.Kind.SHORT_TEXT, true, List.of()),
+                new com.ats.application.ApplicationQuestion(QC, 2, "Çalışma tercihiniz?",
+                        com.ats.application.ApplicationQuestion.Kind.SINGLE_CHOICE, false,
+                        List.of(new com.ats.application.ApplicationQuestion.Option(OPT_OFFICE, "Ofis"),
+                                new com.ats.application.ApplicationQuestion.Option(OPT_REMOTE, "Uzaktan"))));
+        Content content = new Content(
+                slug, "Soru Soran İlan", "Ürün", "İstanbul", "Hibrit", "Tam zamanlı",
+                "Sorulu ilan (#240 B).", List.of("Ürün"),
+                JobPostingService.DEFAULT_APPLICATION_FIELDS, questions,
+                JobPostingService.CURRENT_NOTICE_VERSION);
+        var created = jobs.create(new CreateCommand(
+                tenant, RECRUITER, jobId, "job-create-" + jobId, "c".repeat(64), content, NOW))
+                .asOptional().orElseThrow();
+        assertEquals(MutationState.CREATED, created.state());
+        var published = jobs.transition(new com.ats.application.JobPostingStore.TransitionCommand(
+                tenant, RECRUITER, jobId, 0, JobPostingStatus.PUBLISHED,
+                "job-publish-" + jobId, "d".repeat(64), NOW)).asOptional().orElseThrow();
+        assertEquals(JobPostingStatus.PUBLISHED, published.job().status());
+    }
+
+    private static long countBySlug(String slug) throws SQLException {
+        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
+                SELECT count(*) FROM ats_application a
+                  JOIN ats_job_posting j ON j.tenant_id = a.tenant_id AND j.job_id = a.job_id
+                 WHERE j.slug = ?
+                """)) {
+            ps.setString(1, slug);
+            try (var rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
     private static void publishJob(TenantId tenant, String jobId, String slug, String title) {
         Content content = new Content(
                 slug, title, "Ürün", "İstanbul", "Hibrit", "Tam zamanlı",

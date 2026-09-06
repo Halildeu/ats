@@ -243,6 +243,80 @@ class ApplicationIntakeServiceTest {
                 "gerçek e-posta da normalize edilir; yalnız sentetik kısıtı kalkar");
     }
 
+    // --- #240 B: cevapların gövde-içi şekli (ilan uyumu store'da doğrulanır) ---------------
+
+    private static final String Q1 = "q_" + "A".repeat(16);
+    private static final String Q2 = "q_" + "B".repeat(16);
+
+    private static ApplicationIntakeService.Submission withAnswers(
+            List<ApplicationIntakeService.Answer> answers) {
+        var s = submission();
+        return new ApplicationIntakeService.Submission(
+                s.fullName(), s.email(), s.phone(), s.city(), s.linkedIn(), s.portfolio(),
+                s.summary(), s.experience(), s.education(), s.skills(), s.note(),
+                s.noticeVersion(), s.noticeAcceptedAt(), s.accuracyConfirmedAt(),
+                s.resumeImportId(), s.resumeDraftVersion(), s.experienceEntries(),
+                s.educationEntries(), s.languages(), s.certifications(), answers);
+    }
+
+    @Test
+    void answers_are_validated_for_shape_only_and_carried_to_the_store() {
+        CapturingStore store = new CapturingStore();
+        var out = service(store).submit("urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS,
+                withAnswers(List.of(
+                        new ApplicationIntakeService.Answer(Q1, "  Uzaktan çalışabilirim ", null, null),
+                        new ApplicationIntakeService.Answer(Q2, null, true, null))));
+        assertTrue(out.isOk(), out instanceof Outcome.Fail<?> f ? f.reason() : "");
+        var carried = store.command.submission().answers();
+        assertEquals(2, carried.size());
+        assertEquals("Uzaktan çalışabilirim", carried.get(0).text(), "metin trim edilir");
+        assertEquals(Boolean.TRUE, carried.get(1).yes());
+    }
+
+    @Test
+    void answers_reject_duplicate_question_bad_ids_and_ambiguous_values() {
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer(Q1, "a", null, null),
+                new ApplicationIntakeService.Answer(Q1, "b", null, null))))
+                .contains("aynı soruya iki cevap"));
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer("q_kisa", "a", null, null))))
+                .contains("questionId biçimi"));
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer(Q1, "a", true, null))))
+                .contains("tam bir değer alanı"), "iki değer alanı birden geçersiz");
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer(Q1, "   ", null, null))))
+                .contains("tam bir değer alanı"), "boş metin cevap değildir");
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer(Q1, null, null, "qo_x"))))
+                .contains("optionId biçimi"));
+        assertTrue(submitReason(withAnswers(List.of(
+                new ApplicationIntakeService.Answer(Q1, "x".repeat(2001), null, null))))
+                .contains("en fazla 2000"));
+    }
+
+    @Test
+    void more_than_ten_answers_are_rejected() {
+        List<ApplicationIntakeService.Answer> eleven = new java.util.ArrayList<>();
+        for (int i = 0; i < 11; i++) {
+            eleven.add(new ApplicationIntakeService.Answer(
+                    "q_" + String.valueOf((char) ('A' + i)).repeat(16), "cevap", null, null));
+        }
+        assertTrue(submitReason(withAnswers(eleven)).contains("en fazla 10"));
+    }
+
+    @Test
+    void answers_change_the_idempotency_request_digest() {
+        CapturingStore plain = new CapturingStore();
+        service(plain).submit("urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS, submission());
+        CapturingStore answered = new CapturingStore();
+        service(answered).submit("urun-yoneticisi", "idem-key-12345678", CANDIDATE_ACCESS,
+                withAnswers(List.of(new ApplicationIntakeService.Answer(Q1, "evet", null, null))));
+        assertTrue(!plain.command.requestDigest().equals(answered.command.requestDigest()),
+                "aynı anahtar + farklı cevap sessizce replay olmamalı");
+    }
+
     private static ApplicationIntakeService service(ApplicationStore store) {
         return new ApplicationIntakeService(store, new TenantId("test-tenant"),
                 Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom());
