@@ -233,6 +233,17 @@ class ApplicationApiController {
             Boolean yes,
             @Schema(pattern = "^qo_[A-Za-z0-9_-]{12}$") String optionId) {}
 
+    /**
+     * #240 C: İK okuma yolundaki cevap. Gönderim şekliyle aynı (tipe göre TAM BİR değer
+     * alanı: metin, evet/hayır ya da seçenek kimliği). Cevap kimliğe bağlıdır; soru metni ve
+     * seçenek etiketi {@code questionsSnapshot}'tan çözülür, canlı ilandan değil.
+     */
+    @Schema(name = "RecruiterApplicationAnswer",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record RecruiterApplicationAnswer(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String questionId,
+            String text, Boolean yes, String optionId) {}
+
     @Schema(name = "ApplicationReceiptResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ApplicationReceiptDto(
@@ -411,6 +422,17 @@ class ApplicationApiController {
             List<EducationEntryBody> educationEntries,
             String languages, String certifications,
             List<String> skills, String note,
+            // #240 C: cevaplar + cevap anındaki soru anlık görüntüsü (sıra ve metin KAYNAĞI) +
+            // başvuru anındaki ilan sürümü. Sorusuz ilanda ve V24 öncesi satırda boş liste /
+            // null gelir: "baktım, yok" ile "alan hiç yok" (eski sunucu) ayrışır. Inbox
+            // özetine KONMAZ — liste projeksiyonu PII-minimize (ApplicationApiTest pinler).
+            @io.swagger.v3.oas.annotations.media.ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = RecruiterApplicationAnswer.class))
+            List<RecruiterApplicationAnswer> answers,
+            @io.swagger.v3.oas.annotations.media.ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = PublicJobQuestion.class))
+            List<PublicJobQuestion> questionsSnapshot,
+            Integer jobVersion,
             @Schema(allowableValues = {
                     "SUBMITTED", "UNDER_REVIEW", "INTERVIEW_PENDING", "OFFER_PENDING",
                     "OFFER_ACCEPTED", "OFFER_DECLINED", "OFFER_WITHDRAWN", "HIRED",
@@ -764,7 +786,16 @@ class ApplicationApiController {
 
     /** #240 B: soru sırası gösterim sırasıdır; kimlikler aynen geçer, uyarılar geçmez. */
     private static List<PublicJobQuestion> publicQuestions(JobPosting job) {
-        return job.questions().stream()
+        return questionProjection(job.questions());
+    }
+
+    /**
+     * #240 B/C: aynı projeksiyon canlı ilan (aday formu) ve başvurudaki anlık görüntü (İK
+     * inceleme) için — İK, adayın gördüğü sırayı ve metni görür, canlı ilanın güncelini değil.
+     */
+    private static List<PublicJobQuestion> questionProjection(
+            List<com.ats.application.ApplicationQuestion> questions) {
+        return questions.stream()
                 .sorted(java.util.Comparator.comparingInt(com.ats.application.ApplicationQuestion::order))
                 .map(q -> new PublicJobQuestion(q.questionId(), q.order(), q.text(), q.kind().name(),
                         q.required(), q.options().stream()
@@ -794,7 +825,11 @@ class ApplicationApiController {
                         e.school(), e.degree(), e.field(), e.startYear(), e.endYear(),
                         e.ongoing(), e.description())).toList(),
                 app.languages(), app.certifications(),
-                app.skills(), app.note(), app.status().name(),
+                app.skills(), app.note(),
+                app.answers().stream().map(a -> new RecruiterApplicationAnswer(
+                        a.questionId(), a.text(), a.yes(), a.optionId())).toList(),
+                questionProjection(app.questionsSnapshot()), app.jobVersion(),
+                app.status().name(),
                 app.version(), app.createdAt(), app.updatedAt());
     }
 

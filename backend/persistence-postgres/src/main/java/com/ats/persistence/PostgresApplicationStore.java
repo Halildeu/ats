@@ -1244,13 +1244,16 @@ public final class PostgresApplicationStore implements ApplicationStore {
                        a.languages, a.certifications,
                        a.skills::text, a.note, a.status,
                        a.version, a.notice_version, a.notice_accepted_at,
-                       a.accuracy_confirmed_at, a.created_at, a.updated_at
+                       a.accuracy_confirmed_at, a.created_at, a.updated_at,
+                       a.answers::text, a.job_version, a.questions_snapshot::text
                   FROM ats_application a
                   JOIN ats_job_posting j
                     ON j.tenant_id = a.tenant_id AND j.job_id = a.job_id
                 """;
     }
 
+    // #240 C: cevaplar ve anlık görüntü YALNIZ detay projeksiyonunda (applicationSelect);
+    // inbox özeti (recruiterSummarySelect) PII-minimize kalır — ApplicationApiTest bunu pinler.
     private static String recruiterSummarySelect() {
         return """
                 SELECT a.public_ref, j.slug, j.title, a.full_name, a.email, a.city,
@@ -1285,7 +1288,12 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 Pg.stringsFromJson(rs.getString("skills")), rs.getString("note"),
                 ApplicationStatus.valueOf(rs.getString("status")), rs.getInt("version"),
                 rs.getString("notice_version"), iso(rs, "notice_accepted_at"),
-                iso(rs, "accuracy_confirmed_at"), iso(rs, "created_at"), iso(rs, "updated_at"));
+                iso(rs, "accuracy_confirmed_at"), iso(rs, "created_at"), iso(rs, "updated_at"),
+                // #240 C: B'nin yazdığı üçlü artık okunur; codec'ler fail-closed (bozuk JSON →
+                // SQLException → Pg.sqlFail). job_version V24 öncesi satırda NULL kalır, 0 olmaz.
+                Pg.answersFromJson(rs.getString("answers")),
+                rs.getObject("job_version", Integer.class),
+                Pg.questionsFromJson(rs.getString("questions_snapshot")));
     }
 
     private static JobPosting readJob(ResultSet rs) throws SQLException {
