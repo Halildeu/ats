@@ -68,8 +68,38 @@ class ApplicationApiController {
                             "fullName", "email", "phone", "city", "linkedIn", "portfolio",
                             "summary", "experience", "education", "skills", "note"}))
             List<String> applicationFields,
+            @io.swagger.v3.oas.annotations.media.ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = PublicJobQuestion.class))
+            List<PublicJobQuestion> questions,
             @Schema(allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
             String noticeVersion) {}
+
+    /**
+     * #240 B: adayın gördüğü ilana özel soru. Kimlikler sunucudan ve HER ZAMAN dolu;
+     * korunan-özellik uyarısı (questionWarnings) İK'ya özeldir, buraya çıkmaz.
+     */
+    @Schema(name = "PublicJobQuestion",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record PublicJobQuestion(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String questionId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "10")
+            int order,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 2, maxLength = 500)
+            String text,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {
+                    "SHORT_TEXT", "LONG_TEXT", "YES_NO", "SINGLE_CHOICE"})
+            String kind,
+            boolean required,
+            @io.swagger.v3.oas.annotations.media.ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = PublicJobQuestionOption.class))
+            List<PublicJobQuestionOption> options) {}
+
+    @Schema(name = "PublicJobQuestionOption",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record PublicJobQuestionOption(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String optionId,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 1, maxLength = 120)
+            String label) {}
 
     @GetMapping("/api/v1/jobs")
     @ApiResponse(responseCode = "200", description = "Varsayılan tenant yayınlanmış ilanları",
@@ -184,7 +214,24 @@ class ApplicationApiController {
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String noticeAcceptedAt,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String accuracyConfirmedAt,
             @Schema(pattern = "^ri_[A-Za-z0-9_-]{24}$") String resumeImportId,
-            @Schema(minimum = "0") Integer resumeDraftVersion) {}
+            @Schema(minimum = "0") Integer resumeDraftVersion,
+            @io.swagger.v3.oas.annotations.media.ArraySchema(maxItems = 10,
+                    schema = @Schema(implementation = AnswerBody.class))
+            List<AnswerBody> answers) {}
+
+    /**
+     * #240 B: ilan sorusuna cevap. Kimliğe bağlanır (questionId/optionId), metne değil;
+     * tipe göre TAM BİR değer alanı gelir. Sunucu, ilanın KENDİ soru sözleşmesine karşı
+     * doğrular — istemcinin gönderdiği soru metni/tipi kaynak değildir.
+     */
+    @Schema(name = "ApplicationAnswer",
+            additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record AnswerBody(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED, pattern = "^q_[A-Za-z0-9_-]{16}$")
+            String questionId,
+            @Schema(maxLength = 2000) String text,
+            Boolean yes,
+            @Schema(pattern = "^qo_[A-Za-z0-9_-]{12}$") String optionId) {}
 
     @Schema(name = "ApplicationReceiptResponse",
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -220,7 +267,7 @@ class ApplicationApiController {
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
                 body.resumeImportId(), body.resumeDraftVersion(),
                 experienceEntries(body), educationEntries(body),
-                body.languages(), body.certifications());
+                body.languages(), body.certifications(), answers(body));
         return submit(service.submit(
                 jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -251,7 +298,7 @@ class ApplicationApiController {
                 body.note(), body.noticeVersion(), body.noticeAcceptedAt(), body.accuracyConfirmedAt(),
                 body.resumeImportId(), body.resumeDraftVersion(),
                 experienceEntries(body), educationEntries(body),
-                body.languages(), body.certifications());
+                body.languages(), body.certifications(), answers(body));
         return submit(service.submit(
                 publicHandle, jobSlug, idempotencyKey, candidateAccessToken, submission));
     }
@@ -712,7 +759,27 @@ class ApplicationApiController {
     private static JobDto jobDto(JobPosting job) {
         return new JobDto(job.slug(), job.title(), job.team(), job.location(), job.mode(),
                 job.employmentType(), job.summary(), job.highlights(), job.applicationFields(),
-                job.noticeVersion());
+                publicQuestions(job), job.noticeVersion());
+    }
+
+    /** #240 B: soru sırası gösterim sırasıdır; kimlikler aynen geçer, uyarılar geçmez. */
+    private static List<PublicJobQuestion> publicQuestions(JobPosting job) {
+        return job.questions().stream()
+                .sorted(java.util.Comparator.comparingInt(com.ats.application.ApplicationQuestion::order))
+                .map(q -> new PublicJobQuestion(q.questionId(), q.order(), q.text(), q.kind().name(),
+                        q.required(), q.options().stream()
+                                .map(o -> new PublicJobQuestionOption(o.optionId(), o.label()))
+                                .toList()))
+                .toList();
+    }
+
+    /** #240 B: gövdedeki cevaplar; yok/null → boş (şekil doğrulaması serviste, ilan uyumu store'da). */
+    private static List<ApplicationIntakeService.Answer> answers(SubmitBody body) {
+        if (body.answers() == null) return List.of();
+        return body.answers().stream()
+                .map(a -> new ApplicationIntakeService.Answer(
+                        a.questionId(), a.text(), a.yes(), a.optionId()))
+                .toList();
     }
 
     private static RecruiterApplicationDto recruiterDto(CandidateApplication app) {

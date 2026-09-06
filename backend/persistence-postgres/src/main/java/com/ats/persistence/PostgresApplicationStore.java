@@ -124,6 +124,13 @@ public final class PostgresApplicationStore implements ApplicationStore {
                     return Outcome.fail(OutcomeCode.INVALID,
                             "ilan başvuru alanları değişti; formu yenileyin");
                 }
+                // #240 B: cevaplar ilanın satır-kilitli soru sözleşmesine karşı (soru var mı,
+                // tip/seçenek uyumu, zorunlu eksik mi). İstemcinin gönderdiği metin/tip kaynak değil.
+                String answersProblem = answersProblem(job, command.submission());
+                if (answersProblem != null) {
+                    c.rollback();
+                    return Outcome.fail(OutcomeCode.INVALID, answersProblem);
+                }
 
                 boolean reserved = reserveIdempotency(c, job, command);
                 if (!reserved) {
@@ -882,6 +889,53 @@ public final class PostgresApplicationStore implements ApplicationStore {
                 && (fields.contains("note") || submission.note() == null);
     }
 
+    /**
+     * #240 B: cevapları ilanın KENDİ sorularına karşı doğrular; null = uygun, aksi hâlde
+     * aday-okunur gerekçe (HTTP 400). Bilinmeyen soru/seçenek sessizce düşürülmez (fail-closed);
+     * zorunlu soru cevapsız kalamaz. CEVAP != ELEME: burada yalnız şekil/uyum kontrolü vardır.
+     */
+    static String answersProblem(
+            JobPosting job, com.ats.application.ApplicationIntakeService.Submission submission) {
+        java.util.Map<String, com.ats.application.ApplicationQuestion> byId = new java.util.HashMap<>();
+        for (com.ats.application.ApplicationQuestion q : job.questions()) byId.put(q.questionId(), q);
+        java.util.Set<String> answered = new java.util.HashSet<>();
+        for (com.ats.application.ApplicationIntakeService.Answer a : submission.answers()) {
+            com.ats.application.ApplicationQuestion q = byId.get(a.questionId());
+            if (q == null) return "ilan soruları değişti; formu yenileyin";
+            answered.add(q.questionId());
+            switch (q.kind()) {
+                case SHORT_TEXT -> {
+                    if (a.text() == null) return "soru metin cevabı ister: " + q.questionId();
+                    if (a.text().length() > com.ats.application.ApplicationIntakeService.MAX_SHORT_TEXT_ANSWER)
+                        return "kısa metin cevabı en fazla "
+                                + com.ats.application.ApplicationIntakeService.MAX_SHORT_TEXT_ANSWER
+                                + " karakter olmalı: " + q.questionId();
+                }
+                case LONG_TEXT -> {
+                    if (a.text() == null) return "soru metin cevabı ister: " + q.questionId();
+                    if (a.text().length() > com.ats.application.ApplicationIntakeService.MAX_LONG_TEXT_ANSWER)
+                        return "uzun metin cevabı en fazla "
+                                + com.ats.application.ApplicationIntakeService.MAX_LONG_TEXT_ANSWER
+                                + " karakter olmalı: " + q.questionId();
+                }
+                case YES_NO -> {
+                    if (a.yes() == null) return "soru evet/hayır cevabı ister: " + q.questionId();
+                }
+                case SINGLE_CHOICE -> {
+                    if (a.optionId() == null) return "soru seçenek cevabı ister: " + q.questionId();
+                    boolean known = q.options().stream()
+                            .anyMatch(o -> o.optionId().equals(a.optionId()));
+                    if (!known) return "ilan seçenekleri değişti; formu yenileyin";
+                }
+            }
+        }
+        for (com.ats.application.ApplicationQuestion q : job.questions()) {
+            if (q.required() && !answered.contains(q.questionId()))
+                return "zorunlu ilan sorusu cevaplanmadı: " + q.questionId();
+        }
+        return null;
+    }
+
     private ExistingIdempotency readIdempotency(Connection c, JobPosting job, String key) throws SQLException {
         String sql = """
                 SELECT request_digest, application_id::text
@@ -925,9 +979,11 @@ public final class PostgresApplicationStore implements ApplicationStore {
                      skills, note, status, version, candidate_access_digest, notice_version,
                      notice_accepted_at, accuracy_confirmed_at, application_source,
                      resume_import_id, created_at, updated_at,
-                     experience_entries, education_entries, languages, certifications)
+                     experience_entries, education_entries, languages, certifications,
+                     answers, job_version, questions_snapshot)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'SUBMITTED', 0,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?,
+                        ?::jsonb, ?, ?::jsonb)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
@@ -950,7 +1006,12 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setString(i++, Pg.experienceEntriesToJson(s.experienceEntries()));
             ps.setString(i++, Pg.educationEntriesToJson(s.educationEntries()));
             ps.setString(i++, s.languages());
-            ps.setString(i, s.certifications());
+            ps.setString(i++, s.certifications());
+            // #240 B: cevaplar + başvuru anındaki ilan sürümü ve soru/seçenek METNİ snapshot'ı
+            // (onaylı plan md.6): İK sonradan soruyu düzenlese de cevap yorumlanabilir kalır.
+            ps.setString(i++, Pg.answersToJson(s.answers()));
+            ps.setInt(i++, job.version());
+            ps.setString(i, Pg.questionsToJson(job.questions()));
             ps.executeUpdate();
         }
     }

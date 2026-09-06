@@ -306,6 +306,35 @@ public final class ApplicationIntakeService {
     /** Alt sınır veri hatasını ayırır; üst sınır saatten değil TAKVİMDEN gelir. */
     private static final int MIN_ENTRY_YEAR = 1950;
 
+    /**
+     * #240 B: adayın bir ilan sorusuna cevabı. Kimliğe bağlanır ({@code questionId} /
+     * {@code optionId}), görünen metne DEĞİL — İK bir yazım hatasını düzeltse de cevap
+     * kopmaz. Tipe göre TAM BİR değer alanı dolu gelir: SHORT_TEXT/LONG_TEXT →
+     * {@code text}, YES_NO → {@code yes}, SINGLE_CHOICE → {@code optionId}.
+     *
+     * <p>Tip/uzunluk/seçenek/zorunluluk uyumu İLANA karşı store'da doğrulanır (ilan orada
+     * satır-kilitli ve tek otoritedir); burada yalnız gövde-içi şekil. CEVAP != ELEME:
+     * cevaplar saklanır ve İK'ya gösterilir, puanlanmaz.
+     */
+    public record Answer(String questionId, String text, Boolean yes, String optionId) {
+        public Answer {
+            questionId = trimToEmpty(questionId);
+            text = trimToNull(text);
+            optionId = trimToNull(optionId);
+        }
+
+        /** Tam bir değer alanı dolu mu (ikisi birden ya da hiçbiri = kapalı sözleşme dışı). */
+        public boolean exactlyOneValue() {
+            return (text == null ? 0 : 1) + (yes == null ? 0 : 1) + (optionId == null ? 0 : 1) == 1;
+        }
+    }
+
+    /** İlan başına soru sınırıyla aynı: en fazla 10 cevap. */
+    static final int MAX_ANSWERS = ApplicationQuestion.MAX_PER_JOB;
+    /** Metin cevabı üst sınırları (frontend ve store ile aynı kapalı sözleşme). */
+    public static final int MAX_SHORT_TEXT_ANSWER = 200;
+    public static final int MAX_LONG_TEXT_ANSWER = 2000;
+
     public record Submission(
             String fullName,
             String email,
@@ -326,10 +355,12 @@ public final class ApplicationIntakeService {
             List<ExperienceEntry> experienceEntries,
             List<EducationEntry> educationEntries,
             String languages,
-            String certifications) {
+            String certifications,
+            List<Answer> answers) {
 
         public Submission {
             skills = skills == null ? List.of() : List.copyOf(skills);
+            answers = answers == null ? List.of() : List.copyOf(answers);
             // Boş satırlar atılır: form "satır ekle" düğmesi doldurulmamış girdi bırakabilir.
             experienceEntries = experienceEntries == null ? List.of()
                     : experienceEntries.stream().filter(e -> !e.blank()).toList();
@@ -425,7 +456,35 @@ public final class ApplicationIntakeService {
             this(fullName, email, phone, city, linkedIn, portfolio, summary, experience,
                     education, skills, note, noticeVersion, noticeAcceptedAt,
                     accuracyConfirmedAt, resumeImportId, resumeDraftVersion,
-                    List.of(), List.of(), null, null);
+                    List.of(), List.of(), null, null, List.of());
+        }
+
+        /** #240 B öncesi 20-argümanlı çağrılar bozulmasın (cevapsız başvuru). */
+        public Submission(
+                String fullName,
+                String email,
+                String phone,
+                String city,
+                String linkedIn,
+                String portfolio,
+                String summary,
+                String experience,
+                String education,
+                List<String> skills,
+                String note,
+                String noticeVersion,
+                String noticeAcceptedAt,
+                String accuracyConfirmedAt,
+                String resumeImportId,
+                Integer resumeDraftVersion,
+                List<ExperienceEntry> experienceEntries,
+                List<EducationEntry> educationEntries,
+                String languages,
+                String certifications) {
+            this(fullName, email, phone, city, linkedIn, portfolio, summary, experience,
+                    education, skills, note, noticeVersion, noticeAcceptedAt,
+                    accuracyConfirmedAt, resumeImportId, resumeDraftVersion,
+                    experienceEntries, educationEntries, languages, certifications, List.of());
         }
     }
 
@@ -768,7 +827,8 @@ public final class ApplicationIntakeService {
                 trim(raw.accuracyConfirmedAt()), trimToNull(raw.resumeImportId()),
                 raw.resumeDraftVersion(),
                 raw.experienceEntries(), raw.educationEntries(),
-                trimToNull(raw.languages()), trimToNull(raw.certifications()));
+                trimToNull(raw.languages()), trimToNull(raw.certifications()),
+                raw.answers());
         if (!between(value.fullName(), 2, 160)) return invalid("fullName 2..160 karakter olmalı");
         if (!between(value.email(), 3, 254) || !EMAIL.matcher(value.email()).matches())
             return invalid("email geçersiz");
@@ -822,6 +882,24 @@ public final class ApplicationIntakeService {
                 || value.skills().stream().anyMatch(s -> !between(s, 1, 80)))
             return invalid("skills 1..50 öğe, her öğe 1..80 karakter olmalı");
         if (value.note() != null && value.note().length() > 4000) return invalid("note en fazla 4000 karakter olmalı");
+        // #240 B: cevapların gövde-içi şekli. İlana bağlı kurallar (soru var mı, tip/seçenek
+        // uyumu, zorunlu eksik mi) store'da, ilan satır-kilitliyken doğrulanır.
+        if (value.answers().size() > MAX_ANSWERS)
+            return invalid("answers en fazla " + MAX_ANSWERS + " öğe olmalı");
+        java.util.Set<String> seenQuestions = new java.util.HashSet<>();
+        for (Answer answer : value.answers()) {
+            if (!ApplicationQuestion.QUESTION_ID.matcher(answer.questionId()).matches())
+                return invalid("answers.questionId biçimi geçersiz");
+            if (!seenQuestions.add(answer.questionId()))
+                return invalid("answers aynı soruya iki cevap içeremez");
+            if (!answer.exactlyOneValue())
+                return invalid("answers her cevapta tam bir değer alanı (text | yes | optionId) taşımalı");
+            if (answer.text() != null && answer.text().length() > MAX_LONG_TEXT_ANSWER)
+                return invalid("answers.text en fazla " + MAX_LONG_TEXT_ANSWER + " karakter olmalı");
+            if (answer.optionId() != null
+                    && !ApplicationQuestion.OPTION_ID.matcher(answer.optionId()).matches())
+                return invalid("answers.optionId biçimi geçersiz");
+        }
         if (!NOTICE_VERSION.equals(value.noticeVersion())) return invalid("noticeVersion güncel değil");
         if (value.noticeAcceptedAt() == null || value.noticeAcceptedAt().isBlank())
             return invalid("noticeAcceptedAt ISO-8601 olmalı");
@@ -899,7 +977,9 @@ public final class ApplicationIntakeService {
                 nullToEmpty(s.portfolio()), s.summary(), s.experience(), s.education(),
                 String.join("\u001f", s.skills()), nullToEmpty(s.note()), s.noticeVersion(),
                 s.noticeAcceptedAt(), s.accuracyConfirmedAt(), nullToEmpty(s.resumeImportId()),
-                s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()));
+                s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()),
+                // #240 B: aynı anahtar + farklı cevap = farklı istek (sessiz replay olmasın).
+                answersDigestPart(s.answers()));
         MessageDigest digest = sha256();
         for (String part : parts) {
             byte[] bytes = part.getBytes(StandardCharsets.UTF_8);
@@ -907,6 +987,17 @@ public final class ApplicationIntakeService {
             digest.update(bytes);
         }
         return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private static String answersDigestPart(List<Answer> answers) {
+        StringBuilder sb = new StringBuilder();
+        for (Answer a : answers) {
+            sb.append(a.questionId()).append('')
+                    .append(nullToEmpty(a.text())).append('')
+                    .append(a.yes() == null ? "" : a.yes().toString()).append('')
+                    .append(nullToEmpty(a.optionId())).append('');
+        }
+        return sb.toString();
     }
 
     private static String evaluationDigest(

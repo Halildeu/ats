@@ -145,6 +145,51 @@ final class Pg {
         return List.copyOf(out);
     }
 
+    /**
+     * #240 B: cevaplar kanonik JSON'a. Tipe göre TAM BİR değer alanı yazılır; kimlik
+     * {@code questionId}/{@code optionId}'dir, görünen metin değil (İK metni düzeltse
+     * de cevap kopmaz). Boş alanlar yazılmaz.
+     */
+    static String answersToJson(List<ApplicationIntakeService.Answer> answers) {
+        List<JsonValue> items = new ArrayList<>();
+        for (ApplicationIntakeService.Answer a : answers) {
+            Map<String, JsonValue> row = new LinkedHashMap<>();
+            row.put("questionId", JsonValue.of(a.questionId()));
+            putIfPresent(row, "text", a.text());
+            if (a.yes() != null) row.put("yes", JsonValue.of(a.yes()));
+            putIfPresent(row, "optionId", a.optionId());
+            items.add(new JsonValue.JsonObject(row));
+        }
+        return JsonCodec.canonical(new JsonValue.JsonArray(items));
+    }
+
+    /**
+     * Cevaplar JSONB'den. Kimliksiz ya da değersiz satır SESSİZCE yutulmaz — okuma fail
+     * eder; "cevap yok" göstermek, yanlış cevap göstermekten iyi değil.
+     */
+    static List<ApplicationIntakeService.Answer> answersFromJson(String json) throws SQLException {
+        List<ApplicationIntakeService.Answer> out = new ArrayList<>();
+        for (JsonValue item : entryItems(json)) {
+            if (!(item instanceof JsonValue.JsonObject obj)) {
+                throw new SQLException("jsonb cevap nesnesi bekleniyordu");
+            }
+            Map<String, JsonValue> v = obj.values();
+            String questionId =
+                    v.get("questionId") instanceof JsonValue.JsonString q ? q.value() : null;
+            if (questionId == null || !ApplicationQuestion.QUESTION_ID.matcher(questionId).matches()) {
+                throw new SQLException("kayıtlı cevapta questionId eksik/bozuk");
+            }
+            String text = v.get("text") instanceof JsonValue.JsonString t ? t.value() : null;
+            Boolean yes = v.get("yes") instanceof JsonValue.JsonBool b ? b.value() : null;
+            String optionId = v.get("optionId") instanceof JsonValue.JsonString o ? o.value() : null;
+            if ((text == null ? 0 : 1) + (yes == null ? 0 : 1) + (optionId == null ? 0 : 1) != 1) {
+                throw new SQLException("kayıtlı cevapta tam bir değer alanı bekleniyordu");
+            }
+            out.add(new ApplicationIntakeService.Answer(questionId, text, yes, optionId));
+        }
+        return List.copyOf(out);
+    }
+
     static String stringsToJson(List<String> values) {
         List<JsonValue> items = new ArrayList<>();
         for (String v : values) {
