@@ -64,7 +64,8 @@ public record ApplicationQuestion(
     public static final int MIN_TEXT_LENGTH = 2;
     public static final int MAX_TEXT_LENGTH = 500;
     public static final int MIN_OPTIONS = 2;
-    public static final int MAX_OPTIONS = 8;
+    /** SINGLE_CHOICE seçenek üst sınırı (onaylı 2026-09-06: 2..10, ürün sahibi kararı — #240 A). */
+    public static final int MAX_OPTIONS = 10;
     public static final int MIN_OPTION_LENGTH = 1;
     public static final int MAX_OPTION_LENGTH = 120;
 

@@ -253,6 +253,15 @@ class JobPostingQuestionsTest {
                 List.of(new Option(null, "Ofis"), new Option(null, "Uzaktan")))).isOk());
     }
 
+    /** Onaylı üst sınır (ürün sahibi kararı — #240 A): 2..10 seçenek geçerli, 11 red. */
+    @Test
+    void single_choice_accepts_ten_options_and_rejects_eleven() {
+        assertTrue(create(new ApplicationQuestion(
+                null, 1, "Tercihiniz nedir?", Kind.SINGLE_CHOICE, true, distinctOptions(10))).isOk());
+        assertFalse(create(new ApplicationQuestion(
+                null, 1, "Tercihiniz nedir?", Kind.SINGLE_CHOICE, true, distinctOptions(11))).isOk());
+    }
+
     /**
      * Kapalı tip/options sözleşmesi FAIL-CLOSED'dır. Önceki hâli seçenekleri kurucuda sessizce
      * boşaltıyordu: "YES_NO + iki seçenek" gibi anlamı belirsiz bir istek 400 yerine BAŞARILI
@@ -393,6 +402,12 @@ class JobPostingQuestionsTest {
     private static List<ApplicationQuestion> shortTexts(int count) {
         List<ApplicationQuestion> out = new ArrayList<>();
         for (int i = 1; i <= count; i++) out.add(question(i, "Soru " + i, Kind.SHORT_TEXT));
+        return out;
+    }
+
+    private static List<Option> distinctOptions(int count) {
+        List<Option> out = new ArrayList<>();
+        for (int i = 1; i <= count; i++) out.add(new Option(null, "Seçenek " + i));
         return out;
     }
 
