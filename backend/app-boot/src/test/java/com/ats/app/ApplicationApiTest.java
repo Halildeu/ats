@@ -1027,6 +1027,109 @@ class ApplicationApiTest {
                 "idempotent retry exact publish response'unu döndürür");
     }
 
+    @Test
+    void recruiter_detail_carries_candidate_answers_with_question_snapshot_but_inbox_does_not()
+            throws Exception {
+        // #240 C: İK aday cevaplarını soru METNİYLE (cevap anındaki anlık görüntü) ve
+        // başvuru anındaki ilan sürümüyle görür; cevap kimliğe bağlıdır, etikete değil.
+        // Inbox özeti PII-minimize kalır — cevap yalnız detay projeksiyonundadır.
+        String draftPayload = new ObjectMapper().writeValueAsString(Map.ofEntries(
+                Map.entry("title", "Sorulu Ürün Uzmanı"),
+                Map.entry("team", "Ürün"),
+                Map.entry("location", "İstanbul"),
+                Map.entry("mode", "Hibrit"),
+                Map.entry("employmentType", "Tam zamanlı"),
+                Map.entry("summary", "İlana özel sorular soran sentetik ilan (#240 C)."),
+                Map.entry("highlights", List.of("Ürün keşfi")),
+                Map.entry("applicationFields", List.of(
+                        "fullName", "email", "phone", "city", "linkedIn", "portfolio",
+                        "summary", "experience", "education", "skills", "note")),
+                Map.entry("questions", List.of(
+                        Map.of("order", 1, "text", "Hangi çalışma biçimini tercih edersiniz?",
+                                "kind", "SINGLE_CHOICE", "required", true,
+                                "options", List.of(Map.of("label", "Ofis"), Map.of("label", "Uzaktan"))),
+                        Map.of("order", 2, "text", "Ne zaman başlayabilirsiniz?",
+                                "kind", "SHORT_TEXT", "required", false))),
+                Map.entry("noticeVersion", "kvkk-application-v1")));
+        HttpHeaders createHeaders = bearer(token(TENANT, "ats.job.write", "c-job-recruiter"));
+        createHeaders.setContentType(MediaType.APPLICATION_JSON);
+        createHeaders.set("X-ATS-Idempotency-Key", "api-job-create-key-240c");
+        ResponseEntity<String> create = rest.exchange(
+                "/api/v1/recruiter/jobs", HttpMethod.POST,
+                new HttpEntity<>(draftPayload, createHeaders), String.class);
+        assertEquals(201, create.getStatusCode().value(), create.getBody());
+        JsonNode draft = objectMapper.readTree(create.getBody());
+        String jobId = draft.path("jobId").asText();
+        String slug = draft.path("slug").asText();
+        JsonNode modeQuestion = draft.path("questions").get(0);
+        String modeQuestionId = modeQuestion.path("questionId").asText();
+        String remoteOptionId = modeQuestion.path("options").get(1).path("optionId").asText();
+        String startQuestionId = draft.path("questions").get(1).path("questionId").asText();
+        assertTrue(modeQuestionId.startsWith("q_") && remoteOptionId.startsWith("qo_"),
+                "kimlikler sunucu üretimli: " + draft.path("questions"));
+
+        HttpHeaders publishHeaders = bearer(token(TENANT, "ats.job.publish", "c-job-publisher"));
+        publishHeaders.setContentType(MediaType.APPLICATION_JSON);
+        publishHeaders.set("X-ATS-Idempotency-Key", "api-job-publish-key-240c");
+        ResponseEntity<String> publish = rest.exchange(
+                "/api/v1/recruiter/jobs/" + jobId + "/transitions", HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"targetStatus\":\"PUBLISHED\"}",
+                        publishHeaders), String.class);
+        assertEquals(200, publish.getStatusCode().value(), publish.getBody());
+        int publishedVersion = objectMapper.readTree(publish.getBody()).path("version").asInt();
+
+        Map<String, Object> submission = new ObjectMapper().readValue(
+                payload("Cevaplı Aday", Instant.now().toString()),
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        submission.put("answers", List.of(
+                Map.of("questionId", modeQuestionId, "optionId", remoteOptionId),
+                Map.of("questionId", startQuestionId, "text", "İki hafta içinde")));
+        HttpHeaders submitHeaders = json();
+        submitHeaders.set("X-ATS-Idempotency-Key", "c-answers-submit-key-001");
+        submitHeaders.set("X-ATS-Candidate-Access", "C".repeat(43));
+        ResponseEntity<String> submit = rest.exchange(
+                "/api/v1/jobs/" + slug + "/applications", HttpMethod.POST,
+                new HttpEntity<>(new ObjectMapper().writeValueAsString(submission), submitHeaders),
+                String.class);
+        assertEquals(201, submit.getStatusCode().value(), submit.getBody());
+        String publicRef = objectMapper.readTree(submit.getBody()).path("publicRef").asText();
+
+        HttpHeaders reader = bearer(token(TENANT, "ats.application.read", "c-reader"));
+        ResponseEntity<String> detail = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef, HttpMethod.GET,
+                new HttpEntity<>(reader), String.class);
+        assertEquals(200, detail.getStatusCode().value(), detail.getBody());
+        JsonNode application = objectMapper.readTree(detail.getBody()).path("application");
+        JsonNode answers = application.path("answers");
+        assertEquals(2, answers.size(), application.toString());
+        assertEquals(modeQuestionId, answers.get(0).path("questionId").asText());
+        assertEquals(remoteOptionId, answers.get(0).path("optionId").asText(),
+                "cevap seçenek KİMLİĞİNE bağlı, etikete değil");
+        assertTrue(answers.get(0).path("text").isNull() && answers.get(0).path("yes").isNull(),
+                "tipe göre tam bir değer alanı dolu: " + answers.get(0));
+        assertEquals("İki hafta içinde", answers.get(1).path("text").asText());
+        JsonNode snapshot = application.path("questionsSnapshot");
+        assertEquals(2, snapshot.size(), application.toString());
+        assertEquals("Hangi çalışma biçimini tercih edersiniz?", snapshot.get(0).path("text").asText(),
+                "soru METNİ ve sırası anlık görüntüden gelir");
+        assertTrue(snapshot.get(0).path("required").asBoolean());
+        assertEquals("Uzaktan", snapshot.get(0).path("options").get(1).path("label").asText(),
+                "seçenek etiketi anlık görüntüden çözülür");
+        assertEquals(remoteOptionId, snapshot.get(0).path("options").get(1).path("optionId").asText());
+        assertEquals(publishedVersion, application.path("jobVersion").asInt(),
+                "başvuru anındaki ilan CAS sürümü");
+
+        JsonNode inbox = objectMapper.readTree(rest.exchange(
+                "/api/v1/recruiter/applications?jobSlug=" + slug, HttpMethod.GET,
+                new HttpEntity<>(reader), String.class).getBody());
+        assertEquals(1, inbox.path("total").asInt(), inbox.toString());
+        JsonNode inboxItem = inbox.path("items").get(0);
+        assertEquals(publicRef, inboxItem.path("publicRef").asText());
+        assertFalse(inboxItem.has("answers"), "inbox özeti cevap taşımaz (PII-minimizasyon)");
+        assertFalse(inboxItem.has("questionsSnapshot"));
+        assertFalse(inboxItem.has("jobVersion"));
+    }
+
     private static String payload(String name, String acceptedAt) throws Exception {
         return new ObjectMapper().writeValueAsString(Map.ofEntries(
                 Map.entry("fullName", name), Map.entry("email", "deniz@example.test"),

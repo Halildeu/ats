@@ -2,6 +2,7 @@ package com.ats.persistence;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -470,25 +471,66 @@ class PostgresApplicationStoreTest {
                 .asOptional().orElseThrow();
         assertEquals(com.ats.application.ApplicationStore.SubmitState.CREATED, result.state());
         int liveVersion = jobs.find(TENANT, "job-questions-1").asOptional().orElseThrow().version();
-        try (var c = ds.getConnection(); var ps = c.prepareStatement("""
-                SELECT answers::text, job_version, questions_snapshot::text
-                  FROM ats_application WHERE public_ref = ?
-                """)) {
+        // #240 C: okuma yolu artık gerçek — İK detayı (ham SQL değil) cevabı, anlık görüntüyü
+        // ve başvuru anındaki ilan sürümünü taşır.
+        var app = applications.findRecruiterApplication(TENANT, publicRef)
+                .asOptional().orElseThrow().application();
+        assertEquals(2, app.answers().size());
+        assertEquals("İki hafta içinde", app.answers().get(0).text());
+        assertEquals(OPT_REMOTE, app.answers().get(1).optionId(),
+                "cevap seçenek KİMLİĞİNE bağlanır, etikete değil");
+        assertEquals(Integer.valueOf(liveVersion), app.jobVersion(),
+                "başvuru anındaki ilan CAS sürümü");
+        assertEquals(2, app.questionsSnapshot().size());
+        assertEquals("Ne zaman başlayabilirsiniz?", app.questionsSnapshot().get(0).text(),
+                "soru METNİ snapshot'ta — İK sonradan düzenlese de cevap yorumlanabilir");
+        assertEquals("Uzaktan", app.questionsSnapshot().get(1).options().stream()
+                .filter(o -> o.optionId().equals(OPT_REMOTE)).findFirst().orElseThrow().label(),
+                "seçenek etiketi anlık görüntüden çözülür");
+        // Sorusuz ilana yapılmış başvuru: boş liste + sürüm YİNE dolu (V24 sonrası her satır).
+        var plain = applications.findRecruiterApplication(TENANT, submitPlain("app_" + "M".repeat(24)))
+                .asOptional().orElseThrow().application();
+        assertTrue(plain.answers().isEmpty() && plain.questionsSnapshot().isEmpty());
+        assertNotNull(plain.jobVersion());
+    }
+
+    @Test
+    void erased_application_exposes_no_answers_on_the_recruiter_read_path() throws SQLException {
+        // #240 C / KVKK: cevaplar ats_application satırında durur ve personal_data_erased_at
+        // guard'ını miras alır — silinen başvuru NOT_FOUND'dur, cevaba hiç ulaşılmaz.
+        publishJobWithQuestions(TENANT, "job-questions-3", "sorulu-ilan-3");
+        String publicRef = "app_" + "Y".repeat(24);
+        okOrExplain(applications.submit(new SubmitCommand(TENANT, HANDLE, "sorulu-ilan-3", publicRef,
+                "8".repeat(64), "idem-answers-000007", "a".repeat(64),
+                answered(List.of(
+                        new ApplicationIntakeService.Answer(QT, "Hemen", null, null))), NOW)),
+                "cevaplı başvuru (silme testi)");
+        assertEquals(1, applications.findRecruiterApplication(TENANT, publicRef)
+                .asOptional().orElseThrow().application().answers().size());
+        try (var c = ds.getConnection(); var ps = c.prepareStatement(
+                "UPDATE ats_application SET personal_data_erased_at = now() WHERE public_ref = ?")) {
             ps.setString(1, publicRef);
-            try (var rs = ps.executeQuery()) {
-                assertTrue(rs.next());
-                var answers = Pg.answersFromJson(rs.getString(1));
-                assertEquals(2, answers.size());
-                assertEquals("İki hafta içinde", answers.get(0).text());
-                assertEquals(OPT_REMOTE, answers.get(1).optionId(),
-                        "cevap seçenek KİMLİĞİNE bağlanır, etikete değil");
-                assertEquals(liveVersion, rs.getInt(2), "başvuru anındaki ilan CAS sürümü");
-                var snapshot = Pg.questionsFromJson(rs.getString(3));
-                assertEquals(2, snapshot.size());
-                assertEquals("Ne zaman başlayabilirsiniz?", snapshot.get(0).text(),
-                        "soru METNİ snapshot'ta — İK sonradan düzenlese de cevap yorumlanabilir");
-            }
+            assertEquals(1, ps.executeUpdate());
         }
+        var out = applications.findRecruiterApplication(TENANT, publicRef);
+        assertTrue(out instanceof com.ats.kernel.Outcome.Fail<?> f
+                && f.code() == com.ats.kernel.OutcomeCode.NOT_FOUND, "silinen başvuru: " + out);
+    }
+
+    /** Sorusuz (varsayılan fixture) ilana başvuru; public_ref döner. */
+    private static String submitPlain(String publicRef) {
+        // Digest'ler sınıftaki diğer başvurularla ÇAKIŞMAMALI (unique index → 23505).
+        var result = okOrExplain(applications.submit(new SubmitCommand(TENANT, HANDLE, SLUG, publicRef,
+                "ab".repeat(32), "idem-plain-" + publicRef.substring(4, 12), "cd".repeat(32),
+                submission("Sorusuz Aday"), NOW)), "sorusuz başvuru");
+        assertEquals(com.ats.application.ApplicationStore.SubmitState.CREATED, result.state());
+        return publicRef;
+    }
+
+    /** Fail'in NEDENİ görünsün — `orElseThrow` yalnız "No value present" der. */
+    private static <T> T okOrExplain(com.ats.kernel.Outcome<T> out, String what) {
+        if (out instanceof com.ats.kernel.Outcome.Ok<T> ok) return ok.value();
+        throw new AssertionError(what + " başarısız: " + out);
     }
 
     @Test
