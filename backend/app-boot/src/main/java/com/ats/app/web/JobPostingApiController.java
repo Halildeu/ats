@@ -73,7 +73,7 @@ class JobPostingApiController {
                     "SHORT_TEXT", "LONG_TEXT", "YES_NO", "SINGLE_CHOICE"})
             String kind,
             boolean required,
-            @ArraySchema(maxItems = 8,
+            @ArraySchema(maxItems = 10,
                     schema = @Schema(implementation = RecruiterJobQuestionOption.class))
             List<RecruiterJobQuestionOption> options) {}
 
