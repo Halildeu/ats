@@ -307,6 +307,464 @@ class PdfBoxResumeDocumentParserTest {
                 "sertifika icerigi alinmali: " + fields.get(ResumeField.CERTIFICATIONS));
     }
 
+
+    // ---------------------------------------------------------------------------------------
+    // #213 — kariyer.net düzeni. Ölçüm ats#213 gövdesinde: `Qt 4.8.7 / wkhtmltopdf`
+    // üreticili CV'lerde kapsam 2/10. Aşağıdaki iki test o iki kök nedeni SENTETİK
+    // fixture ile yeniden üretir; gerçek CV/PII kullanılmaz (sahip talimatı 2026-09-08).
+    // Fixture ASCII: hata mixed-case ORANINDAN gelir, Türkçe glife bağlı değildir —
+    // "Is deneyimi" de %70 büyük-harf guard'ına takılır.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * #213 kök neden 1 — TİPOGRAFİ SİNYALİ KULLANILMIYOR.
+     *
+     * <p>`looksLikeHeading` harflerin %70'inin büyük olmasını istiyor. Gerçek Türkçe
+     * CV'lerde bölüm başlıkları mixed-case ama KALIN ve gövdeden belirgin büyük
+     * (ölçüm: başlık 17pt bold, gövde 12pt). `TextLine` bu iki sinyali zaten taşıyor;
+     * metodun imzası yalnız {@code String} aldığı için ikisi de kapıda düşüyor.
+     *
+     * <p>Sonuç: sözlükte KAYITLI bir başlık ("is deneyimi") tanınmıyor, bölüm hiç
+     * açılmıyor ve altındaki deneyim içeriği hiçbir alana bağlanmıyor.
+     */
+    @Test
+    void a_mixed_case_bold_heading_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|17|true|Is deneyimi",
+                "60|736|12|false|Kidemli Yazilim Muhendisi",
+                "60|718|12|false|Ornek Teknoloji AS",
+                "60|700|12|false|Odeme altyapisini yeniden kurdu",
+                "60|676|17|true|Egitim ve Nitelikler",
+                "60|652|12|false|Bilgisayar Muhendisligi",
+                "60|634|12|false|Ornek Universitesi");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "kalin + buyuk puntolu mixed-case baslik bolumu acmali; alinan alanlar: "
+                        + fields.keySet());
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Kidemli Yazilim Muhendisi"),
+                "deneyim icerigi bolume baglanmali: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 kök neden 2 — YAN ÇUBUK YÖNÜ SABİT VARSAYILIYOR.
+     *
+     * <p>`splitIntoColumns` yan çubuğu YALNIZ sağda arıyor
+     * ({@code x >= minX + 0.60*contentWidth}). kariyer.net düzeninde dar kişisel kolon
+     * SOLDA (x=15), geniş içerik sağda (x=176), tarihler en sağda (x=486). Bu yüzden
+     * "yan çubuk" olarak TARİH KOLONU seçiliyor ve kişisel alanlar ana akışa karışıyor.
+     *
+     * <p>Gözlenen belirti (issue gövdesi): {@code "apartmani kat 2 no 5 Egitim ve
+     * Nitelikler"} — sol kolon içeriği ile sağ kolon başlığı aynı satırda birleşiyor.
+     */
+    @Test
+    void a_left_hand_narrow_column_is_treated_as_the_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                // dar kişisel kolon — SOLDA
+                "15|760|13|true|Kisisel",
+                "15|742|12|true|Isim",
+                "15|724|12|false|Ata Onat Kilic",
+                "15|706|12|true|Adres",
+                "15|688|12|false|Ornek mahallesi 5",
+                "15|670|12|true|Telefon numarasi",
+                "15|652|12|false|0555 111 22 33",
+                "15|634|12|true|E-posta",
+                "15|616|12|false|ata.onat@example.com",
+                // geniş içerik kolonu — SAĞDA
+                "176|760|17|true|Is deneyimi",
+                "176|742|12|false|Kidemli Yazilim Muhendisi",
+                "176|724|12|false|Ornek Teknoloji AS",
+                "176|706|12|false|Odeme altyapisini yeniden kurdu",
+                // tarih kolonu — EN SAĞDA (yanlışlıkla "yan çubuk" seçilen küme)
+                "486|742|12|false|Eyl 2018 - Tem 2019");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("ata.onat@example.com", fields.get(ResumeField.EMAIL),
+                "sol kolondaki e-posta okunmali; alinan alanlar: " + fields.keySet());
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "sag kolondaki deneyim bolumu acilmali; alinan alanlar: " + fields.keySet());
+        assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Ornek mahallesi"),
+                "sol kolonun adres icerigi deneyime KARISMAMALI: "
+                        + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 için fixture: her satırın x, y, punto ve kalınlığı AÇIK verilir.
+     *
+     * <p>Mevcut {@code typedPdf} her satırda y'yi sabit azaltıyor, dolayısıyla iki kolonu
+     * AYNI y'de yan yana koyamıyor — kolon düzeni tam da bunu gerektiriyor.
+     *
+     * @param spec her satır {@code "x|y|punto|kalınMı|metin"} biçiminde
+     */
+    private static byte[] positionedPdf(String... spec) throws Exception {
+        try (PDDocument document = new PDDocument();
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                for (String row : spec) {
+                    String[] parts = row.split("\\|", 5);
+                    content.beginText();
+                    content.setFont(
+                            new PDType1Font(Boolean.parseBoolean(parts[3])
+                                    ? FontName.HELVETICA_BOLD : FontName.HELVETICA),
+                            Float.parseFloat(parts[2]));
+                    content.newLineAtOffset(Float.parseFloat(parts[0]), Float.parseFloat(parts[1]));
+                    content.showText(parts[4]);
+                    content.endText();
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        }
+    }
+
+
+    /**
+     * #213 kök neden 3 — ETİKET ÜSTTE, DEĞER ALTTA.
+     *
+     * <p>kariyer.net düzeninde tek-değerli alanlar {@code Etiket: değer} satırı DEĞİL:
+     * kalın {@code Sehir} satırının ALTINDA {@code Istanbul} var.
+     *
+     * <p>ÖLÇÜM NOTU: issue bunu ayrı bir kök neden (madde 3) olarak listeliyordu; bu
+     * fixture ile ölçüldü ve ayrı bir kusur ÇIKMADI. Tek-değerli alan zaten yalnız ilk
+     * satırı alıyor — devam satırı ({@code Kadikoy}) alana yığılmıyor. Issue'da gözlenen
+     * yığılma kök neden 1'in SONUCUYMUŞ: etiketler mixed-case olduğu için başlık
+     * sayılmıyor, dolayısıyla birikim hiç KAPANMIYORDU. Tipografi düzeltmesi bu
+     * belirtiyi de kapattı. Test, davranış geri kaymasın diye regresyon kilidi olarak
+     * duruyor.
+     *
+     * <p>Fixture sekiz satırın altında tutuldu: kolon ayırma devreye girmesin, ölçülen
+     * tek şey birikim davranışı olsun.
+     */
+    @Test
+    void a_label_above_its_value_yields_only_that_value() throws Exception {
+        byte[] pdf = positionedPdf(
+                "15|760|12|true|Sehir",
+                "15|742|12|false|Istanbul",
+                "15|724|12|false|Kadikoy",
+                "15|706|12|true|Telefon numarasi",
+                "15|688|12|false|0555 111 22 33");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Istanbul", fields.get(ResumeField.CITY),
+                "tek-degerli alan yalniz kendi degerini almali; alinan: " + fields.get(ResumeField.CITY));
+    }
+
+
+    // ---------------------------------------------------------------------------------------
+    // #213 review (Halildeu, exact head 0a0aa79) — iki üretilebilir regresyon. Fixture'lar
+    // incelemede verildiği hâliyle alındı; base aabdbdb'de 2/2 geçiyor, ilk PR head'inde
+    // 0/2 geçiyordu. Ortak ders: KALINLIK ZAYIF SİNYALDİR — değerler ve iş unvanları da
+    // kalın olur; bölüm başlığını ayıran şey gövdeden büyük PUNTO'dur.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Review P2 — kalın İŞ UNVANI bölüm başlığı sayılmamalı.
+     *
+     * <p>Esnek (token-contains) etiket eşleşmesi "City Planner" içindeki {@code city}
+     * token'ını CITY etiketi sayıyor. Tipografi kapısı kalınlığı tek başına yeterli
+     * saydığında bu yol sıradan kalın içeriğe açılıyordu; ölçülen sonuç
+     * {@code {CITY=Example Planning Company}} ve EXPERIENCE'ın tamamen kaybıydı.
+     */
+    @Test
+    void a_bold_job_title_does_not_become_a_city_heading() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|12|false|EXPERIENCE",
+                "60|738|12|true|City Planner",
+                "60|716|12|false|Example Planning Company",
+                "60|694|12|false|Designed transport networks.");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "kalin is unvani CITY basligi olmamali; alinan: " + fields);
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "EXPERIENCE korunmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("City Planner"),
+                "unvan deneyim icinde kalmali: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * Review P2 — yan çubuktaki kalın DEĞER sarılmış başlık sanılıp atılmamalı.
+     *
+     * <p>Yan çubukta başlık sarma yolu ({@code headingJustOpened}) koşulsuz {@code continue}
+     * yapıyor. Kalınlık başlık sinyali sayıldığında {@code COMPETENCIES} altındaki kalın
+     * {@code Java} ilk gerçek değer olmasına rağmen düşüyordu; SKILLS yalnız Postgres +
+     * Docker kalıyordu.
+     */
+    @Test
+    void a_bold_sidebar_value_is_not_dropped_as_a_wrapped_heading() throws Exception {
+        byte[] pdf = positionedPdf(
+                // solda geniş ana akış
+                "40|760|10|false|Led the payment platform migration end to end",
+                "40|742|10|false|Owned the reliability roadmap for two squads",
+                "40|724|10|false|Reduced checkout latency across the estate",
+                "40|706|10|false|Mentored engineers on distributed system design",
+                "40|688|10|false|Ran the incident review process every week",
+                // sağda dar yan çubuk
+                "451|760|10|false|COMPETENCIES",
+                "451|742|10|true|Java",
+                "451|724|10|false|Postgres",
+                "451|706|10|false|Docker");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.SKILLS), "SKILLS alinmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.SKILLS).contains("Java"),
+                "kalin ilk deger atilmamali: " + fields.get(ResumeField.SKILLS));
+        assertTrue(fields.get(ResumeField.SKILLS).contains("Postgres")
+                        && fields.get(ResumeField.SKILLS).contains("Docker"),
+                "diger degerler de korunmali: " + fields.get(ResumeField.SKILLS));
+    }
+
+    /**
+     * Review P2 — davranış değişince provenance sürümü de değişmeli.
+     *
+     * <p>{@code ParseResult} ve her {@code proposal.provenance} aynı {@code VERSION} sabitini
+     * taşır. Aynı PDF'i farklı alanlara ayıran iki algoritmanın aynı kimlikle raporlanması
+     * provenance'ı anlamsız kılar. Bu test sürümün v10'a çıktığını ve iki yüzeyin
+     * birbiriyle tutarlı olduğunu kilitler.
+     */
+    @Test
+    void the_parser_version_matches_every_proposal_provenance() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|12|false|EXPERIENCE",
+                "60|738|12|false|Kidemli Yazilim Muhendisi",
+                "60|716|12|false|Ornek Teknoloji AS");
+
+        Outcome<ParseResult> outcome = new PdfBoxResumeDocumentParser().parse(pdf, 10);
+        assertTrue(outcome.isOk(), "parse basarili olmali");
+        ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
+
+        assertEquals("pdfbox-3.0.5-rules-v10", PdfBoxResumeDocumentParser.VERSION,
+                "davranis degisti; provenance surumu artmali");
+        assertFalse(result.proposals().isEmpty(), "en az bir oneri olmali");
+        assertTrue(result.proposals().stream()
+                        .allMatch(pr -> PdfBoxResumeDocumentParser.VERSION
+                                .equals(pr.provenance().parserVersion())),
+                "her onerinin provenance surumu sinif sabitiyle ayni olmali");
+    }
+
+
+    // ---------------------------------------------------------------------------------------
+    // #213 kapsam genişletmesi (review talebi): tek kolon Word ihracı, aynı y'deki kolonlar,
+    // çoklu deneyim + tarih varyantları. Hepsi sentetik; gerçek CV/PII yok.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Tek kolon Word ihracı: yan çubuk YOK. Kolon ayırma bu düzende hiç devreye girmemeli —
+     * yön-bağımsız arama tek kolonlu belgeyi ikiye bölerse bölüm içerikleri dağılırdı.
+     */
+    @Test
+    void a_single_column_word_export_is_not_split_into_columns() throws Exception {
+        byte[] pdf = positionedPdf(
+                "72|760|14|true|Ozgecmis",
+                "72|738|11|false|ata.onat@example.com",
+                "72|716|11|false|0555 111 22 33",
+                "72|694|14|true|Is deneyimi",
+                "72|672|11|false|Kidemli Yazilim Muhendisi",
+                "72|650|11|false|Ornek Teknoloji AS",
+                "72|628|11|false|Odeme altyapisini yeniden kurdu",
+                "72|606|14|true|Egitim",
+                "72|584|11|false|Bilgisayar Muhendisligi",
+                "72|562|11|false|Ornek Universitesi");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE), "deneyim alinmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Kidemli Yazilim Muhendisi"),
+                "deneyim icerigi: " + fields.get(ResumeField.EXPERIENCE));
+        assertTrue(fields.containsKey(ResumeField.EDUCATION), "egitim alinmali; alinan: " + fields);
+        assertFalse(fields.get(ResumeField.EDUCATION).contains("Odeme altyapisini"),
+                "deneyim icerigi egitime karismamali: " + fields.get(ResumeField.EDUCATION));
+    }
+
+    /**
+     * Kolonlar AYNI y'de. kariyer.net düzeninin asıl zorluğu bu: sol kolon içeriği ile sağ
+     * kolon başlığı aynı satır bandında. Issue'da gözlenen belirti
+     * {@code "apartmani kat 2 no 5 Egitim ve Nitelikler"} — iki kolonun birleşmesi.
+     */
+    @Test
+    void columns_sharing_the_same_baseline_do_not_bleed_into_each_other() throws Exception {
+        byte[] pdf = positionedPdf(
+                "15|760|12|true|Isim",
+                "176|760|16|true|Is deneyimi",
+                "15|738|12|false|Ata Onat Kilic",
+                "176|738|11|false|Kidemli Yazilim Muhendisi",
+                "15|716|12|true|E-posta",
+                "176|716|11|false|Ornek Teknoloji AS",
+                "15|694|12|false|ata.onat@example.com",
+                "176|694|11|false|Odeme altyapisini yeniden kurdu",
+                "15|672|12|true|Sehir",
+                "176|672|11|false|Ekip ici teknik mentorluk",
+                "15|650|12|false|Istanbul");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Istanbul", fields.get(ResumeField.CITY),
+                "sol kolon degeri temiz alinmali; alinan: " + fields.get(ResumeField.CITY));
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE), "deneyim alinmali; alinan: " + fields);
+        assertFalse(fields.get(ResumeField.EXPERIENCE).contains("Ata Onat Kilic"),
+                "sol kolon kisisel icerigi deneyime karismamali: "
+                        + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * Çoklu deneyim kaydı + farklı tarih biçimleri. #242 normalizasyonuna dokunulmadığını,
+     * kayıtların da birbirine yapışmadığını kilitler.
+     */
+    @Test
+    void multiple_experience_records_with_mixed_date_formats_stay_separate() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|true|Is deneyimi",
+                "60|738|12|true|Kidemli Yazilim Muhendisi",
+                "60|716|11|false|Ornek Teknoloji AS",
+                "60|694|11|false|Eyl 2018 - Tem 2019",
+                "60|672|12|true|Yazilim Muhendisi",
+                "60|650|11|false|Baska Teknoloji AS",
+                "60|628|11|false|2015 - 2018",
+                "60|606|12|true|Stajyer",
+                "60|584|11|false|Ucuncu Sirket AS",
+                "60|562|11|false|2014-06 - 2014-09");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        String experience = fields.get(ResumeField.EXPERIENCE);
+        assertNotNull(experience, "deneyim alinmali; alinan: " + fields);
+        assertTrue(experience.contains("Kidemli Yazilim Muhendisi")
+                        && experience.contains("Yazilim Muhendisi")
+                        && experience.contains("Stajyer"),
+                "uc kayit da korunmali: " + experience);
+        assertTrue(experience.contains("Eyl 2018 - Tem 2019")
+                        && experience.contains("2015 - 2018")
+                        && experience.contains("2014-06 - 2014-09"),
+                "uc tarih bicimi de korunmali: " + experience);
+    }
+
+
+    // ---------------------------------------------------------------------------------------
+    // #213 review turu 2 (Halildeu, exact head b57d640) — AYNI veri kaybı font-size kolunda.
+    // Ders: tipografi TÜRÜ ne olursa olsun (kalın ya da büyük punto) "bölüm başlığı" ile
+    // "vurgulanmış içerik"i ayırmaya yetmiyor; eşiği oynatmak sınırı aşmıyor. Aşağıdaki iki
+    // fixture o sınırı kilitler.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Turu 2 — BÜYÜK PUNTOLU iş unvanı da CITY'ye dönüşmemeli.
+     *
+     * <p>Bölüm başlığı 16pt, unvan 14pt, gövde 12pt. Unvan gövdeden büyük olduğu için
+     * "güçlü tipografi" sayılıyor ve esnek {@code city} token eşleşmesi yeniden açılıyordu.
+     * Ayırt edici olan mutlak punto değil, <b>açık bölümün başlığına göre KONUM</b>:
+     * içerik, başlığından küçüktür.
+     */
+    @Test
+    void a_larger_than_body_job_title_does_not_become_a_city_heading() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|14|false|City Planner",
+                "60|714|12|false|Example Planning Company",
+                "60|692|12|false|Designed transport networks.",
+                "60|670|12|false|Coordinated with municipal teams.");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "govdeden buyuk unvan CITY basligi olmamali; alinan: " + fields);
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "EXPERIENCE korunmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("City Planner"),
+                "unvan deneyim icinde kalmali: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * Turu 2 — BÜYÜK PUNTOLU yan-çubuk değeri de atılmamalı.
+     *
+     * <p>Yan çubuk başlığı 14pt, ilk değer 12pt, kalan değerler 10pt. İlk değer gövdeden
+     * büyük olduğu için başlık sanılıp sarma yolundan düşüyordu. Aynı ayrım geçerli:
+     * değer, başlığından küçüktür.
+     */
+    @Test
+    void a_larger_than_body_sidebar_value_is_not_dropped() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|10|false|Led the payment platform migration end to end",
+                "40|742|10|false|Owned the reliability roadmap for two squads",
+                "40|724|10|false|Reduced checkout latency across the estate",
+                "40|706|10|false|Mentored engineers on distributed system design",
+                "40|688|10|false|Ran the incident review process every week",
+                "451|760|14|false|COMPETENCIES",
+                "451|738|12|false|Java",
+                "451|718|10|false|Postgres",
+                "451|700|10|false|Docker",
+                "451|682|10|false|Python");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.SKILLS), "SKILLS alinmali; alinan: " + fields);
+        String skills = fields.get(ResumeField.SKILLS);
+        assertTrue(skills.contains("Java"), "govdeden buyuk ilk deger atilmamali: " + skills);
+        assertTrue(skills.contains("Postgres") && skills.contains("Docker")
+                        && skills.contains("Python"),
+                "diger degerler de korunmali: " + skills);
+    }
+
+
+    // ---------------------------------------------------------------------------------------
+    // #213 review turu 3 (Halildeu, exact head 3a5fe60) — hiyerarşi vetosu FAZLA GENİŞTİ.
+    // Veto `headingField`'den ÖNCE uygulandığı için KESİN kanıtı olan başlık (sözlükte tam
+    // eşleşme + büyük harf + iki nokta) sırf önceki başlıktan küçük diye eleniyordu.
+    // Kural: veto yalnız BELİRSİZ tipografik adaylara uygulanır.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Turu 3 — küçük puntolu ama KESİN kanıtlı bölüm başlığı veto edilmemeli.
+     *
+     * <p>{@code EXPERIENCE} 16pt açıldıktan sonra {@code EDUCATION} 14pt geliyor: sözlükte
+     * tam eşleşen etiket ve %100 büyük harf. Hiyerarşi vetosu bunu bastırınca EDUCATION
+     * alanı hiç oluşmuyor ve eğitim içeriği EXPERIENCE'a katılıyordu.
+     */
+    @Test
+    void a_smaller_but_unambiguous_section_heading_still_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|Senior Software Engineer",
+                "60|714|12|false|Example Technology Inc",
+                "60|692|14|false|EDUCATION",
+                "60|670|12|false|Computer Engineering",
+                "60|648|12|false|Example University");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EDUCATION),
+                "kucuk puntolu ama kesin kanitli baslik bolum acmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("Computer Engineering"),
+                "egitim icerigi EDUCATION'a gitmeli: " + fields.get(ResumeField.EDUCATION));
+        assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Example University"),
+                "egitim icerigi EXPERIENCE'a KARISMAMALI: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /** Aynı durum iki nokta varyantıyla: {@code EDUCATION:} da kesin kanıttır. */
+    @Test
+    void a_smaller_heading_with_a_trailing_colon_still_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|Senior Software Engineer",
+                "60|714|12|false|Example Technology Inc",
+                "60|692|14|false|EDUCATION:",
+                "60|670|12|false|Computer Engineering",
+                "60|648|12|false|Example University");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EDUCATION),
+                "iki nokta kesin kanittir; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("Computer Engineering"),
+                "egitim icerigi: " + fields.get(ResumeField.EDUCATION));
+    }
+
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
     private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
