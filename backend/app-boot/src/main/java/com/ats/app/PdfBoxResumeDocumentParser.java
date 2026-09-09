@@ -38,8 +38,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      *
      * <p>v9 (#218): deneyim/eğitim bölümleri artık yapısal KAYIT listesi de
      * yayınlıyor; davranış değiştiği için sürüm de değişti.
+     *
+     * <p>v10 (#213): başlık tespiti tipografi sinyalini de görüyor ve yan çubuk iki
+     * kenarda da aranıyor. AYNI PDF farklı alanlara ayrılabildiği için sürüm zorunlu
+     * arttı: {@code ParseResult} ve her {@code proposal.provenance} bu sabiti taşır;
+     * iki algoritmanın aynı kimlikle raporlanması provenance'ı anlamsız kılardı.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v9";
+    static final String VERSION = "pdfbox-3.0.5-rules-v10";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -467,7 +472,10 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             // HEAD OF HSE) — bölümü kapatmak deneyimi yok ederdi. Yan çubukta ise
             // hepsi gerçek bölüm başlığı (AWARD, TRAINING, SECTOR EXPOSURE) ve
             // kapatmazsak bir önceki alanın sonuna yapışıyorlar.
-            if (sidebar && looksLikeHeading(line, source, body)) {
+            // #213 (review P2): burada YALNIZ güçlü sinyal. Kalınlığı yeterli saymak
+            // yan çubuktaki kalın DEĞERİ ("Java") sarılmış başlık sanıp atıyordu —
+            // aşağıdaki koşulsuz `continue` ilk gerçek değeri düşürüyor.
+            if (sidebar && looksLikeStrongHeading(line, source, body)) {
                 // Başlık iki satıra sarabilir ("CERTIFICATIONS &" + "TRAINING").
                 // Devam satırı bölümü kapatırsa alan boş kalıyordu; ölçümde
                 // certifications 467c -> eksik oldu. Sarma satırını yut, kapatma.
@@ -1092,12 +1100,29 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         return headingField(rawLine, normalizedHeading, null, 0);
     }
 
-    /** #213: başlık kapısı tipografi sinyalini de görür (gerekçe {@link #looksLikeHeading}). */
+    /**
+     * #213: başlık kapısı tipografi sinyalini de görür — ama TİPOGRAFİ ile ESNEK ETİKET
+     * EŞLEŞMESİ ayrıdır (review bulgusu P2).
+     *
+     * <ul>
+     *   <li><b>Güçlü sinyal</b> (iki nokta / büyük-harf / gövdeden büyük punto): hem tam
+     *       hem esnek (token-contains) eşleşmeyi açar.
+     *   <li><b>Zayıf sinyal</b> (yalnız kalın): SADECE tam sözlük eşleşmesini açar.
+     * </ul>
+     *
+     * <p>Gerekçe: esnek eşleşme "City Planner" içindeki {@code city} token'ını CITY etiketi
+     * sayıyor. Kalınlığı tek başına yeterli saymak bu yolu sıradan kalın içeriğe açıyordu ve
+     * ölçülen sonuç {@code {CITY=Example Planning Company}} + EXPERIENCE kaybıydı. Tam
+     * eşleşme ("sehir", "isim", "e posta") bu riski taşımaz: etiketin kendisidir.
+     */
     private static ResumeField headingField(
             String rawLine, String normalizedHeading, TextLine line, double bodyFontSize) {
-        if (!looksLikeHeading(rawLine, line, bodyFontSize)) return null;
+        boolean strong = looksLikeStrongHeading(rawLine, line, bodyFontSize);
+        if (!strong && !looksLikeBoldLabel(rawLine, line)) return null;
         ResumeField exact = LABELS.get(normalizedHeading);
         if (exact != null) return exact;
+        // Esnek eşleşme yalnız GÜÇLÜ sinyalle: kalın iş unvanı bölüm başlığı olmamalı.
+        if (!strong) return null;
         if (normalizedHeading.isEmpty()) return null;
         String[] tokens = normalizedHeading.split(" ");
         if (tokens.length > MAX_HEADING_TOKENS) return null;
@@ -1180,7 +1205,34 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
     /** Yalnız metne bakan tarihi davranış; tipografi bilinmeyen çağrı yerleri bunu kullanır. */
     private static boolean looksLikeHeading(String rawLine) {
-        return looksLikeHeading(rawLine, null, 0);
+        return endsWithColon(rawLine)
+                || (hasHeadingShape(rawLine) && uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE);
+    }
+
+    /**
+     * #213 (review düzeltmesi): GÜÇLÜ başlık sinyali — iki nokta, büyük-harf ağırlığı ya da
+     * gövdeden BELİRGİN BÜYÜK punto.
+     *
+     * <p>Kalınlık burada YOK ve bu bilinçli. İnceleme iki üretilebilir regresyon ölçtü:
+     * gövde puntosunda kalın {@code "City Planner"} iş unvanı CITY bölüm başlığı sayılıyor,
+     * gövde puntosunda kalın {@code "Java"} yan-çubuk DEĞERİ sarılmış başlık sanılıp
+     * atılıyordu. Ortak ders: <b>kalınlık zayıf bir sinyaldir</b> — değerler ve iş unvanları
+     * da kalın olur. Bölüm başlığını ayıran şey PUNTO farkıdır (ölçüm: başlık 17pt, gövde
+     * 12pt); onun fixture'larında ikisi de gövde puntosundaydı.
+     */
+    private static boolean looksLikeStrongHeading(String rawLine, TextLine line, double body) {
+        if (endsWithColon(rawLine)) return true;
+        if (!hasHeadingShape(rawLine)) return false;
+        return uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE || isLargerThanBody(line, body);
+    }
+
+    /** Zayıf sinyal: yalnız kalın. TEK BAŞINA yalnız TAM sözlük eşleşmesini açar. */
+    private static boolean looksLikeBoldLabel(String rawLine, TextLine line) {
+        return line != null && line.bold() && hasHeadingShape(rawLine);
+    }
+
+    private static boolean isLargerThanBody(TextLine line, double body) {
+        return line != null && body > 0 && line.fontSize() >= body * HEADING_FONT_RATIO;
     }
 
     /**
@@ -1200,19 +1252,6 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * @param line tipografi kaynağı; {@code null} ise yalnız metin ölçütü uygulanır
      * @param bodyFontSize sayfanın gövde punto ortancası; {@code <= 0} ise punto ölçütü kapalı
      */
-    private static boolean looksLikeHeading(String rawLine, TextLine line, double bodyFontSize) {
-        if (endsWithColon(rawLine)) return true;
-        if (!hasHeadingShape(rawLine)) return false;
-        if (uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE) return true;
-        return isTypographicHeading(line, bodyFontSize);
-    }
-
-    private static boolean isTypographicHeading(TextLine line, double bodyFontSize) {
-        if (line == null) return false;
-        if (line.bold()) return true;
-        return bodyFontSize > 0 && line.fontSize() >= bodyFontSize * HEADING_FONT_RATIO;
-    }
-
     /**
      * Sayfanın gövde puntosu = punto ORTANCASI. Ortalama değil: tek bir 28pt isim
      * satırı ortalamayı yukarı çekip gerçek başlıkları eşiğin altında bırakırdı.
