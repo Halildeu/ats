@@ -482,8 +482,15 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             // Vurgulu olması (kalın ya da gövdeden büyük) onu başlık yapmaz — iş unvanı ve
             // ilk beceri değeri tam olarak böyle görünür. Bu kontrol hem başlık kapısını hem
             // de aşağıdaki yan-çubuk kapatma yolunu kapsar.
+            //
+            // (turu 3) Veto YALNIZ BELİRSİZ adaylara uygulanır. Kesin kanıtı olan başlık —
+            // iki nokta, büyük-harf ağırlığı ya da sözlükte tam eşleşme — küçük puntolu da
+            // olsa bölüm açar. Aksi hâlde "EXPERIENCE 16pt → EDUCATION 14pt" düzeninde
+            // EDUCATION eleniyor ve eğitim içeriği deneyime karışıyordu.
             boolean contentUnderActiveHeading =
-                    active != null && isBelowActiveHeading(source, activeHeadingSize);
+                    active != null
+                            && isBelowActiveHeading(source, activeHeadingSize)
+                            && !hasUnambiguousHeadingEvidence(line, heading);
 
             ResumeField section =
                     contentUnderActiveHeading ? null : headingField(line, heading, source, body);
@@ -1256,6 +1263,26 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     /** Zayıf sinyal: yalnız kalın. TEK BAŞINA yalnız TAM sözlük eşleşmesini açar. */
     private static boolean looksLikeBoldLabel(String rawLine, TextLine line) {
         return line != null && line.bold() && hasHeadingShape(rawLine);
+    }
+
+    /**
+     * #213 (review turu 3): KESİN başlık kanıtı — tipografiden bağımsız.
+     *
+     * <p>Üç kanıt kesin sayılır: iki nokta ile bitmek, büyük-harf ağırlığı, ya da sözlükte
+     * TAM eşleşen bir bölüm etiketi olmak. Bunların hiçbiri "vurgulanmış içerik" ile
+     * karışmaz: iş unvanı sözlükte tam eşleşmez ({@code "city planner"} yok, yalnız
+     * {@code "city"} var) ve gövde metni büyük-harf ağırlıklı olmaz.
+     *
+     * <p>Hiyerarşi vetosu bu kanıtları BASTIRMAMALI. Ölçülen kusur: {@code EXPERIENCE} 16pt
+     * sonrası {@code EDUCATION} 14pt — sözlükte tam eşleşme ve %100 büyük harf olmasına
+     * rağmen sırf küçük olduğu için eleniyor, eğitim içeriği EXPERIENCE'a karışıyordu.
+     * Veto yalnız BELİRSİZ tipografik adaylar (kalın/büyük ama kanıtsız) için vardır.
+     */
+    private static boolean hasUnambiguousHeadingEvidence(String rawLine, String normalizedHeading) {
+        if (endsWithColon(rawLine)) return true;
+        if (!hasHeadingShape(rawLine)) return false;
+        if (uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE) return true;
+        return normalizedHeading != null && LABELS.containsKey(normalizedHeading);
     }
 
     /**

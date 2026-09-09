@@ -711,6 +711,60 @@ class PdfBoxResumeDocumentParserTest {
                 "diger degerler de korunmali: " + skills);
     }
 
+
+    // ---------------------------------------------------------------------------------------
+    // #213 review turu 3 (Halildeu, exact head 3a5fe60) — hiyerarşi vetosu FAZLA GENİŞTİ.
+    // Veto `headingField`'den ÖNCE uygulandığı için KESİN kanıtı olan başlık (sözlükte tam
+    // eşleşme + büyük harf + iki nokta) sırf önceki başlıktan küçük diye eleniyordu.
+    // Kural: veto yalnız BELİRSİZ tipografik adaylara uygulanır.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Turu 3 — küçük puntolu ama KESİN kanıtlı bölüm başlığı veto edilmemeli.
+     *
+     * <p>{@code EXPERIENCE} 16pt açıldıktan sonra {@code EDUCATION} 14pt geliyor: sözlükte
+     * tam eşleşen etiket ve %100 büyük harf. Hiyerarşi vetosu bunu bastırınca EDUCATION
+     * alanı hiç oluşmuyor ve eğitim içeriği EXPERIENCE'a katılıyordu.
+     */
+    @Test
+    void a_smaller_but_unambiguous_section_heading_still_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|Senior Software Engineer",
+                "60|714|12|false|Example Technology Inc",
+                "60|692|14|false|EDUCATION",
+                "60|670|12|false|Computer Engineering",
+                "60|648|12|false|Example University");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EDUCATION),
+                "kucuk puntolu ama kesin kanitli baslik bolum acmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("Computer Engineering"),
+                "egitim icerigi EDUCATION'a gitmeli: " + fields.get(ResumeField.EDUCATION));
+        assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Example University"),
+                "egitim icerigi EXPERIENCE'a KARISMAMALI: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /** Aynı durum iki nokta varyantıyla: {@code EDUCATION:} da kesin kanıttır. */
+    @Test
+    void a_smaller_heading_with_a_trailing_colon_still_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|Senior Software Engineer",
+                "60|714|12|false|Example Technology Inc",
+                "60|692|14|false|EDUCATION:",
+                "60|670|12|false|Computer Engineering",
+                "60|648|12|false|Example University");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EDUCATION),
+                "iki nokta kesin kanittir; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EDUCATION).contains("Computer Engineering"),
+                "egitim icerigi: " + fields.get(ResumeField.EDUCATION));
+    }
+
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
     private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
