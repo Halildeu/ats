@@ -307,6 +307,153 @@ class PdfBoxResumeDocumentParserTest {
                 "sertifika icerigi alinmali: " + fields.get(ResumeField.CERTIFICATIONS));
     }
 
+
+    // ---------------------------------------------------------------------------------------
+    // #213 — kariyer.net düzeni. Ölçüm ats#213 gövdesinde: `Qt 4.8.7 / wkhtmltopdf`
+    // üreticili CV'lerde kapsam 2/10. Aşağıdaki iki test o iki kök nedeni SENTETİK
+    // fixture ile yeniden üretir; gerçek CV/PII kullanılmaz (sahip talimatı 2026-09-08).
+    // Fixture ASCII: hata mixed-case ORANINDAN gelir, Türkçe glife bağlı değildir —
+    // "Is deneyimi" de %70 büyük-harf guard'ına takılır.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * #213 kök neden 1 — TİPOGRAFİ SİNYALİ KULLANILMIYOR.
+     *
+     * <p>`looksLikeHeading` harflerin %70'inin büyük olmasını istiyor. Gerçek Türkçe
+     * CV'lerde bölüm başlıkları mixed-case ama KALIN ve gövdeden belirgin büyük
+     * (ölçüm: başlık 17pt bold, gövde 12pt). `TextLine` bu iki sinyali zaten taşıyor;
+     * metodun imzası yalnız {@code String} aldığı için ikisi de kapıda düşüyor.
+     *
+     * <p>Sonuç: sözlükte KAYITLI bir başlık ("is deneyimi") tanınmıyor, bölüm hiç
+     * açılmıyor ve altındaki deneyim içeriği hiçbir alana bağlanmıyor.
+     */
+    @Test
+    void a_mixed_case_bold_heading_opens_its_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|17|true|Is deneyimi",
+                "60|736|12|false|Kidemli Yazilim Muhendisi",
+                "60|718|12|false|Ornek Teknoloji AS",
+                "60|700|12|false|Odeme altyapisini yeniden kurdu",
+                "60|676|17|true|Egitim ve Nitelikler",
+                "60|652|12|false|Bilgisayar Muhendisligi",
+                "60|634|12|false|Ornek Universitesi");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "kalin + buyuk puntolu mixed-case baslik bolumu acmali; alinan alanlar: "
+                        + fields.keySet());
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Kidemli Yazilim Muhendisi"),
+                "deneyim icerigi bolume baglanmali: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 kök neden 2 — YAN ÇUBUK YÖNÜ SABİT VARSAYILIYOR.
+     *
+     * <p>`splitIntoColumns` yan çubuğu YALNIZ sağda arıyor
+     * ({@code x >= minX + 0.60*contentWidth}). kariyer.net düzeninde dar kişisel kolon
+     * SOLDA (x=15), geniş içerik sağda (x=176), tarihler en sağda (x=486). Bu yüzden
+     * "yan çubuk" olarak TARİH KOLONU seçiliyor ve kişisel alanlar ana akışa karışıyor.
+     *
+     * <p>Gözlenen belirti (issue gövdesi): {@code "apartmani kat 2 no 5 Egitim ve
+     * Nitelikler"} — sol kolon içeriği ile sağ kolon başlığı aynı satırda birleşiyor.
+     */
+    @Test
+    void a_left_hand_narrow_column_is_treated_as_the_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                // dar kişisel kolon — SOLDA
+                "15|760|13|true|Kisisel",
+                "15|742|12|true|Isim",
+                "15|724|12|false|Ata Onat Kilic",
+                "15|706|12|true|Adres",
+                "15|688|12|false|Ornek mahallesi 5",
+                "15|670|12|true|Telefon numarasi",
+                "15|652|12|false|0555 111 22 33",
+                "15|634|12|true|E-posta",
+                "15|616|12|false|ata.onat@example.com",
+                // geniş içerik kolonu — SAĞDA
+                "176|760|17|true|Is deneyimi",
+                "176|742|12|false|Kidemli Yazilim Muhendisi",
+                "176|724|12|false|Ornek Teknoloji AS",
+                "176|706|12|false|Odeme altyapisini yeniden kurdu",
+                // tarih kolonu — EN SAĞDA (yanlışlıkla "yan çubuk" seçilen küme)
+                "486|742|12|false|Eyl 2018 - Tem 2019");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("ata.onat@example.com", fields.get(ResumeField.EMAIL),
+                "sol kolondaki e-posta okunmali; alinan alanlar: " + fields.keySet());
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "sag kolondaki deneyim bolumu acilmali; alinan alanlar: " + fields.keySet());
+        assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Ornek mahallesi"),
+                "sol kolonun adres icerigi deneyime KARISMAMALI: "
+                        + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 için fixture: her satırın x, y, punto ve kalınlığı AÇIK verilir.
+     *
+     * <p>Mevcut {@code typedPdf} her satırda y'yi sabit azaltıyor, dolayısıyla iki kolonu
+     * AYNI y'de yan yana koyamıyor — kolon düzeni tam da bunu gerektiriyor.
+     *
+     * @param spec her satır {@code "x|y|punto|kalınMı|metin"} biçiminde
+     */
+    private static byte[] positionedPdf(String... spec) throws Exception {
+        try (PDDocument document = new PDDocument();
+                ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                for (String row : spec) {
+                    String[] parts = row.split("\\|", 5);
+                    content.beginText();
+                    content.setFont(
+                            new PDType1Font(Boolean.parseBoolean(parts[3])
+                                    ? FontName.HELVETICA_BOLD : FontName.HELVETICA),
+                            Float.parseFloat(parts[2]));
+                    content.newLineAtOffset(Float.parseFloat(parts[0]), Float.parseFloat(parts[1]));
+                    content.showText(parts[4]);
+                    content.endText();
+                }
+            }
+            document.save(out);
+            return out.toByteArray();
+        }
+    }
+
+
+    /**
+     * #213 kök neden 3 — ETİKET ÜSTTE, DEĞER ALTTA.
+     *
+     * <p>kariyer.net düzeninde tek-değerli alanlar {@code Etiket: değer} satırı DEĞİL:
+     * kalın {@code Sehir} satırının ALTINDA {@code Istanbul} var.
+     *
+     * <p>ÖLÇÜM NOTU: issue bunu ayrı bir kök neden (madde 3) olarak listeliyordu; bu
+     * fixture ile ölçüldü ve ayrı bir kusur ÇIKMADI. Tek-değerli alan zaten yalnız ilk
+     * satırı alıyor — devam satırı ({@code Kadikoy}) alana yığılmıyor. Issue'da gözlenen
+     * yığılma kök neden 1'in SONUCUYMUŞ: etiketler mixed-case olduğu için başlık
+     * sayılmıyor, dolayısıyla birikim hiç KAPANMIYORDU. Tipografi düzeltmesi bu
+     * belirtiyi de kapattı. Test, davranış geri kaymasın diye regresyon kilidi olarak
+     * duruyor.
+     *
+     * <p>Fixture sekiz satırın altında tutuldu: kolon ayırma devreye girmesin, ölçülen
+     * tek şey birikim davranışı olsun.
+     */
+    @Test
+    void a_label_above_its_value_yields_only_that_value() throws Exception {
+        byte[] pdf = positionedPdf(
+                "15|760|12|true|Sehir",
+                "15|742|12|false|Istanbul",
+                "15|724|12|false|Kadikoy",
+                "15|706|12|true|Telefon numarasi",
+                "15|688|12|false|0555 111 22 33");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Istanbul", fields.get(ResumeField.CITY),
+                "tek-degerli alan yalniz kendi degerini almali; alinan: " + fields.get(ResumeField.CITY));
+    }
+
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
     private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

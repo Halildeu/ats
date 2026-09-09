@@ -146,6 +146,19 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final int MAX_HEADING_CHARS = 48;
     private static final int MAX_HEADING_TOKENS = 6;
     private static final int MIN_HEADING_LETTERS = 3;
+    /**
+     * #213: başlık sayılmak için gereken büyük-harf oranı. KALDIRILMADI — issue'da
+     * ölçüldü: guard tümden gevşetilince ("cümle değilse başlıktır") çalışan HSE vakası
+     * 9/10'dan 5/10'a düştü. Tipografi sinyali bunun YERİNE değil, YANINA eklendi.
+     */
+    private static final double UPPERCASE_HEADING_SHARE = 0.70;
+    /**
+     * #213: gövdeye göre "belirgin büyük punto" eşiği. Ölçüm (issue gövdesi, kariyer.net
+     * CV'si): başlık 17pt, gövde 12pt → oran 1.42. 1.15 kayıt-başı sezgisiyle (
+     * {@link #RECORD_FONT_RATIO} 1.05) karışmayacak kadar yüksek, ölçülen başlıkları
+     * yakalayacak kadar düşük.
+     */
+    private static final double HEADING_FONT_RATIO = 1.15;
     /** Ek toleranslı eşleşme yalnız bu uzunluktan sonra açılır. */
     private static final int MIN_SUFFIX_TOLERANT_LABEL = 5;
     private static final int HEADER_LINES_SCANNED = 10;
@@ -343,18 +356,70 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         // Ayırt edici SATIR BAŞLANGICI, genişlik değil. Gerçek PDFBox akışında ana
         // kolon satırları yan çubuğun x aralığına kadar uzanıyor (x=30 w=537), bu
         // yüzden "oluğu kimse kesmez" varsayımı çöküyordu. Yan çubuk ise dar ve
-        // sayfanın sağ tarafından BAŞLIYOR (x=451 w=46..103).
-        double sidebarStart = minX + contentWidth * SIDEBAR_START_SHARE;
+        // sayfanın bir KENARINDAN başlıyor.
+        //
+        // #213 kök neden 2 — YÖN. Eski hâli yan çubuğu YALNIZ sağda arıyordu
+        // (x >= minX + 0.60*contentWidth). kariyer.net düzeninde dar kişisel kolon
+        // SOLDA (x=15), içerik sağda (x=176), tarihler en sağda (x=486); bu yüzden
+        // "yan çubuk" olarak TARİH KOLONU seçiliyor ve kişisel alanlar ana akışa
+        // karışıyordu. Artık iki kenar da aday, aralarından ölçüyle seçiliyor.
         double sidebarMaxWidth = contentWidth * SIDEBAR_MAX_WIDTH_SHARE;
-        List<TextLine> sidebar = lines.stream()
-                .filter(l -> l.x() >= sidebarStart && l.width() <= sidebarMaxWidth).toList();
-        if (sidebar.size() < MIN_SIDEBAR_LINES) return List.of(lines);
+        double rightStart = minX + contentWidth * SIDEBAR_START_SHARE;
+        double leftEnd = minX + contentWidth * (1 - SIDEBAR_START_SHARE);
+
+        List<TextLine> right = lines.stream()
+                .filter(l -> l.x() >= rightStart && l.width() <= sidebarMaxWidth).toList();
+        List<TextLine> left = lines.stream()
+                .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth).toList();
+
+        List<TextLine> sidebar = pickSidebar(lines, left, right);
+        if (sidebar == null) return List.of(lines);
         List<TextLine> main = lines.stream().filter(l -> !sidebar.contains(l)).toList();
-        if (main.size() < MIN_SIDEBAR_LINES) return List.of(lines);
 
         // Ana akış önce: bölüm başlıkları ve içeriği kendi akışında kalır; yan çubuk
         // başlığı (ör. COMPETENCIES) artık ana kolonun deneyim metnini yutamaz.
         return List.of(main, sidebar);
+    }
+
+    /**
+     * #213: iki kenar adayından hangisinin gerçekten YAN ÇUBUK olduğunu ölçer.
+     *
+     * <p>Naif "dar ve kenarda" ölçütü tek başına yetmez: HSE düzeninde ana kolon
+     * (x=30) satırları da kısa olabildiği için SOL aday olarak seçilebiliyor ve
+     * çalışan vaka bozuluyordu. Ayırt edici ölçüt şu: <b>yan çubuk, geriye kalan ana
+     * akıştan dar olmalıdır.</b> Ana kolonu aday sayarsak geriye kalan (asıl dar yan
+     * çubuk) daha dar çıkar ve aday elenir.
+     *
+     * <p>İki aday da geçerliyse "daha belirgin yan çubuk" kazanır: ana/aday genişlik
+     * oranı büyük olan. Eşitlikte sağ aday (tarihsel davranış) korunur.
+     *
+     * @return seçilen yan çubuk; hiçbir aday ölçütleri karşılamıyorsa {@code null}
+     */
+    private static List<TextLine> pickSidebar(
+            List<TextLine> all, List<TextLine> left, List<TextLine> right) {
+        double rightScore = sidebarScore(all, right);
+        double leftScore = sidebarScore(all, left);
+        if (rightScore <= 0 && leftScore <= 0) return null;
+        return leftScore > rightScore ? left : right;
+    }
+
+    /**
+     * Adayın "yan çubukluk" ölçüsü: ana akışın genişlik ortancasının adayınkine oranı.
+     * {@code 0} = aday geçersiz (satır sayısı yetersiz ya da adaydan dar bir ana akış).
+     */
+    private static double sidebarScore(List<TextLine> all, List<TextLine> candidate) {
+        if (candidate.size() < MIN_SIDEBAR_LINES) return 0;
+        List<TextLine> rest = all.stream().filter(l -> !candidate.contains(l)).toList();
+        if (rest.size() < MIN_SIDEBAR_LINES) return 0;
+        double candidateWidth = medianWidth(candidate);
+        double restWidth = medianWidth(rest);
+        if (candidateWidth <= 0 || restWidth <= candidateWidth) return 0;
+        return restWidth / candidateWidth;
+    }
+
+    private static double medianWidth(List<TextLine> lines) {
+        double[] widths = lines.stream().mapToDouble(TextLine::width).filter(w -> w > 0).toArray();
+        return widths.length == 0 ? 0 : median(widths);
     }
 
     private static PageResult parsePage(
@@ -363,6 +428,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         ResumeField active = null;
         boolean headingJustOpened = false;
         int protectedSuppressed = 0;
+        // #213: başlık kapısının tipografi ölçütü için sayfanın gövde puntosu.
+        double body = bodyFontSize(lines);
 
         for (TextLine source : lines) {
             String line = source.text().replaceAll("\\s+", " ").trim();
@@ -389,7 +456,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 active = null;
                 continue;
             }
-            ResumeField section = headingField(line, heading);
+            ResumeField section = headingField(line, heading, source, body);
             if (section != null) {
                 active = section;
                 headingJustOpened = true;
@@ -400,7 +467,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             // HEAD OF HSE) — bölümü kapatmak deneyimi yok ederdi. Yan çubukta ise
             // hepsi gerçek bölüm başlığı (AWARD, TRAINING, SECTOR EXPOSURE) ve
             // kapatmazsak bir önceki alanın sonuna yapışıyorlar.
-            if (sidebar && looksLikeHeading(line)) {
+            if (sidebar && looksLikeHeading(line, source, body)) {
                 // Başlık iki satıra sarabilir ("CERTIFICATIONS &" + "TRAINING").
                 // Devam satırı bölümü kapatırsa alan boş kalıyordu; ölçümde
                 // certifications 467c -> eksik oldu. Sarma satırını yut, kapatma.
@@ -1022,7 +1089,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     }
 
     private static ResumeField headingField(String rawLine, String normalizedHeading) {
-        if (!looksLikeHeading(rawLine)) return null;
+        return headingField(rawLine, normalizedHeading, null, 0);
+    }
+
+    /** #213: başlık kapısı tipografi sinyalini de görür (gerekçe {@link #looksLikeHeading}). */
+    private static ResumeField headingField(
+            String rawLine, String normalizedHeading, TextLine line, double bodyFontSize) {
+        if (!looksLikeHeading(rawLine, line, bodyFontSize)) return null;
         ResumeField exact = LABELS.get(normalizedHeading);
         if (exact != null) return exact;
         if (normalizedHeading.isEmpty()) return null;
@@ -1057,10 +1130,24 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * rakam-ağırlıklı satırlar ("Eyl 2018 - Tem 2018", "05316672899") başlık
      * sayılmaz. Bu, gevşetme değil daraltmadır.
      */
-    private static boolean looksLikeHeading(String rawLine) {
+    /** İki nokta ile biten satır koşulsuz başlıktır: "bu bir etikettir" sinyali. */
+    private static boolean endsWithColon(String rawLine) {
         String text = rawLine.strip();
-        if (text.endsWith(":") || text.endsWith("：")) return true;
-        text = text.replaceAll("[:：]\\s*$", "").strip();
+        return text.endsWith(":") || text.endsWith("：");
+    }
+
+    private static String headingCore(String rawLine) {
+        return rawLine.strip().replaceAll("[:：]\\s*$", "").strip();
+    }
+
+    /**
+     * Başlığın METİNSEL kapıları — tipografiden bağımsız. Uzunluk, cümle noktalaması,
+     * '@', token sayısı, harf/rakam dengesi. Büyük-harf oranı BURADA DEĞİL: #213 ile
+     * tipografi sinyali alternatif yol olarak eklendiğinde bu kapıların ikisinde de
+     * aynen geçerli kalması gerekiyor.
+     */
+    private static boolean hasHeadingShape(String rawLine) {
+        String text = headingCore(rawLine);
         if (text.isEmpty() || text.length() > MAX_HEADING_CHARS) return false;
         // Cümle sonu noktalaması → içerik. Eski uppercase guard'ın asıl koruduğu
         // yanlış pozitifler bunlardı ("Managed certificates issued by … Veritas.").
@@ -1075,12 +1162,68 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             else if (Character.isDigit(c)) digits++;
         }
         if (letters < MIN_HEADING_LETTERS) return false;
-        if (digits > letters) return false;
+        return digits <= letters;
+    }
+
+    private static double uppercaseShare(String rawLine) {
+        String text = headingCore(rawLine);
+        int letters = 0;
         int upper = 0;
         for (int i = 0; i < text.length(); i++) {
-            if (Character.isLetter(text.charAt(i)) && Character.isUpperCase(text.charAt(i))) upper++;
+            char c = text.charAt(i);
+            if (!Character.isLetter(c)) continue;
+            letters++;
+            if (Character.isUpperCase(c)) upper++;
         }
-        return (double) upper / letters >= 0.70;
+        return letters == 0 ? 0 : (double) upper / letters;
+    }
+
+    /** Yalnız metne bakan tarihi davranış; tipografi bilinmeyen çağrı yerleri bunu kullanır. */
+    private static boolean looksLikeHeading(String rawLine) {
+        return looksLikeHeading(rawLine, null, 0);
+    }
+
+    /**
+     * #213 kök neden 1 — TİPOGRAFİ.
+     *
+     * <p>Gerçek Türkçe CV'lerde bölüm başlıkları mixed-case ("İş deneyimi", "Eğitim ve
+     * Nitelikler") ama KALIN ve/veya gövdeden belirgin büyük. Ölçüm (issue gövdesi):
+     * o CV'de hiçbir başlık tanınmıyor, çıkan 2 alan yalnız e-posta/telefon regex
+     * fallback'inden geliyordu.
+     *
+     * <p>{@link TextLine} bu iki sinyali zaten taşıyor; eski imza yalnız {@code String}
+     * aldığı için ikisi de kapıda düşüyordu. Büyük-harf oranı KALDIRILMADI — hâlâ tek
+     * başına yeter; tipografi onun YANINA ikinci bir yol olarak eklendi. Metinsel
+     * kapılar ({@link #hasHeadingShape}) iki yolda da geçerli, bu yüzden "cümle değilse
+     * başlıktır" gevşemesi (ölçüm: HSE 9/10 → 5/10) oluşmuyor.
+     *
+     * @param line tipografi kaynağı; {@code null} ise yalnız metin ölçütü uygulanır
+     * @param bodyFontSize sayfanın gövde punto ortancası; {@code <= 0} ise punto ölçütü kapalı
+     */
+    private static boolean looksLikeHeading(String rawLine, TextLine line, double bodyFontSize) {
+        if (endsWithColon(rawLine)) return true;
+        if (!hasHeadingShape(rawLine)) return false;
+        if (uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE) return true;
+        return isTypographicHeading(line, bodyFontSize);
+    }
+
+    private static boolean isTypographicHeading(TextLine line, double bodyFontSize) {
+        if (line == null) return false;
+        if (line.bold()) return true;
+        return bodyFontSize > 0 && line.fontSize() >= bodyFontSize * HEADING_FONT_RATIO;
+    }
+
+    /**
+     * Sayfanın gövde puntosu = punto ORTANCASI. Ortalama değil: tek bir 28pt isim
+     * satırı ortalamayı yukarı çekip gerçek başlıkları eşiğin altında bırakırdı.
+     */
+    private static double bodyFontSize(List<TextLine> lines) {
+        double[] sizes = lines.stream()
+                .filter(l -> !l.text().isBlank())
+                .mapToDouble(TextLine::fontSize)
+                .filter(v -> v > 0)
+                .toArray();
+        return sizes.length == 0 ? 0 : median(sizes);
     }
 
     /**
