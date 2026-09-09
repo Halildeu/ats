@@ -164,6 +164,21 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * yakalayacak kadar düşük.
      */
     private static final double HEADING_FONT_RATIO = 1.15;
+    /**
+     * #213 (review turu 2): AÇIK BÖLÜMÜN başlığına göre "altında" sayılma oranı.
+     *
+     * <p>İki tur boyunca belirti yamandı: önce kalınlık, sonra punto "güçlü sinyal" sayıldı;
+     * ikisinde de vurgulanmış İÇERİK (iş unvanı, ilk beceri değeri) bölüm başlığı sanıldı.
+     * Ölçülen ders: tipografi TÜRÜ ne olursa olsun tek başına "başlık" ile "vurgulanmış
+     * içerik"i ayırmıyor — çünkü gerçek CV'lerde içerik de vurguludur. Eşiği yukarı taşımak
+     * bu sınırı aşmaz.
+     *
+     * <p>Ayırt edici olan MUTLAK punto değil, belgenin kendi HİYERARŞİSİ: içerik, kendi
+     * başlığından küçüktür. Bu oranın altındaki satır, açık bölümün içeriğidir; yeni bölüm
+     * açamaz ve açık bölümü kapatamaz. Eşit puntolu satırlar (aynı düzey başlıklar:
+     * "İş deneyimi" 17pt → "Eğitim ve Nitelikler" 17pt) etkilenmez.
+     */
+    private static final double SECTION_LEVEL_RATIO = 0.95;
     /** Ek toleranslı eşleşme yalnız bu uzunluktan sonra açılır. */
     private static final int MIN_SUFFIX_TOLERANT_LABEL = 5;
     private static final int HEADER_LINES_SCANNED = 10;
@@ -435,6 +450,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         int protectedSuppressed = 0;
         // #213: başlık kapısının tipografi ölçütü için sayfanın gövde puntosu.
         double body = bodyFontSize(lines);
+        // #213 (turu 2): açık bölümü AÇAN satırın puntosu — hiyerarşi ölçütünün dayanağı.
+        double activeHeadingSize = 0;
 
         for (TextLine source : lines) {
             String line = source.text().replaceAll("\\s+", " ").trim();
@@ -461,9 +478,18 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 active = null;
                 continue;
             }
-            ResumeField section = headingField(line, heading, source, body);
+            // #213 (turu 2): açık bölümün başlığından KÜÇÜK satır, o bölümün içeriğidir.
+            // Vurgulu olması (kalın ya da gövdeden büyük) onu başlık yapmaz — iş unvanı ve
+            // ilk beceri değeri tam olarak böyle görünür. Bu kontrol hem başlık kapısını hem
+            // de aşağıdaki yan-çubuk kapatma yolunu kapsar.
+            boolean contentUnderActiveHeading =
+                    active != null && isBelowActiveHeading(source, activeHeadingSize);
+
+            ResumeField section =
+                    contentUnderActiveHeading ? null : headingField(line, heading, source, body);
             if (section != null) {
                 active = section;
+                activeHeadingSize = source.fontSize();
                 headingJustOpened = true;
                 continue;
             }
@@ -475,7 +501,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             // #213 (review P2): burada YALNIZ güçlü sinyal. Kalınlığı yeterli saymak
             // yan çubuktaki kalın DEĞERİ ("Java") sarılmış başlık sanıp atıyordu —
             // aşağıdaki koşulsuz `continue` ilk gerçek değeri düşürüyor.
-            if (sidebar && looksLikeStrongHeading(line, source, body)) {
+            if (sidebar && !contentUnderActiveHeading
+                    && looksLikeStrongHeading(line, source, body)) {
                 // Başlık iki satıra sarabilir ("CERTIFICATIONS &" + "TRAINING").
                 // Devam satırı bölümü kapatırsa alan boş kalıyordu; ölçümde
                 // certifications 467c -> eksik oldu. Sarma satırını yut, kapatma.
@@ -1229,6 +1256,17 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     /** Zayıf sinyal: yalnız kalın. TEK BAŞINA yalnız TAM sözlük eşleşmesini açar. */
     private static boolean looksLikeBoldLabel(String rawLine, TextLine line) {
         return line != null && line.bold() && hasHeadingShape(rawLine);
+    }
+
+    /**
+     * Satır, AÇIK bölümün başlığından tipografik olarak küçük mü — yani onun içeriği mi?
+     *
+     * <p>{@code activeHeadingSize <= 0} (henüz bölüm açılmamış ya da başlık puntosu
+     * bilinmiyor) durumunda kural uygulanmaz: ilk başlığın önünde kısıt yoktur.
+     */
+    private static boolean isBelowActiveHeading(TextLine line, double activeHeadingSize) {
+        if (line == null || activeHeadingSize <= 0 || line.fontSize() <= 0) return false;
+        return line.fontSize() < activeHeadingSize * SECTION_LEVEL_RATIO;
     }
 
     private static boolean isLargerThanBody(TextLine line, double body) {

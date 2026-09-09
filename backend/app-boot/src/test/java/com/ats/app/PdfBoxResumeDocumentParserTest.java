@@ -645,6 +645,72 @@ class PdfBoxResumeDocumentParserTest {
                 "uc tarih bicimi de korunmali: " + experience);
     }
 
+
+    // ---------------------------------------------------------------------------------------
+    // #213 review turu 2 (Halildeu, exact head b57d640) — AYNI veri kaybı font-size kolunda.
+    // Ders: tipografi TÜRÜ ne olursa olsun (kalın ya da büyük punto) "bölüm başlığı" ile
+    // "vurgulanmış içerik"i ayırmaya yetmiyor; eşiği oynatmak sınırı aşmıyor. Aşağıdaki iki
+    // fixture o sınırı kilitler.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Turu 2 — BÜYÜK PUNTOLU iş unvanı da CITY'ye dönüşmemeli.
+     *
+     * <p>Bölüm başlığı 16pt, unvan 14pt, gövde 12pt. Unvan gövdeden büyük olduğu için
+     * "güçlü tipografi" sayılıyor ve esnek {@code city} token eşleşmesi yeniden açılıyordu.
+     * Ayırt edici olan mutlak punto değil, <b>açık bölümün başlığına göre KONUM</b>:
+     * içerik, başlığından küçüktür.
+     */
+    @Test
+    void a_larger_than_body_job_title_does_not_become_a_city_heading() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|14|false|City Planner",
+                "60|714|12|false|Example Planning Company",
+                "60|692|12|false|Designed transport networks.",
+                "60|670|12|false|Coordinated with municipal teams.");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "govdeden buyuk unvan CITY basligi olmamali; alinan: " + fields);
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "EXPERIENCE korunmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("City Planner"),
+                "unvan deneyim icinde kalmali: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * Turu 2 — BÜYÜK PUNTOLU yan-çubuk değeri de atılmamalı.
+     *
+     * <p>Yan çubuk başlığı 14pt, ilk değer 12pt, kalan değerler 10pt. İlk değer gövdeden
+     * büyük olduğu için başlık sanılıp sarma yolundan düşüyordu. Aynı ayrım geçerli:
+     * değer, başlığından küçüktür.
+     */
+    @Test
+    void a_larger_than_body_sidebar_value_is_not_dropped() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|10|false|Led the payment platform migration end to end",
+                "40|742|10|false|Owned the reliability roadmap for two squads",
+                "40|724|10|false|Reduced checkout latency across the estate",
+                "40|706|10|false|Mentored engineers on distributed system design",
+                "40|688|10|false|Ran the incident review process every week",
+                "451|760|14|false|COMPETENCIES",
+                "451|738|12|false|Java",
+                "451|718|10|false|Postgres",
+                "451|700|10|false|Docker",
+                "451|682|10|false|Python");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.containsKey(ResumeField.SKILLS), "SKILLS alinmali; alinan: " + fields);
+        String skills = fields.get(ResumeField.SKILLS);
+        assertTrue(skills.contains("Java"), "govdeden buyuk ilk deger atilmamali: " + skills);
+        assertTrue(skills.contains("Postgres") && skills.contains("Docker")
+                        && skills.contains("Python"),
+                "diger degerler de korunmali: " + skills);
+    }
+
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
     private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
