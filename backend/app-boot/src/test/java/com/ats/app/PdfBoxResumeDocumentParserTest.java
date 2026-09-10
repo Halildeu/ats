@@ -540,8 +540,10 @@ class PdfBoxResumeDocumentParserTest {
         assertTrue(outcome.isOk(), "parse basarili olmali");
         ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
 
-        assertEquals("pdfbox-3.0.5-rules-v10", PdfBoxResumeDocumentParser.VERSION,
-                "davranis degisti; provenance surumu artmali");
+        assertEquals("pdfbox-3.0.5-rules-v11", PdfBoxResumeDocumentParser.VERSION,
+                "davranis degisti; provenance surumu artmali (daralma da davranis degisikligidir)");
+        assertEquals(PdfBoxResumeDocumentParser.VERSION, result.parserVersion(),
+                "ParseResult.parserVersion sinif sabitiyle ayni olmali");
         assertFalse(result.proposals().isEmpty(), "en az bir oneri olmali");
         assertTrue(result.proposals().stream()
                         .allMatch(pr -> PdfBoxResumeDocumentParser.VERSION
@@ -799,6 +801,53 @@ class PdfBoxResumeDocumentParserTest {
         assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Junior Engineer"),
                 "PROBE B: tarih kolonu yan cubuk sanilirsa son kayitlar kaybolur: "
                         + fields.get(ResumeField.EXPERIENCE));
+    }
+
+
+    /**
+     * #264 review (P2) — DARALMA DA DAVRANIŞ DEĞİŞİKLİĞİDİR.
+     *
+     * <p>Bu PR'da önce "daralma ayrı provenance gerektirmez" diye savunmuştum; yanlıştı.
+     * Aynı PDF önceki sürümde {@code CITY} üretiyor, bu sürümde {@code EXPERIENCE}'i
+     * koruyor. Kaydedilmiş bir önerinin {@code parserVersion} alanına bakan biri iki
+     * algoritmayı ayırt edemezdi — dağıtım digest'i bunu çözmez, çünkü digest VERİDE
+     * durmaz. Sınıfın kendi zorunlu-bump sözleşmesi (aynı dosya, VERSION javadoc'u) bu
+     * durumu kapsıyor ve {@code #208}'de bir kez bump'sız gidilip canlı ölçümde v6
+     * davranışı v5 diye raporlanmış.
+     *
+     * <p>Bu test davranışı ve sürümü BİRLİKTE kilitler: değişen davranışın çıktısı ile
+     * onu raporlayan sürüm aynı koşuda doğrulanır.
+     */
+    @Test
+    void the_narrowed_behaviour_and_its_provenance_version_are_locked_together() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|CITY PLANNER",
+                "60|714|12|false|Example Planning Company",
+                "60|692|12|false|Designed transport networks.");
+
+        Outcome<ParseResult> outcome = new PdfBoxResumeDocumentParser().parse(pdf, 10);
+        assertTrue(outcome.isOk(), "parse basarili olmali");
+        ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
+
+        // davranis: daralmis hali
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(
+                        ResumeImportService.ProposalDraft::field,
+                        ResumeImportService.ProposalDraft::value,
+                        (a, b) -> a + "\n" + b));
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "daralmis davranis: buyuk harfli unvan CITY uretmemeli; alinan: " + fields);
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "daralmis davranis: EXPERIENCE korunmali; alinan: " + fields);
+
+        // ...ve o davranisi raporlayan surum, ayirt edilebilir olmali
+        assertEquals("pdfbox-3.0.5-rules-v11", result.parserVersion(),
+                "degisen davranis ONCEKI surum kimligiyle raporlanmamali");
+        assertTrue(result.proposals().stream()
+                        .allMatch(pr -> "pdfbox-3.0.5-rules-v11"
+                                .equals(pr.provenance().parserVersion())),
+                "her kalici onerinin provenance surumu de ayirt edilebilir olmali");
     }
 
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
