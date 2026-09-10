@@ -450,7 +450,10 @@ class PostgresResumeImportStoreTest {
                 PreparedStatement ps = c.prepareStatement(
                         "SELECT count(*) FROM ats_candidate_draft"
                                 + " WHERE draft_id=? AND import_id=? AND consumed_at IS NULL")) {
-            ps.setString(1, loaded.draftId());
+            // draft_id sütunu UUID; String bağlamak Postgres'te
+            // "operator does not exist: uuid = character varying" verir. Üretim kodu da
+            // bu sütunu setObject(UUID) ile bağlıyor.
+            ps.setObject(1, java.util.UUID.fromString(loaded.draftId()));
             ps.setString(2, importId);
             try (ResultSet rs = ps.executeQuery()) {
                 assertTrue(rs.next());
