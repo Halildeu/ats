@@ -2,6 +2,7 @@ package com.ats.app;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -341,6 +342,199 @@ class ResumeImportApiTest {
         headers.set("X-ATS-Candidate-Access", token);
         if (idempotency != null) headers.set("X-ATS-Idempotency-Key", idempotency);
         return headers;
+    }
+
+    /*
+     * =========================================================================================
+     * #966 DRAFT / SUBMISSION sözleşmesi.
+     *
+     * Kapatılan boşluk: yukarıdaki pdf_proposals_are_candidate_controlled_... başvuruyu
+     * taslakla BİREBİR AYNI değerlerle gönderiyor. Halil Bey'in tarif ettiği durum —
+     * aday taslaktan SONRA formda değeri değiştirip öyle gönderiyor — hiçbir yerde test
+     * edilmiyordu. "Gönderilen değer taslakla aynıdır" varsayılmamalı.
+     *
+     * Bu iki test o varsayımı kaldırır ve üç şeyi ölçer:
+     *   (1) kalıcılık: ats_application'a adayın GÖNDERDİĞİ değer yazılır, taslağınki değil;
+     *   (2) bağ: başvuru yine aynı import'a bağlanır ve taslak BU başvuru tarafından tüketilir;
+     *   (3) kaynak dürüstlüğü: taslakla hiçbir alan eşleşmiyorsa başvuru PDF_CONFIRMED diye
+     *       etiketlenmez.
+     *
+     * Kalıcılık kanıtı DB satırındandır. İK okuma yolu (recruiter DTO) bilerek burada yok:
+     * V8 notuna göre application_source/resume_import_id recruiter DTO'larından BİLEREK
+     * çıkarılmış; skaler alanların İK okuma eşlemesi bu PR'ın konusu değil. Canlı "aday
+     * düzeltme -> gönderim -> İK kalıcı okuma" kabulü de bu testle karşılanmaz.
+     *
+     * Mevcut test DEĞİŞTİRİLMEDİ: yalnız CI'da doğrulanabilen bir ortamda yeşil bir testi
+     * yeniden düzenlemek yerine kurulum ayrı bir yardımcıya kopyalandı.
+     * =========================================================================================
+     */
+
+    private static final String DRAFT_EXPERIENCE = "Taslakta kalan sentetik deneyim";
+
+    private record ConfirmedImport(String importId, int draftVersion, String email) {}
+
+    /** Mevcut kabul testinin kurulumuyla aynı: e-posta KABUL, deneyim DÜZENLENDİ, confirm. */
+    private ConfirmedImport confirmedImport(String token, String fullName, String email)
+            throws Exception {
+        ResponseEntity<String> create = rest.exchange(
+                "/api/v1/careers/acik/jobs/urun-yoneticisi/resume-imports",
+                HttpMethod.POST,
+                new HttpEntity<>("""
+                        {"noticeVersion":"candidate-resume-import-v1","noticeAcceptedAt":"%s"}
+                        """.formatted(Instant.now()),
+                        jsonHeaders(token, "create-" + UUID.randomUUID())),
+                String.class);
+        assertEquals(201, create.getStatusCode().value(), create.getBody());
+        String importId = json.readTree(create.getBody()).path("importId").asText();
+
+        HttpHeaders uploadHeaders = new HttpHeaders();
+        uploadHeaders.setContentType(MediaType.APPLICATION_PDF);
+        uploadHeaders.set("X-ATS-Candidate-Access", token);
+        uploadHeaders.set("X-ATS-Idempotency-Key", "upload-" + UUID.randomUUID());
+        uploadHeaders.set("X-ATS-Expected-Version", "0");
+        ResponseEntity<String> upload = rest.exchange(
+                "/api/v1/candidate/resume-imports/" + importId + "/document",
+                HttpMethod.PUT,
+                new HttpEntity<>(pdf(
+                        "Ad Soyad: " + fullName,
+                        "E-posta: " + email,
+                        "Telefon: +90 555 000 00 00",
+                        "Sehir: Istanbul",
+                        "Deneyim: Urun Uzmani - Ornek Teknoloji",
+                        "Egitim: Ornek Universitesi",
+                        "Beceriler: urun kesfi, analitik"), uploadHeaders),
+                String.class);
+        assertEquals(201, upload.getStatusCode().value(), upload.getBody());
+        // E-postayı PDF metninden VARSAYMIYORUZ; ayrıştırıcının önerdiği değer alınır.
+        String proposedEmail = findField(json.readTree(upload.getBody()), "email");
+
+        assertEquals(200, mutateField(importId, token, "email", 1, "ACCEPTED", null)
+                .getStatusCode().value());
+        assertEquals(200, mutateField(importId, token, "experience", 2, "EDITED", DRAFT_EXPERIENCE)
+                .getStatusCode().value());
+
+        ResponseEntity<String> confirmed = rest.exchange(
+                "/api/v1/candidate/resume-imports/" + importId + "/confirm",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":3}", jsonHeaders(token, null)),
+                String.class);
+        assertEquals(200, confirmed.getStatusCode().value(), confirmed.getBody());
+        JsonNode draft = json.readTree(confirmed.getBody()).path("draft");
+        assertEquals(DRAFT_EXPERIENCE, draft.path("fields").path("experience").asText());
+        assertEquals(proposedEmail, draft.path("fields").path("email").asText());
+        return new ConfirmedImport(importId, draft.path("version").asInt(), proposedEmail);
+    }
+
+    private ResponseEntity<String> submit(String token, String body) {
+        return rest.exchange(
+                "/api/v1/careers/acik/jobs/urun-yoneticisi/applications",
+                HttpMethod.POST,
+                new HttpEntity<>(body, jsonHeaders(token, "submit-" + UUID.randomUUID())),
+                String.class);
+    }
+
+    /** Kalıcı satırı ve taslağı BU başvurunun tükettiğini tek sorguda okur. */
+    private record PersistedApplication(
+            String experience, String email, String source, String resumeImportId,
+            long draftsConsumedByThisApplication) {}
+
+    private PersistedApplication persisted(String publicRef) throws Exception {
+        // application_id ve consumed_application_id ikisi de UUID: karşılaştırma SQL
+        // içinde yapılıyor, Java'dan UUID bağlanmıyor.
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement("""
+                        SELECT a.experience, a.email, a.application_source, a.resume_import_id,
+                               (SELECT count(*) FROM ats_candidate_draft d
+                                 WHERE d.consumed_application_id = a.application_id
+                                   AND d.import_id = a.resume_import_id) AS consumed_by_this
+                          FROM ats_application a
+                         WHERE a.public_ref=?
+                        """)) {
+            ps.setString(1, publicRef);
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next(), "başvuru satırı bulunmalı");
+                return new PersistedApplication(
+                        rs.getString("experience"), rs.getString("email"),
+                        rs.getString("application_source"), rs.getString("resume_import_id"),
+                        rs.getLong("consumed_by_this"));
+            }
+        }
+    }
+
+    @Test
+    void a_value_the_candidate_changes_after_the_draft_is_persisted_and_the_binding_holds()
+            throws Exception {
+        String owner = "D".repeat(43);
+        ConfirmedImport confirmed = confirmedImport(owner, "Sena Sentetik", "sena.draft@example.test");
+
+        // Aday taslaktan SONRA formda deneyimi değiştiriyor; e-postaya dokunmuyor.
+        String changedExperience = "Adayin taslaktan SONRA formda duzelttigi deneyim";
+        assertNotEquals(DRAFT_EXPERIENCE, changedExperience);
+        String body = applicationPayload("Sena Sentetik", confirmed.email(), changedExperience,
+                confirmed.importId(), confirmed.draftVersion());
+
+        /*
+         * Negatifler kontrollü deney olarak kuruldu: gövde AYNI, değişen tek şey jeton ya da
+         * sürüm. Aynı gövde sahibin jetonuyla aşağıda 201 aldığı için, buradaki 400'ün
+         * sebebi gövde değil yalnız değiştirilen değişkendir. Yabancı jeton da biçimce
+         * geçerli (43 karakter) — biçim doğrulaması sahiplik kanıtı sayılmıyor.
+         */
+        assertEquals(400, submit("F".repeat(43), body).getStatusCode().value(),
+                "başka bir adayın jetonu bu taslağa bağlanamamalı");
+        assertEquals(400, submit(owner, applicationPayload("Sena Sentetik", confirmed.email(),
+                        changedExperience, confirmed.importId(), confirmed.draftVersion() + 1))
+                        .getStatusCode().value(),
+                "bayat taslak sürümüyle bağlanılamamalı");
+        // Başarısız denemeler sahibin taslağını YAKMAMALI.
+        try (Connection c = ds.getConnection()) {
+            assertEquals(0, scalar(c, """
+                    SELECT count(*) FROM ats_candidate_draft
+                     WHERE import_id=? AND consumed_application_id IS NOT NULL
+                    """, confirmed.importId()), "reddedilen denemeler taslağı tüketmemeli");
+        }
+
+        ResponseEntity<String> submitted = submit(owner, body);
+        assertEquals(201, submitted.getStatusCode().value(), submitted.getBody());
+        PersistedApplication row = persisted(
+                json.readTree(submitted.getBody()).path("publicRef").asText());
+
+        // (1) kalıcılık: adayın değeri, taslağınki DEĞİL.
+        assertEquals(changedExperience, row.experience(), "adayın gönderdiği değer saklanmalı");
+        assertNotEquals(DRAFT_EXPERIENCE, row.experience(), "taslak değeri adayınkini ezmemeli");
+        assertEquals(confirmed.email(), row.email());
+        // (2) bağ: aynı import, taslak BU başvuruca tüketildi.
+        assertEquals(confirmed.importId(), row.resumeImportId());
+        assertEquals(1L, row.draftsConsumedByThisApplication(),
+                "taslak bu başvuru tarafından tüketilmeli");
+        // (3) e-posta taslakla eşleştiği için CV kaynaklı sayılması doğru.
+        assertEquals("PDF_CONFIRMED", row.source());
+    }
+
+    @Test
+    void changing_every_draft_field_is_not_reported_as_pdf_confirmed_yet_stays_bound()
+            throws Exception {
+        String owner = "E".repeat(43);
+        ConfirmedImport confirmed = confirmedImport(owner, "Ece Sentetik", "ece.draft@example.test");
+
+        // Taslağın taşıdığı İKİ alanın ikisi de değişiyor (taslak: e-posta + deneyim).
+        String changedEmail = "ece.baska.adres@example.test";
+        String changedExperience = "Tamamen adayin kendi yazdigi deneyim";
+        assertNotEquals(confirmed.email(), changedEmail);
+        ResponseEntity<String> submitted = submit(owner, applicationPayload(
+                "Ece Sentetik", changedEmail, changedExperience,
+                confirmed.importId(), confirmed.draftVersion()));
+        assertEquals(201, submitted.getStatusCode().value(), submitted.getBody());
+        PersistedApplication row = persisted(
+                json.readTree(submitted.getBody()).path("publicRef").asText());
+
+        assertEquals(changedExperience, row.experience());
+        assertEquals(changedEmail, row.email());
+        // Kaynak dürüstlüğü: hiçbir alan taslakla eşleşmiyorsa "CV'den geldi" denmez...
+        assertEquals("MANUAL_AFTER_IMPORT", row.source(),
+                "taslakla eşleşen alan yokken başvuru PDF_CONFIRMED sayılmamalı");
+        // ...ama bağ ve tüketim yine korunur: aday import'u kullandı, sonra değiştirdi.
+        assertEquals(confirmed.importId(), row.resumeImportId());
+        assertEquals(1L, row.draftsConsumedByThisApplication());
     }
 
     private static String findField(JsonNode importView, String field) {
