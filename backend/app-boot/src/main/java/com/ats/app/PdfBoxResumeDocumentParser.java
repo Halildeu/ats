@@ -1281,7 +1281,18 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static boolean hasUnambiguousHeadingEvidence(String rawLine, String normalizedHeading) {
         if (endsWithColon(rawLine)) return true;
         if (!hasHeadingShape(rawLine)) return false;
-        if (uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE) return true;
+        // BÜYÜK HARF BURADA YOK — ve bu, ölçülmüş bir düzeltmedir.
+        //
+        // Büyük harf de KALINLIK ve PUNTO gibi TİPOGRAFİK bir sinyaldir: vurgulanmış
+        // içeriğe ait olabilir. Ölçüm (kendi karşı-örnek yoklamam, merge sonrası):
+        // "EXPERIENCE" 16pt altında "CITY PLANNER" 12pt — tamamı büyük harf ama iş unvanı.
+        // Büyük harfi kesin kanıt sayınca hiyerarşi vetosunu atlıyor, esnek token
+        // eşleşmesi `city` üzerinden tetikleniyor ve {CITY=Example Planning Company}
+        // üretiliyordu. Bu, kalın ve büyük-punto varyantlarıyla AYNI kusurun üçüncü ekseni.
+        //
+        // Hiyerarşiyi yalnız ANLAMSAL kanıt aşabilir: iki nokta ("bu bir etikettir") ya da
+        // sözlükte TAM eşleşme (etiketin kendisi). "city planner" sözlükte yoktur; "education"
+        // vardır — bu yüzden EDUCATION 14pt açılır, CITY PLANNER 12pt açılmaz.
         return normalizedHeading != null && LABELS.containsKey(normalizedHeading);
     }
 

@@ -765,6 +765,42 @@ class PdfBoxResumeDocumentParserTest {
                 "egitim icerigi: " + fields.get(ResumeField.EDUCATION));
     }
 
+
+    /** PROBE A: "%70 buyuk harf = baslik" — buyuk harfli ama baslik OLMAYAN ne var? */
+    @Test
+    void probe_all_caps_job_title_containing_a_label_token() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|16|false|EXPERIENCE",
+                "60|736|12|false|CITY PLANNER",
+                "60|714|12|false|Example Planning Company",
+                "60|692|12|false|Designed transport networks.");
+        Map<ResumeField, String> fields = parse(pdf);
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "PROBE A: buyuk harfli unvan CITY olmamali; alinan: " + fields);
+    }
+
+    /** PROBE B: "ana akistan dar = yan cubuk" — dar olup yan cubuk OLMAYAN ne var? */
+    @Test
+    void probe_right_hand_date_column_is_not_a_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|false|EXPERIENCE",
+                "40|738|12|false|Senior Software Engineer at Example Technology",
+                "40|716|12|false|Owned the reliability roadmap for two squads",
+                "40|694|12|false|Software Engineer at Another Example Company",
+                "40|672|12|false|Reduced checkout latency across the whole estate",
+                "40|650|12|false|Junior Engineer at Third Example Company",
+                "40|628|12|false|Built internal tooling for the platform team",
+                "480|738|12|false|2020 - 2024",
+                "480|694|12|false|2017 - 2020",
+                "480|650|12|false|2015 - 2017");
+        Map<ResumeField, String> fields = parse(pdf);
+        assertTrue(fields.containsKey(ResumeField.EXPERIENCE),
+                "PROBE B: deneyim alinmali; alinan: " + fields);
+        assertTrue(fields.get(ResumeField.EXPERIENCE).contains("Junior Engineer"),
+                "PROBE B: tarih kolonu yan cubuk sanilirsa son kayitlar kaybolur: "
+                        + fields.get(ResumeField.EXPERIENCE));
+    }
+
     /** Sol geniş ana kolon + sağda dar yan çubuk; splitIntoColumns eşiklerini karşılar. */
     private static byte[] sidebarPdf(String[] main, String[] side) throws Exception {
         try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
