@@ -380,6 +380,106 @@ class PostgresResumeImportStoreTest {
                 "duzenlenen alan girdi tasimamali: adayin metni tek otorite");
     }
 
+    /**
+     * #966 sözleşme boşluğu: adayın SON elle düzelttiği değerin AYRI BİR OKUMADA da
+     * gelmesi ve o okumanın import/draft/version bağını taşıması.
+     *
+     * <p>Bugünkü kapsam bunu kanıtlamıyor. {@code an_edited_field_carries_no_entries_...}
+     * düzenlenmiş değeri yalnız {@code confirm} SONUCUNDA görüyor; hiç geri okumuyor.
+     * {@code candidate_review_confirm_is_atomic_...} ise geri okuyor ama sadece
+     * {@code draftId} karşılaştırıyor. Aradaki boşluk gerçek: confirm yanıtı doğru
+     * değeri taşırken kalıcı satır farklı olsa bugün hiçbir test kırmızı olmazdı —
+     * oysa formu dolduran çağrı yeri değeri bu okuma yolundan alıyor.
+     *
+     * <p>Aday alanı İKİ KEZ düzenliyor; sözleşme SONUNCUSUNU saklamak. Tek düzenlemeyle
+     * yazsaydım "herhangi bir düzenleme" ile "son düzenleme" ayrımı ölçülmezdi.
+     *
+     * <p>Negatifler BİLEREK biçimi geçerli değerlerle kuruluyor: yanlış erişim jetonu da
+     * 64 haneli, yanlış tenant da gerçek bir UUID. Böylece kırmızı, biçim doğrulamasından
+     * değil sahiplik/sürüm kontrolünden geliyor. Alanların birlikte ve biçimce doğru
+     * olması sahiplik kanıtı DEĞİLDİR; burada kanıtlanan şey, BAŞKA bir sahibin aynı
+     * kaydı okuyamamasıdır.
+     */
+    @Test
+    void the_last_candidate_edit_and_its_binding_survive_a_separate_readback() throws Exception {
+        String importId = "ri_" + "K".repeat(24);
+        String access = "3c".repeat(32);
+        store.create(create(importId, access, "create-key-k0000001", "c1".repeat(32)))
+                .asOptional().orElseThrow();
+        reserveAndAttach(new AttachCommand(
+                importId, access, 0, "upload-key-k0000001", "c2".repeat(32), 1,
+                "parser-v9", 0, 0, "2026-07-18T12:21:00Z"), proposals());
+
+        store.updateField(new FieldCommand(importId, access, ResumeField.EXPERIENCE,
+                ProposalState.EDITED, "Adayin ILK duzeltmesi", 1, "2026-07-18T12:22:00Z"))
+                .asOptional().orElseThrow();
+        store.updateField(new FieldCommand(importId, access, ResumeField.EXPERIENCE,
+                ProposalState.EDITED, "Adayin SON duzeltmesi", 2, "2026-07-18T12:23:00Z"))
+                .asOptional().orElseThrow();
+
+        var confirmed = store.confirm(new ConfirmCommand(
+                importId, access, 3, "2026-07-18T12:24:00Z")).asOptional().orElseThrow();
+        assertEquals(ConfirmState.CONFIRMED, confirmed.state());
+
+        var loaded = store.findConfirmedDraft(
+                TENANT, JOB, access, importId, 0, "2026-07-18T12:25:00Z")
+                .asOptional().orElseThrow();
+
+        // (1) persist/readback: forma giden değer adayın SON düzeltmesidir. Bu değer
+        // satırdan okunuyor, dolayısıyla gerçek kalıcılık kanıtı.
+        assertEquals("Adayin SON duzeltmesi", loaded.fields().get(ResumeField.EXPERIENCE),
+                "ayrı okumada adayın son düzeltmesi gelmeli");
+        assertEquals(confirmed.draft().draftId(), loaded.draftId(),
+                "okunan taslak confirm'in ürettiği taslak olmalı");
+
+        /*
+         * BILEREK ASSERT EDILMEYEN IKI ALAN: loaded.importId() ve loaded.version().
+         *
+         * Uygulamayı okudum: dönen kayıt bu ikisini SORGU ARGÜMANINDAN yankılıyor
+         * (`new ResumeDraft(draftId, importId, expectedDraftVersion, ...)`), satırdan
+         * okumuyor. Onları assert etmek "verdiğim değeri geri aldım" demek olurdu —
+         * yeşil görünen ama hiçbir şey ölçmeyen bir satır.
+         *
+         * Bağın gerçek kanıtı iki yerde: (a) aşağıdaki SQL, taslak satırının GERÇEKTEN
+         * bu import'a bağlı olduğunu satırdan doğruluyor; (b) negatifler, WHERE
+         * koşulunun tenant/job/erişim/import/sürüm beşlisini birlikte zorladığını
+         * gösteriyor. Alanların birlikte ve biçimce doğru görünmesi tek başına
+         * sahiplik kanıtı değildir.
+         */
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "SELECT count(*) FROM ats_candidate_draft"
+                                + " WHERE draft_id=? AND import_id=? AND consumed_at IS NULL")) {
+            ps.setString(1, loaded.draftId());
+            ps.setString(2, importId);
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(1L, rs.getLong(1), "taslak satırı bu import'a bağlı olmalı");
+            }
+        }
+
+        // (3) sahiplik negatifi: biçimce geçerli AMA başka bir erişim jetonu okuyamaz.
+        assertTrue(store.findConfirmedDraft(
+                        TENANT, JOB, "4d".repeat(32), importId, 0, "2026-07-18T12:25:00Z")
+                        .asOptional().isEmpty(),
+                "başka erişim jetonu adayın taslağını okuyamamalı");
+        // (4) sürüm negatifi: beklenen taslak sürümü tutmuyorsa okuma açılmaz.
+        assertTrue(store.findConfirmedDraft(
+                        TENANT, JOB, access, importId, 99, "2026-07-18T12:25:00Z")
+                        .asOptional().isEmpty(),
+                "bayat taslak sürümüyle okuma yapılmamalı");
+        // (5) kiracı/ilan negatifi: aynı importId başka kiracıya açılmaz.
+        assertTrue(store.findConfirmedDraft(
+                        new TenantId("00000000-0000-0000-0000-000000000002"),
+                        JOB, access, importId, 0, "2026-07-18T12:25:00Z")
+                        .asOptional().isEmpty(),
+                "başka kiracı aynı importId ile okuyamamalı");
+        assertTrue(store.findConfirmedDraft(
+                        TENANT, "job-other-posting", access, importId, 0, "2026-07-18T12:25:00Z")
+                        .asOptional().isEmpty(),
+                "başka ilan bağlamı taslağı açmamalı");
+    }
+
     private static List<ProposalDraft> proposals() {
         Provenance p = new Provenance(1, 0, 0, 595, 842, 0.95, "parser-v1");
         return List.of(
