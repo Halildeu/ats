@@ -43,8 +43,16 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * kenarda da aranıyor. AYNI PDF farklı alanlara ayrılabildiği için sürüm zorunlu
      * arttı: {@code ParseResult} ve her {@code proposal.provenance} bu sabiti taşır;
      * iki algoritmanın aynı kimlikle raporlanması provenance'ı anlamsız kılardı.
+     *
+     * <p>v11 (#213): büyük harf artık hiyerarşi vetosunu aşan "kesin kanıt" sayılmıyor.
+     * DARALMA DA DAVRANIŞ DEĞİŞİKLİĞİDİR — bu PR'da önce aksini savunmuştum, yanlıştı:
+     * aynı PDF v10'da {@code CITY} üretirken v11'de {@code EXPERIENCE}'i koruyor. Kaydedilmiş
+     * bir önerinin {@code parserVersion} alanına bakan biri iki algoritmayı ayırt edemezdi;
+     * dağıtım digest'i bunu çözmez çünkü digest VERİDE durmaz. Yukarıdaki zorunlu-bump
+     * sözleşmesi tam olarak bu durumu kapsıyor (#208'de bir kez bump'sız gidilmiş ve canlı
+     * ölçümde v6 davranışı v5 diye raporlanmıştı).
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v10";
+    static final String VERSION = "pdfbox-3.0.5-rules-v11";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -1281,7 +1289,18 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static boolean hasUnambiguousHeadingEvidence(String rawLine, String normalizedHeading) {
         if (endsWithColon(rawLine)) return true;
         if (!hasHeadingShape(rawLine)) return false;
-        if (uppercaseShare(rawLine) >= UPPERCASE_HEADING_SHARE) return true;
+        // BÜYÜK HARF BURADA YOK — ve bu, ölçülmüş bir düzeltmedir.
+        //
+        // Büyük harf de KALINLIK ve PUNTO gibi TİPOGRAFİK bir sinyaldir: vurgulanmış
+        // içeriğe ait olabilir. Ölçüm (kendi karşı-örnek yoklamam, merge sonrası):
+        // "EXPERIENCE" 16pt altında "CITY PLANNER" 12pt — tamamı büyük harf ama iş unvanı.
+        // Büyük harfi kesin kanıt sayınca hiyerarşi vetosunu atlıyor, esnek token
+        // eşleşmesi `city` üzerinden tetikleniyor ve {CITY=Example Planning Company}
+        // üretiliyordu. Bu, kalın ve büyük-punto varyantlarıyla AYNI kusurun üçüncü ekseni.
+        //
+        // Hiyerarşiyi yalnız ANLAMSAL kanıt aşabilir: iki nokta ("bu bir etikettir") ya da
+        // sözlükte TAM eşleşme (etiketin kendisi). "city planner" sözlükte yoktur; "education"
+        // vardır — bu yüzden EDUCATION 14pt açılır, CITY PLANNER 12pt açılmaz.
         return normalizedHeading != null && LABELS.containsKey(normalizedHeading);
     }
 
