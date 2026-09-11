@@ -51,8 +51,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * dağıtım digest'i bunu çözmez çünkü digest VERİDE durmaz. Yukarıdaki zorunlu-bump
      * sözleşmesi tam olarak bu durumu kapsıyor (#208'de bir kez bump'sız gidilmiş ve canlı
      * ölçümde v6 davranışı v5 diye raporlanmıştı).
+     *
+     * <p>v12 (#213): sol yan çubuk adayı yalnız geri kalan ana akış adayın SAĞINDAN
+     * başlıyorsa kabul ediliyor. v10'da eklenen sol aday, tek sütunlu CV'nin kısa bölüm
+     * başlıklarını yan çubuk sanıyordu; aynı PDF v11'de {@code EDUCATION}'ı
+     * {@code EXPERIENCE}'a karıştırırken v12'de ayrı bölüm olarak veriyor.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v11";
+    static final String VERSION = "pdfbox-3.0.5-rules-v12";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -397,8 +402,9 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
         List<TextLine> right = lines.stream()
                 .filter(l -> l.x() >= rightStart && l.width() <= sidebarMaxWidth).toList();
-        List<TextLine> left = lines.stream()
+        List<TextLine> leftNarrow = lines.stream()
                 .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth).toList();
+        List<TextLine> left = restStartsRightOf(lines, leftNarrow) ? leftNarrow : List.of();
 
         List<TextLine> sidebar = pickSidebar(lines, left, right);
         if (sidebar == null) return List.of(lines);
@@ -443,6 +449,40 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double restWidth = medianWidth(rest);
         if (candidateWidth <= 0 || restWidth <= candidateWidth) return 0;
         return restWidth / candidateWidth;
+    }
+
+    /**
+     * #213 (2026-09-11): SOL adayın gerçekten ayrı bir kolon olup olmadığı.
+     *
+     * <p>Sol aday "sol kenarda ve dar" satırlardan toplanıyor. Bu, gerçek bir sol yan
+     * çubuğu tarif eder — ama tek sütunlu bir CV'nin kısa bölüm başlıklarını da
+     * ({@code EGITIM}, {@code BECERILER}, {@code NOT}) aynen tarif eder: onlar da sol
+     * kenarda ve dardır. {@link #pickSidebar} yalnız satır sayısı ve genişlik oranını
+     * sınadığı için ikisini ayıramıyordu; ölçülen sonuç, başlıkların ayrı akışa çekilmesi
+     * ve içeriklerinin açık kalan deneyim bölümüne yapışmasıydı.
+     *
+     * <p>Ayırt edici olan YATAY AYRIŞMA: gerçek sol yan çubukta ana akış adayın SAĞINDAN
+     * başlar (kariyer.net: kolon x≈15, içerik x≈176). Tek sütunda ise aday ile ana akış
+     * aynı kenardan başlar. Ölçüt bu yüzden: geri kalan satırların başlangıç x ortancası,
+     * adayın sağ sınırından büyük olmalı.
+     *
+     * <p>Koordinatlar sayfadan okunur; sabit bir x değeri yoktur. Ortanca kullanılıyor, en
+     * küçük değer değil — ölçüldü: en küçük x ile mevcut
+     * {@code columns_sharing_the_same_baseline_do_not_bleed_into_each_other} kırmızıya
+     * dönüyor. O fixture'da sol kolonun genişlik eşiğini aşan satırları (ör. e-posta
+     * adresi) adaya girmiyor ve geri kalan akışta kolonun kendi x'iyle sayılıyor; en küçük
+     * x onlara takılıp gerçek yan çubuğu reddediyor.
+     *
+     * <p>Yalnız SOL aday için. Sağ aday zaten {@code x >= minX + 0.60*contentWidth}
+     * koşuluyla ana akışın sağında seçiliyor; bu kontrol ona eklenmedi.
+     */
+    private static boolean restStartsRightOf(List<TextLine> all, List<TextLine> candidate) {
+        if (candidate.isEmpty()) return false;
+        double candidateRight = candidate.stream()
+                .mapToDouble(l -> l.x() + l.width()).max().orElse(0);
+        double[] restStarts = all.stream().filter(l -> !candidate.contains(l))
+                .mapToDouble(TextLine::x).toArray();
+        return restStarts.length > 0 && median(restStarts) > candidateRight;
     }
 
     private static double medianWidth(List<TextLine> lines) {
