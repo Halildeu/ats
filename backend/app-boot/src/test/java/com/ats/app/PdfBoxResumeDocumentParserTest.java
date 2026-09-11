@@ -391,6 +391,53 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #213 (2026-09-11) — yukarıdaki SOL yan çubuk desteğinin yanlış pozitifi.
+     *
+     * <p>Sol aday {@code x + width <= leftEnd} ve dar genişlikle toplanıyor; aday ile geri
+     * kalan ana akışın YATAY olarak ayrıştığı ise hiç sınanmıyor. Tek sütunlu bir CV'de kısa
+     * bölüm başlıkları da tam olarak böyle görünür: sol kenarda ve dar. Bu fixture'da
+     * {@code EGITIM}, {@code BECERILER} ve {@code NOT} {@code MIN_SIDEBAR_LINES} eşiğini
+     * dolduruyor; başlıklar ayrı bir "yan çubuk" akışına çekiliyor ve içerikleri ana akışta
+     * açık kalan deneyim bölümüne yapışıyor.
+     *
+     * <p>Ölçülen belirti (sentetik canlı kabul PDF'i, bu satırlar ve bu düzen):
+     * {@code EXPERIENCE} eğitim, beceri ve not içeriğini taşıyor; {@code EDUCATION} hiç
+     * oluşmuyor. {@code NOT} bölümü çıkarılınca kısa satır sayısı 2'ye iniyor ve çıktı
+     * doğru — tetikleyici tam olarak eşik.
+     *
+     * <p>Kapsam dışı (bilerek assert edilmiyor): {@code NOT} sözlükte değil, ana akışta
+     * #208 kuralıyla içerik sayılıyor ve {@code SKILLS} sonuna ekleniyor. O ayrı bir karar.
+     */
+    @Test
+    void a_single_column_with_short_left_aligned_headings_is_not_split_into_a_sidebar()
+            throws Exception {
+        byte[] pdf = pdf(
+                "Ad Soyad: Deniz Kabul Testi",
+                "PROFESYONEL OZET",
+                "Kullanici ihtiyacini urune donusturen urun profesyoneli.",
+                "IS DENEYIMI",
+                "Urun Uzmani - Ornek Teknoloji - 2022-2026",
+                "EGITIM",
+                "Yonetim Bilisim Sistemleri - Ornek Universitesi - 2020",
+                "BECERILER",
+                "Urun kesfi, kullanici arastirmasi, analitik",
+                "NOT",
+                "Urun odakli ekibinizle calismak istiyorum.");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Yonetim Bilisim Sistemleri - Ornek Universitesi - 2020",
+                fields.get(ResumeField.EDUCATION),
+                "egitim kendi bolumunde olmali; alinan alanlar: " + fields.keySet());
+        assertEquals("Urun Uzmani - Ornek Teknoloji - 2022-2026",
+                fields.get(ResumeField.EXPERIENCE),
+                "deneyim baska bolumlerin icerigini TASIMAMALI");
+        assertTrue(fields.getOrDefault(ResumeField.SKILLS, "")
+                        .startsWith("Urun kesfi, kullanici arastirmasi, analitik"),
+                "beceriler kendi bolumunde olmali: " + fields.get(ResumeField.SKILLS));
+    }
+
+    /**
      * #213 için fixture: her satırın x, y, punto ve kalınlığı AÇIK verilir.
      *
      * <p>Mevcut {@code typedPdf} her satırda y'yi sabit azaltıyor, dolayısıyla iki kolonu
