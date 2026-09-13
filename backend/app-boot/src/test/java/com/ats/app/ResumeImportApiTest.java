@@ -12,6 +12,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -65,11 +67,30 @@ class ResumeImportApiTest {
     @Autowired private DataSource ds;
 
     @Test
+    void consent_versions_are_preserved_and_unknown_version_is_rejected() throws Exception {
+        for (String version : List.of("candidate-resume-import-v1", "candidate-resume-import-v2", "unknown")) {
+            var response = rest.exchange("/api/v1/careers/acik/jobs/urun-yoneticisi/resume-imports",
+                    HttpMethod.POST, new HttpEntity<>(json.writeValueAsString(Map.of(
+                            "noticeVersion", version, "noticeAcceptedAt", Instant.now().toString())),
+                            jsonHeaders("V".repeat(43), "notice-" + UUID.randomUUID())), String.class);
+            assertEquals(version.equals("unknown") ? 400 : 201, response.getStatusCode().value());
+            if (!version.equals("unknown")) {
+                JsonNode created = json.readTree(response.getBody());
+                assertEquals(version, created.path("noticeVersion").asText());
+                var read = rest.exchange("/api/v1/candidate/resume-imports/" + created.path("importId").asText(),
+                        HttpMethod.GET, new HttpEntity<>(jsonHeaders("V".repeat(43), "read-" + UUID.randomUUID())), String.class);
+                assertEquals(200, read.getStatusCode().value());
+                assertEquals(version, json.readTree(read.getBody()).path("noticeVersion").asText());
+            }
+        }
+    }
+
+    @Test
     void pdf_proposals_are_candidate_controlled_confirmed_and_purged() throws Exception {
         String token = "R".repeat(43);
         HttpHeaders createHeaders = jsonHeaders(token, "create-" + UUID.randomUUID());
         String createBody = """
-                {"noticeVersion":"candidate-resume-import-v1","noticeAcceptedAt":"%s"}
+                {"noticeVersion":"candidate-resume-import-v2","noticeAcceptedAt":"%s"}
                 """.formatted(Instant.now());
         ResponseEntity<String> create = rest.exchange(
                 "/api/v1/careers/acik/jobs/urun-yoneticisi/resume-imports",
@@ -79,6 +100,7 @@ class ResumeImportApiTest {
         String importId = created.path("importId").asText();
         assertTrue(importId.startsWith("ri_"));
         assertEquals("ACTIVE", created.path("state").asText());
+        assertEquals("candidate-resume-import-v2", created.path("noticeVersion").asText());
         assertEquals(0, created.path("version").asInt());
 
         byte[] pdf = pdf(

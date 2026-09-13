@@ -43,6 +43,13 @@ public final class ApplicationIntakeService {
     public static final String EVALUATION_POLICY_VERSION = "structured-evaluation-v1";
 
     public static final String NOTICE_VERSION = "kvkk-application-v1";
+    public static final String POLICY_NOTICE_VERSION = "kvkk-application-v2";
+
+    /** v2 changes the acknowledgement only; the published v1 legal terms are unchanged. */
+    public static boolean noticeMatchesJob(String jobVersion, String acceptedVersion) {
+        return java.util.Objects.equals(jobVersion, acceptedVersion)
+                || (NOTICE_VERSION.equals(jobVersion) && POLICY_NOTICE_VERSION.equals(acceptedVersion));
+    }
     private static final Pattern IDEMPOTENCY = Pattern.compile("[A-Za-z0-9._:-]{16,128}");
     private static final Pattern PUBLIC_REF = Pattern.compile("app_[A-Za-z0-9_-]{24}");
     private static final Pattern CANDIDATE_ACCESS = Pattern.compile("[A-Za-z0-9_-]{43}");
@@ -539,6 +546,11 @@ public final class ApplicationIntakeService {
         this.realCandidateDataAllowed = realCandidateDataAllowed;
     }
 
+    /** Read-only projection of the same flag used by submission validation. */
+    public String candidateDataMode() {
+        return realCandidateDataAllowed ? "real-allowed" : "synthetic-only";
+    }
+
     public Outcome<List<JobPosting>> listPublishedJobs() {
         return store.listPublishedJobs(publicTenantId);
     }
@@ -900,7 +912,9 @@ public final class ApplicationIntakeService {
                     && !ApplicationQuestion.OPTION_ID.matcher(answer.optionId()).matches())
                 return invalid("answers.optionId biçimi geçersiz");
         }
-        if (!NOTICE_VERSION.equals(value.noticeVersion())) return invalid("noticeVersion güncel değil");
+        if (!NOTICE_VERSION.equals(value.noticeVersion())
+                && !POLICY_NOTICE_VERSION.equals(value.noticeVersion()))
+            return invalid("noticeVersion güncel değil");
         if (value.noticeAcceptedAt() == null || value.noticeAcceptedAt().isBlank())
             return invalid("noticeAcceptedAt ISO-8601 olmalı");
         try {

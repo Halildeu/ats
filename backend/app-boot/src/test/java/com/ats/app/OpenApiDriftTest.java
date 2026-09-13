@@ -276,11 +276,17 @@ class OpenApiDriftTest {
                     schemas.path(name).path("additionalProperties").asBoolean(true), name);
         }
         org.junit.jupiter.api.Assertions.assertEquals(
-                java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
+                java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION,
+                        ApplicationIntakeService.POLICY_NOTICE_VERSION),
                 textValues(schemas.path("ApplicationSubmitRequest").path("properties")
                         .path("noticeVersion").path("enum")));
         org.junit.jupiter.api.Assertions.assertTrue(
                 schemas.path("PublicJobResponse").path("properties").has("applicationFields"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                textValues(schemas.path("PublicJobResponse").path("required"))
+                        .contains("candidateDataPolicy"));
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of("synthetic-only", "real-allowed"),
+                textValues(schemas.path("CandidateDataPolicy").path("properties").path("mode").path("enum")));
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.Set.of(ApplicationIntakeService.NOTICE_VERSION),
                 textValues(schemas.path("PublicJobResponse").path("properties")

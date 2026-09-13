@@ -52,6 +52,7 @@ import java.util.regex.Pattern;
 public final class ResumeImportService implements AutoCloseable {
 
     public static final String NOTICE_VERSION = "candidate-resume-import-v1";
+    public static final String POLICY_NOTICE_VERSION = "candidate-resume-import-v2";
     public static final Duration UPLOAD_WINDOW = Duration.ofMinutes(30);
     public static final Duration IMPORT_TTL = Duration.ofHours(24);
     public static final Duration PARSE_TIMEOUT = Duration.ofSeconds(15);
@@ -332,7 +333,7 @@ public final class ResumeImportService implements AutoCloseable {
         if (!validAccess(candidateAccessToken) || !validKey(idempotencyKey)) {
             return Outcome.fail(OutcomeCode.INVALID, "candidate access/idempotency anahtarı geçersiz");
         }
-        if (!NOTICE_VERSION.equals(noticeVersion)) {
+        if (!NOTICE_VERSION.equals(noticeVersion) && !POLICY_NOTICE_VERSION.equals(noticeVersion)) {
             return Outcome.fail(OutcomeCode.INVALID, "CV import aydınlatma sürümü güncel değil");
         }
         Outcome<Instant> accepted = recentInstant(noticeAcceptedAt, Duration.ofHours(24));
