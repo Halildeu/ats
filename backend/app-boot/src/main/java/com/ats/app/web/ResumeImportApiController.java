@@ -58,7 +58,8 @@ class ResumeImportApiController {
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record CreateBody(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                    allowableValues = {ResumeImportService.NOTICE_VERSION}) String noticeVersion,
+                    allowableValues = {ResumeImportService.NOTICE_VERSION,
+                            ResumeImportService.POLICY_NOTICE_VERSION}) String noticeVersion,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String noticeAcceptedAt) {}
 
     @Schema(name = "ResumeFieldMutationRequest",

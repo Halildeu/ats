@@ -34,6 +34,35 @@ class ApplicationIntakeServiceTest {
     private static final String CANDIDATE_ACCESS = "A".repeat(43);
 
     @Test
+    void policy_projection_and_versioned_receipts_do_not_relax_data_validation() {
+        assertTrue(ApplicationIntakeService.noticeMatchesJob("kvkk-application-v1", "kvkk-application-v2"));
+        assertFalse(ApplicationIntakeService.noticeMatchesJob("future-terms", "kvkk-application-v2"));
+        assertFalse(ApplicationIntakeService.noticeMatchesJob("kvkk-application-v1", "future-terms"));
+        for (boolean realAllowed : List.of(false, true)) {
+            for (String version : List.of(ApplicationIntakeService.NOTICE_VERSION,
+                    ApplicationIntakeService.POLICY_NOTICE_VERSION, "unknown")) {
+                for (String email : List.of("candidate@example.test", "candidate@example.com")) {
+                    CapturingStore store = new CapturingStore();
+                    var service = new ApplicationIntakeService(store, new TenantId("test-tenant"),
+                            Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(), realAllowed);
+                    assertEquals(realAllowed ? "real-allowed" : "synthetic-only",
+                            service.candidateDataMode());
+                    var value = new ApplicationIntakeService.Submission(
+                            "Synthetic Candidate", email, "+905550000000", "Istanbul", null, null,
+                            "Synthetic product experience", "Five years", "Degree", List.of("Product"),
+                            null, version, NOW.toString(), NOW.toString());
+                    boolean expected = !version.equals("unknown")
+                            && (realAllowed || email.endsWith(".test"));
+                    assertEquals(expected, service.submit("urun-yoneticisi", "idem-key-12345678",
+                            CANDIDATE_ACCESS, value).isOk());
+                    if (expected) assertEquals(version, store.command.submission().noticeVersion());
+                    else assertEquals(null, store.command);
+                }
+            }
+        }
+    }
+
+    @Test
     void submit_normalizes_and_never_accepts_caller_tenant_or_status() {
         CapturingStore store = new CapturingStore();
         var service = service(store);

@@ -93,6 +93,11 @@ class ApplicationApiTest {
         ResponseEntity<String> jobs = rest.getForEntity("/api/v1/jobs", String.class);
         assertEquals(200, jobs.getStatusCode().value());
         assertEquals(3, objectMapper.readTree(jobs.getBody()).size());
+        JsonNode policy = objectMapper.readTree(jobs.getBody()).get(0).path("candidateDataPolicy");
+        assertEquals("synthetic-only", policy.path("mode").asText());
+        assertEquals("kvkk-application-v2", policy.path("applicationNoticeVersion").asText());
+        assertEquals("candidate-resume-import-v2", policy.path("resumeImportNoticeVersion").asText());
+        assertEquals(3, policy.size(), "public policy contains no credentials or tenant internals");
         assertFalse(jobs.getBody().contains("SIZMAMALI"), "public katalog tenant disina sizmaz");
         ResponseEntity<String> canonicalJobs = rest.getForEntity(
                 "/api/v1/careers/acik/jobs", String.class);
@@ -103,7 +108,8 @@ class ApplicationApiTest {
                 "/api/v1/careers/bilinmeyen/jobs", String.class).getStatusCode().value());
 
         String acceptedAt = Instant.now().toString();
-        String payload = payload("Deniz Sentetik", acceptedAt);
+        String payload = payload("Deniz Sentetik", acceptedAt)
+                .replace("kvkk-application-v1", "kvkk-application-v2");
         String idempotency = "idem-" + UUID.randomUUID();
         String submittedAccessToken = "A".repeat(43);
         HttpHeaders submitHeaders = json();
@@ -119,6 +125,14 @@ class ApplicationApiTest {
         assertTrue(publicRef.startsWith("app_"));
         assertEquals(submittedAccessToken, accessToken);
         assertEquals("SUBMITTED", receipt.path("status").asText());
+        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT notice_version FROM ats_application WHERE public_ref = ?")) {
+            ps.setString(1, publicRef);
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals("kvkk-application-v2", rs.getString(1));
+            }
+        }
 
         HttpHeaders candidateHeaders = new HttpHeaders();
         candidateHeaders.set("X-ATS-Candidate-Access", accessToken);

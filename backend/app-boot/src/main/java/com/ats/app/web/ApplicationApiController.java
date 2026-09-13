@@ -72,7 +72,20 @@ class ApplicationApiController {
                     schema = @Schema(implementation = PublicJobQuestion.class))
             List<PublicJobQuestion> questions,
             @Schema(allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
-            String noticeVersion) {}
+            String noticeVersion,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+            CandidateDataPolicyDto candidateDataPolicy) {}
+
+    @Schema(name = "CandidateDataPolicy", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    record CandidateDataPolicyDto(
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    allowableValues = {"synthetic-only", "real-allowed"}) String mode,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    allowableValues = {ApplicationIntakeService.POLICY_NOTICE_VERSION})
+            String applicationNoticeVersion,
+            @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    allowableValues = {com.ats.application.ResumeImportService.POLICY_NOTICE_VERSION})
+            String resumeImportNoticeVersion) {}
 
     /**
      * #240 B: adayın gördüğü ilana özel soru. Kimlikler sunucudan ve HER ZAMAN dolu;
@@ -123,7 +136,7 @@ class ApplicationApiController {
     private ResponseEntity<?> jobs(Outcome<List<JobPosting>> out) {
         if (out instanceof Outcome.Fail<List<JobPosting>> fail) return OutcomeHttp.fail(fail);
         return ResponseEntity.ok(((Outcome.Ok<List<JobPosting>>) out).value().stream()
-                .map(ApplicationApiController::jobDto).toList());
+                .map(this::jobDto).toList());
     }
 
     @GetMapping("/api/v1/jobs/{jobSlug}")
@@ -209,7 +222,8 @@ class ApplicationApiController {
             @Schema(maxLength = 4000) String certifications,
             String note,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-                    allowableValues = {ApplicationIntakeService.NOTICE_VERSION})
+                    allowableValues = {ApplicationIntakeService.NOTICE_VERSION,
+                            ApplicationIntakeService.POLICY_NOTICE_VERSION})
             String noticeVersion,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String noticeAcceptedAt,
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String accuracyConfirmedAt,
@@ -778,10 +792,12 @@ class ApplicationApiController {
         };
     }
 
-    private static JobDto jobDto(JobPosting job) {
+    private JobDto jobDto(JobPosting job) {
         return new JobDto(job.slug(), job.title(), job.team(), job.location(), job.mode(),
                 job.employmentType(), job.summary(), job.highlights(), job.applicationFields(),
-                publicQuestions(job), job.noticeVersion());
+                publicQuestions(job), job.noticeVersion(), new CandidateDataPolicyDto(
+                        service.candidateDataMode(), ApplicationIntakeService.POLICY_NOTICE_VERSION,
+                        com.ats.application.ResumeImportService.POLICY_NOTICE_VERSION));
     }
 
     /** #240 B: soru sırası gösterim sırasıdır; kimlikler aynen geçer, uyarılar geçmez. */

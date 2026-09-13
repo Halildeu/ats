@@ -114,7 +114,8 @@ public final class PostgresApplicationStore implements ApplicationStore {
                     c.rollback();
                     return Outcome.fail(OutcomeCode.NOT_FOUND, "ilan bulunamadı");
                 }
-                if (!job.noticeVersion().equals(command.submission().noticeVersion())) {
+                if (!com.ats.application.ApplicationIntakeService.noticeMatchesJob(
+                        job.noticeVersion(), command.submission().noticeVersion())) {
                     c.rollback();
                     return Outcome.fail(OutcomeCode.INVALID,
                             "ilan aydınlatma sürümü değişti; formu yenileyin");
