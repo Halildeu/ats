@@ -60,8 +60,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * <p>v13 (#213, 213-E): {@code yetenekler} beceri başlığı sözlüğe eklendi. v12'de bu başlık
      * tanınmıyor, beceri içeriği açık kalan bir önceki bölüme (eğitim, sertifika, dil)
      * ekleniyordu.
+     *
+     * <p>v14 (#213, 213-D): sol yan çubuk adayı sayfanın SOL KENARINDAN başlamalı (sağ
+     * adayın "kenardan başlar" koşulunun aynası). v13'te ana kolondaki kısa bir başlık
+     * (ör. {@code Diller}) sol adaya karışıp gerçek sol yan çubuğu reddettiriyordu; aynı
+     * iki kolonlu PDF v13'te tarih kolonunu yan çubuk seçip {@code PHONE}'a unvan yazarken
+     * v14'te kişisel alanları sol kolondan, deneyimi ana kolondan veriyor.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v13";
+    static final String VERSION = "pdfbox-3.0.5-rules-v14";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -204,6 +210,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final double SIDEBAR_START_SHARE = 0.60;
     /** Yan çubuk satırı dardır; ana kolon satırları geniştir. */
     private static final double SIDEBAR_MAX_WIDTH_SHARE = 0.25;
+    /**
+     * SOL yan çubuk satırı sayfanın sol kenarından, içerik genişliğinin bu oranı içinde
+     * BAŞLAR. {@link #SIDEBAR_START_SHARE}'in sol aynası: sağ aday kenara yakın başlamak
+     * zorundaysa sol aday da öyle olmalı; aksi hâlde ana kolonun kısa satırları sol adaya
+     * karışır (#213, 213-D).
+     */
+    private static final double LEFT_SIDEBAR_EDGE_SHARE = 0.10;
     private static final int MIN_LINES_FOR_SIDEBAR_SPLIT = 8;
     private static final int MIN_SIDEBAR_LINES = 3;
     /**
@@ -403,11 +416,18 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double sidebarMaxWidth = contentWidth * SIDEBAR_MAX_WIDTH_SHARE;
         double rightStart = minX + contentWidth * SIDEBAR_START_SHARE;
         double leftEnd = minX + contentWidth * (1 - SIDEBAR_START_SHARE);
+        double leftEdge = minX + contentWidth * LEFT_SIDEBAR_EDGE_SHARE;
 
         List<TextLine> right = lines.stream()
                 .filter(l -> l.x() >= rightStart && l.width() <= sidebarMaxWidth).toList();
+        // 213-D: sol aday yalnız sol KENARDAN başlayan satırlardan toplanır. Yalnız sağ ucu
+        // sınamak, ana kolonun kısa bir başlığını (kariyer.net: x=176 "Diller") da adaya
+        // alıyordu; adayın sağ ucu ana kolonun içine uzanınca yatay ayrışma kontrolü gerçek
+        // sol yan çubuğu reddediyor ve tarih kolonu yan çubuk seçiliyordu.
         List<TextLine> leftNarrow = lines.stream()
-                .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth).toList();
+                .filter(l -> l.x() <= leftEdge
+                        && l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth)
+                .toList();
         List<TextLine> left = restStartsRightOf(lines, leftNarrow) ? leftNarrow : List.of();
 
         List<TextLine> sidebar = pickSidebar(lines, left, right);
