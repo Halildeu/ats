@@ -56,8 +56,12 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * başlıyorsa kabul ediliyor. v10'da eklenen sol aday, tek sütunlu CV'nin kısa bölüm
      * başlıklarını yan çubuk sanıyordu; aynı PDF v11'de {@code EDUCATION}'ı
      * {@code EXPERIENCE}'a karıştırırken v12'de ayrı bölüm olarak veriyor.
+     *
+     * <p>v13 (#213, 213-E): {@code yetenekler} beceri başlığı sözlüğe eklendi. v12'de bu başlık
+     * tanınmıyor, beceri içeriği açık kalan bir önceki bölüme (eğitim, sertifika, dil)
+     * ekleniyordu.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v12";
+    static final String VERSION = "pdfbox-3.0.5-rules-v13";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -1505,8 +1509,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         // #213a: "bilgisayar bilgileri" kariyer.net'in beceri bölümü başlığı. ÇOK
         // KELİMELİ eklendi, çünkü tek başına "bilgisayar" ek toleransıyla
         // "BİLGİSAYAR MÜHENDİSLİĞİ" satırını da yakalar ve eğitim bölümünü kapatırdı.
-        add(labels, ResumeField.SKILLS, "beceriler", "yetkinlikler", "skills", "competencies",
-                "bilgisayar bilgileri", "bilgisayar bilgisi");
+        // #213 (213-E): "yetenekler" yaygın Türkçe beceri başlığı. Yalnız ÇOĞUL: ek toleransı
+        // tek yönlü olduğu için "yeteneklerim"i de kapsar, ama tekil "yetenek" eklenseydi
+        // "Yetenek Kazanımı Uzmanı" unvanı deneyim içinde başlık sayılırdı.
+        add(labels, ResumeField.SKILLS, "beceriler", "yetkinlikler", "yetenekler", "skills",
+                "competencies", "bilgisayar bilgileri", "bilgisayar bilgisi");
         add(labels, ResumeField.LANGUAGES, "diller", "yabanci dil", "languages");
         // #213a: TEKİL "sertifika" eklendi. Ek toleransı yalnız tek yöne çalışır —
         // satır token'ı sözlük etiketini UZATABİLİR, kısaltamaz. CV'de "SERTİFİKA
