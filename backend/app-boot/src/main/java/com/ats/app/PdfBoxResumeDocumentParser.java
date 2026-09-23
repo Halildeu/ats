@@ -1547,6 +1547,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         return false;
     }
 
+    /** #213 (213-F): adres satırı 81 ilden biriyse ilin resmi adı, değilse {@code null}. */
+    static String provinceOf(String line) {
+        return null;
+    }
+
     private static String normalizeLabel(String value) {
         String decomposed = Normalizer.normalize(value, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "");

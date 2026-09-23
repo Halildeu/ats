@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeDocumentParser.ParseResult;
@@ -388,6 +389,98 @@ class PdfBoxResumeDocumentParserTest {
         assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Ornek mahallesi"),
                 "sol kolonun adres icerigi deneyime KARISMAMALI: "
                         + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 (213-F, sahip kararı 2026-09-23) — adres bloğunun SON satırı 81 ilden biriyse
+     * şehir önerisi olur.
+     *
+     * <p>kariyer.net düzeninde şehir çoğu zaman ayrı bir {@code Sehir} etiketi olarak değil,
+     * {@code Adres} bloğunun son satırı olarak yazılıyor. Sahip ölçümü (21 gerçek CV): v12/v13'te
+     * şehir önerisi 0/21. Karar: yalnız son satır bir ile birebir eşleşirse (Türkçe harf
+     * katlamasıyla) düşük güvenle önerilir; adresin kendisi korumalı kalır ve hiçbir alana
+     * yazılmaz.
+     */
+    @Test
+    void the_last_address_line_proposes_the_city_when_it_is_a_province() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|Cankaya",
+                "40|706|12|false|ANKARA",
+                "40|670|17|true|Is deneyimi",
+                "40|652|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertEquals("Ankara", fields.get(ResumeField.CITY),
+                "son adres satiri il ise sehir onerilmeli; alinan: " + fields);
+        double confidence = result.proposals().stream()
+                .filter(p -> p.field() == ResumeField.CITY)
+                .mapToDouble(p -> p.provenance().confidence()).findFirst().orElse(1);
+        assertTrue(confidence < 0.60,
+                "adresten cikan sehir DUSUK guvenle onerilmeli (form 'kontrol edin' der): "
+                        + confidence);
+        assertTrue(fields.values().stream().noneMatch(v -> v.contains("Cinar Sokak")
+                        || v.contains("Cankaya")),
+                "adresin kendisi hicbir alana yazilmamali: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Kidemli Urun Uzmani"),
+                "adres blogu sonraki bolumu bozmamali: " + fields);
+    }
+
+    /** 213-F: son satır il değilse (ilçe, sokak, posta kodu) tahmin yapılmaz; şehir boş kalır. */
+    @Test
+    void an_address_ending_in_a_district_proposes_no_city() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|Cankaya",
+                "40|688|17|true|Is deneyimi",
+                "40|670|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.CITY),
+                "ilceden il cikarimi yapilmamali; alinan: " + fields);
+    }
+
+    /** 213-F: açık {@code Sehir} etiketi adresten çıkarımdan önce gelir; iki değer birleşmez. */
+    @Test
+    void an_explicit_city_label_wins_over_the_address() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|Ankara",
+                "40|700|12|true|Sehir",
+                "40|682|12|false|Istanbul",
+                "40|646|17|true|Is deneyimi",
+                "40|628|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Istanbul", fields.get(ResumeField.CITY),
+                "acik etiket kazanmali, adres degeri eklenmemeli; alinan: " + fields);
+    }
+
+    /**
+     * 213-F: il eşleşmesi Türkçe harf katlamasıyla birebir; kısaltma ve eski ad tahmini yok.
+     *
+     * <p>PDF fixture'ları Helvetica (WinAnsi) kullandığı için {@code İ}/{@code Ş} içeremez; bu
+     * yüzden katlama doğrudan sınanıyor.
+     */
+    @Test
+    void province_matching_folds_turkish_letters_but_never_guesses() {
+        assertEquals("İstanbul", PdfBoxResumeDocumentParser.provinceOf("İSTANBUL"));
+        assertEquals("İstanbul", PdfBoxResumeDocumentParser.provinceOf("istanbul"));
+        assertEquals("Şanlıurfa", PdfBoxResumeDocumentParser.provinceOf("SANLIURFA"));
+        assertEquals("Ankara", PdfBoxResumeDocumentParser.provinceOf("Ankara."));
+        assertNull(PdfBoxResumeDocumentParser.provinceOf("Urfa"), "kisa ad tahmin edilmez");
+        assertNull(PdfBoxResumeDocumentParser.provinceOf("Antep"), "kisa ad tahmin edilmez");
+        assertNull(PdfBoxResumeDocumentParser.provinceOf("Cankaya"), "ilce il sayilmaz");
+        assertNull(PdfBoxResumeDocumentParser.provinceOf("06690 Ankara"), "posta kodlu satir birebir degil");
+        assertNull(PdfBoxResumeDocumentParser.provinceOf("Ankara / Turkiye"), "birebir degil");
     }
 
     /**
