@@ -65,7 +65,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * adayın "kenardan başlar" koşulunun aynası). v13'te ana kolondaki kısa bir başlık
      * (ör. {@code Diller}) sol adaya karışıp gerçek sol yan çubuğu reddettiriyordu; aynı
      * iki kolonlu PDF v13'te tarih kolonunu yan çubuk seçip {@code PHONE}'a unvan yazarken
-     * v14'te kişisel alanları sol kolondan, deneyimi ana kolondan veriyor.
+     * v14'te kişisel alanları sol kolondan, deneyimi ana kolondan veriyor. Kenar filtresi
+     * yalnız YEDEK: v13'ün sol adayı geçerliyse o kullanılır (sahip regresyonu: geniş,
+     * girintili bir sol kolon kenar filtresiyle kayboluyor, deneyim yan çubuğa çekiliyordu);
+     * kenar adayı da başlık/tarih oluğuysa yan çubuk sayılmaz (başlıklar içeriklerinden
+     * kopuyordu).
      */
     static final String VERSION = "pdfbox-3.0.5-rules-v14";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
@@ -420,15 +424,27 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
         List<TextLine> right = lines.stream()
                 .filter(l -> l.x() >= rightStart && l.width() <= sidebarMaxWidth).toList();
-        // 213-D: sol aday yalnız sol KENARDAN başlayan satırlardan toplanır. Yalnız sağ ucu
-        // sınamak, ana kolonun kısa bir başlığını (kariyer.net: x=176 "Diller") da adaya
-        // alıyordu; adayın sağ ucu ana kolonun içine uzanınca yatay ayrışma kontrolü gerçek
-        // sol yan çubuğu reddediyor ve tarih kolonu yan çubuk seçiliyordu.
+        // 213-D: önce v12 adayı (sağ ucu ve genişliği dar olan satırlar). Geçerliyse o
+        // kullanılır: sahip regresyonunda geniş, girintili bir sol kolonu yalnız bu aday doğru
+        // tutuyor; kenar filtresi girintili satırları dışarıda bırakıp adayı geçersiz kılınca
+        // sağ aday kazanıyor ve deneyim yan çubuğa çekiliyordu.
         List<TextLine> leftNarrow = lines.stream()
-                .filter(l -> l.x() <= leftEdge
-                        && l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth)
+                .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth)
                 .toList();
-        List<TextLine> left = restStartsRightOf(lines, leftNarrow) ? leftNarrow : List.of();
+        List<TextLine> left;
+        if (restStartsRightOf(lines, leftNarrow)) {
+            left = leftNarrow;
+        } else {
+            // Yedek: yalnız sol KENARDAN başlayan satırlar. v12 adayına ana kolonun kısa bir
+            // başlığı (kariyer.net: x=176 "Diller") karışınca adayın sağ ucu ana kolonun içine
+            // uzanıyor, yatay ayrışma kontrolü gerçek sol yan çubuğu reddediyor ve tarih kolonu
+            // yan çubuk seçiliyordu.
+            List<TextLine> leftEdgeOnly = leftNarrow.stream()
+                    .filter(l -> l.x() <= leftEdge).toList();
+            left = restStartsRightOf(lines, leftEdgeOnly)
+                            && !isHeadingOrDateGutter(leftEdgeOnly, bodyFontSize(lines))
+                    ? leftEdgeOnly : List.of();
+        }
 
         List<TextLine> sidebar = pickSidebar(lines, left, right);
         if (sidebar == null) return List.of(lines);
@@ -507,6 +523,29 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double[] restStarts = all.stream().filter(l -> !candidate.contains(l))
                 .mapToDouble(TextLine::x).toArray();
         return restStarts.length > 0 && median(restStarts) > candidateRight;
+    }
+
+    /**
+     * #213 (213-D, sahip regresyonu): sol kenardaki aday bir başlık/tarih OLUĞU mu?
+     *
+     * <p>Bazı CV'ler bölüm başlıklarını, tarih aralıklarını ve madde işaretlerini sol kenara,
+     * içeriklerini sağa yazar. Bu oluk dar ve kenarda olduğu için yan çubuk ölçütlerini geçer;
+     * ayrı akışa alınınca başlıklar içeriklerinden kopar (gerçek 6 sayfalık CV: eğitim
+     * 342 → 26 karakter, beceriler ve diller kayıp). Gerçek bir yan çubuk ise kendi içeriğini
+     * taşır (kariyer.net kişisel kolonu: etiket + değer).
+     *
+     * <p>Satırların yarısından fazlası içerik taşımıyorsa oluk sayılır: madde işareti
+     * ({@code ≤ 2} karakter), harfsiz satır (tarih aralığı, numara) ya da gövdeden büyük
+     * başlık.
+     */
+    private static boolean isHeadingOrDateGutter(List<TextLine> candidate, double body) {
+        long markers = candidate.stream().filter(line -> {
+            String text = line.text().strip();
+            return text.length() <= 2
+                    || text.codePoints().noneMatch(Character::isLetter)
+                    || (hasHeadingShape(text) && isLargerThanBody(line, body));
+        }).count();
+        return markers * 2 > candidate.size();
     }
 
     private static double medianWidth(List<TextLine> lines) {
