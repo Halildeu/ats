@@ -391,6 +391,144 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #213 (213-D, 2026-09-15) — sol yan çubuk, ana kolonda KISA bir başlık olunca kayboluyor.
+     *
+     * <p>Sentetik iki kolon kabul PDF'i (v4, kariyer.net #1 yerleşimi) v12'de tarih kolonunu
+     * yan çubuk seçti: {@code PHONE} = "Kıdemli Ürün Uzmanı", {@code FULL_NAME} ve
+     * {@code EXPERIENCE} hiç oluşmadı. Neden: sol aday yalnız {@code x + width <= leftEnd} ve
+     * genişlikle toplanıyor, satırın NEREDEN BAŞLADIĞI sınanmıyor. Ana kolondaki kısa
+     * {@code Diller} başlığı (x=176, sağ ucu ≈218 < leftEnd ≈241) sol adaya giriyor;
+     * {@link PdfBoxResumeDocumentParser}'ın yatay ayrışma kontrolü adayın sağ ucunu 218'e
+     * çıkmış görüyor, geri kalanın başlangıç ortancası 176 kalıyor ve gerçek yan çubuk
+     * reddediliyor. Sağ adayın zaten "kenardan başlar" koşulu var; sol adayda aynası eksik.
+     *
+     * <p>Fixture yukarıdaki {@code a_left_hand_narrow_column_is_treated_as_the_sidebar} ile
+     * aynı üç kolon; tek fark ana kolonun sonundaki kısa başlık. Tamamen sentetik.
+     */
+    @Test
+    void a_short_main_column_heading_does_not_hide_the_left_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                // dar kişisel kolon — SOLDA, etiket üstte / değer altta
+                "15|740|13|true|KISISEL",
+                "15|720|11|true|Isim",
+                "15|700|11|false|Deniz Kabul Testi",
+                "15|680|11|true|Telefon numarasi",
+                "15|660|11|false|+90 555 000 00 00",
+                "15|640|11|true|E-posta",
+                "15|620|9|false|deniz.kabultesti@example.test",
+                "15|600|11|true|Ilgi Alanlari",
+                "15|580|11|false|Satranc, doga yuruyusu",
+                // geniş ana kolon — SAĞDA
+                "176|744|17|true|Is deneyimi",
+                "176|718|12|true|Kidemli Urun Uzmani",
+                "176|701|12|false|Ornek Teknoloji AS",
+                "176|684|12|false|Urun yolculugunu uctan uca kurdu.",
+                "176|660|12|true|Urun Uzmani",
+                "176|643|12|false|Baska Yazilim Ltd.",
+                "176|626|12|false|Yol haritasini yuruttu.",
+                // kısa ana kolon başlığı: sağ ucu sol adayın leftEnd sınırının içinde
+                "176|596|17|true|Diller",
+                "176|572|12|false|Ingilizce (ileri)",
+                // tarih kolonu — EN SAĞDA
+                "486|718|10|false|Eyl 2022 - Mar 2024",
+                "486|660|10|false|Oca 2019 - Agu 2022");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Deniz Kabul Testi", fields.get(ResumeField.FULL_NAME),
+                "sol kolondaki isim okunmali; alinan: " + fields);
+        assertEquals("+90 555 000 00 00", fields.get(ResumeField.PHONE),
+                "telefon sol kolondan gelmeli, ana kolondaki unvan telefon SAYILMAMALI; alinan: "
+                        + fields);
+        assertTrue(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Kidemli Urun Uzmani"),
+                "sag kolondaki deneyim bolumu acilmali; alinan: " + fields);
+        assertFalse(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Deniz Kabul Testi"),
+                "sol kolonun icerigi deneyime KARISMAMALI: " + fields.get(ResumeField.EXPERIENCE));
+    }
+
+    /**
+     * #213 (213-D, sahip regresyonu 1) — sol kenardaki başlık/tarih OLUĞU yan çubuk değildir.
+     *
+     * <p>Gerçek 6 sayfalık bir CV'de (#270 incelemesi) bölüm başlıkları ve tarih aralıkları sol
+     * kenarda ({@code x≈24}), içerikleri sağda ({@code x≈152}) duruyordu. v12 bu sayfayı tek akış
+     * okuyordu: ana kolonun kısa satırları sol adaya girip yatay ayrışma kontrolünü
+     * geçirmiyordu. Sol kenar filtresi o kısa satırları dışarıda bırakınca oluk "yan çubuk"
+     * oldu; başlıklar içeriklerinden koptu (ölçüm: eğitim 342 → 26 karakter, beceriler ve
+     * diller kayboldu).
+     *
+     * <p>Fixture o şeklin sentetik karşılığı: sol olukta yalnız büyük başlıklar ve harfsiz tarih
+     * aralıkları; ana kolonda uzun ve kısa içerik satırları.
+     */
+    @Test
+    void a_left_gutter_of_headings_and_dates_is_not_a_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                "24|752|18|true|Egitim",
+                "24|730|10|false|2012 - 2016",
+                "152|734|12|false|Ornek Universitesi, Bilgisayar Muhendisligi lisans programi",
+                "152|717|12|false|Mezuniyet projesi dagitik sistemler uzerine calisma",
+                "24|696|10|false|2008 - 2012",
+                "152|700|12|false|Ornek Anadolu Lisesi, Fen Bilimleri",
+                "24|662|18|true|Beceriler",
+                "152|644|12|false|Java, Spring, PostgreSQL, Kubernetes, React ve TypeScript",
+                "152|627|12|false|Python",
+                "24|596|18|true|Diller",
+                "152|578|12|false|Ingilizce",
+                "152|561|12|false|Almanca");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.getOrDefault(ResumeField.EDUCATION, "").contains("Ornek Universitesi"),
+                "egitim basligi icerigiyle ayni akista kalmali; alinan: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.SKILLS, "").contains("Java, Spring"),
+                "beceriler kaybolmamali; alinan: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.LANGUAGES, "").contains("Ingilizce"),
+                "diller kaybolmamali; alinan: " + fields);
+    }
+
+    /**
+     * #213 (213-D, sahip regresyonu 2) — v12'nin geçerli sol yan çubuğu kenar filtresiyle
+     * kaybolmamalı.
+     *
+     * <p>Gerçek 7 sayfalık yoğun bir CV'de (#270 incelemesi) v12 geniş bir sol kolonu
+     * ({@code x=[24..243]}) yan çubuk seçiyordu. O kolonun satırlarının çoğu girintili
+     * başlıyor; sol kenar filtresi yalnız kenardakileri bırakınca aday yatay ayrışma
+     * kontrolünden düştü ve SAĞ aday kazandı: ana kolonun sağa yaslı satırları yan çubuk oldu,
+     * deneyim 1361 karakterden hiç yoka indi.
+     *
+     * <p>Fixture: sol kolon (kenarda 4, girintili 30 satır), ana kolon başlığı ve geniş
+     * satırları, sağa yaslı dar deneyim satırları.
+     */
+    @Test
+    void a_valid_v12_left_sidebar_is_not_lost_to_the_edge_filter() throws Exception {
+        List<String> spec = new ArrayList<>();
+        // Sol kolon: y ızgarası ana kolondan 6pt kaydırılmış, taban çizgileri karışmasın.
+        spec.add("24|764|12|true|Beceriler");
+        for (int i = 1; i <= 3; i++) {
+            spec.add("24|" + (764 - 12 * i) + "|10|false|Sentetik yetkinlik " + i);
+        }
+        for (int i = 4; i <= 33; i++) {
+            spec.add("100|" + (764 - 12 * i) + "|10|false|Alt yetkinlik alani " + i);
+        }
+        // Ana kolon: başlık, sonra sağa yaslı dar deneyim satırları ve geniş satırlar.
+        spec.add("260|770|14|true|Is Deneyimi");
+        for (int i = 1; i <= 10; i++) {
+            spec.add("360|" + (770 - 12 * i) + "|10|false|Sentetik gorev " + i);
+        }
+        for (int i = 11; i <= 23; i++) {
+            spec.add("260|" + (770 - 12 * i)
+                    + "|10|false|Sentetik proje aciklamasi ve olculebilir teslimat sonucu " + i);
+        }
+
+        Map<ResumeField, String> fields = parse(positionedPdf(spec.toArray(String[]::new)));
+
+        String experience = fields.getOrDefault(ResumeField.EXPERIENCE, "");
+        assertTrue(experience.contains("Sentetik gorev 1"),
+                "deneyim satirlari yan cubuga CEKILMEMELI; alinan: " + fields);
+        assertTrue(experience.contains("olculebilir teslimat sonucu 11"),
+                "deneyim bolumu ana kolonun genis satirlarini tasimali; alinan: " + fields);
+    }
+
+    /**
      * #213 (213-D) — {@code Yetenekler} yaygın bir Türkçe beceri başlığı ama sözlükte yoktu.
      *
      * <p>Sentetik kariyer.net iki kolon PDF'inde ve sahibin gerçek CV regresyonunda (ats#270
@@ -637,7 +775,7 @@ class PdfBoxResumeDocumentParserTest {
         assertTrue(outcome.isOk(), "parse basarili olmali");
         ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
 
-        assertEquals("pdfbox-3.0.5-rules-v13", PdfBoxResumeDocumentParser.VERSION,
+        assertEquals("pdfbox-3.0.5-rules-v14", PdfBoxResumeDocumentParser.VERSION,
                 "davranis degisti; provenance surumu artmali (daralma da davranis degisikligidir)");
         assertEquals(PdfBoxResumeDocumentParser.VERSION, result.parserVersion(),
                 "ParseResult.parserVersion sinif sabitiyle ayni olmali");
@@ -939,10 +1077,10 @@ class PdfBoxResumeDocumentParserTest {
                 "daralmis davranis: EXPERIENCE korunmali; alinan: " + fields);
 
         // ...ve o davranisi raporlayan surum, ayirt edilebilir olmali
-        assertEquals("pdfbox-3.0.5-rules-v13", result.parserVersion(),
+        assertEquals("pdfbox-3.0.5-rules-v14", result.parserVersion(),
                 "degisen davranis ONCEKI surum kimligiyle raporlanmamali");
         assertTrue(result.proposals().stream()
-                        .allMatch(pr -> "pdfbox-3.0.5-rules-v13"
+                        .allMatch(pr -> "pdfbox-3.0.5-rules-v14"
                                 .equals(pr.provenance().parserVersion())),
                 "her kalici onerinin provenance surumu de ayirt edilebilir olmali");
     }

@@ -60,8 +60,18 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * <p>v13 (#213, 213-E): {@code yetenekler} beceri başlığı sözlüğe eklendi. v12'de bu başlık
      * tanınmıyor, beceri içeriği açık kalan bir önceki bölüme (eğitim, sertifika, dil)
      * ekleniyordu.
+     *
+     * <p>v14 (#213, 213-D): sol yan çubuk adayı sayfanın SOL KENARINDAN başlamalı (sağ
+     * adayın "kenardan başlar" koşulunun aynası). v13'te ana kolondaki kısa bir başlık
+     * (ör. {@code Diller}) sol adaya karışıp gerçek sol yan çubuğu reddettiriyordu; aynı
+     * iki kolonlu PDF v13'te tarih kolonunu yan çubuk seçip {@code PHONE}'a unvan yazarken
+     * v14'te kişisel alanları sol kolondan, deneyimi ana kolondan veriyor. Kenar filtresi
+     * yalnız YEDEK: v13'ün sol adayı geçerliyse o kullanılır (sahip regresyonu: geniş,
+     * girintili bir sol kolon kenar filtresiyle kayboluyor, deneyim yan çubuğa çekiliyordu);
+     * kenar adayı da başlık/tarih oluğuysa yan çubuk sayılmaz (başlıklar içeriklerinden
+     * kopuyordu).
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v13";
+    static final String VERSION = "pdfbox-3.0.5-rules-v14";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -204,6 +214,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final double SIDEBAR_START_SHARE = 0.60;
     /** Yan çubuk satırı dardır; ana kolon satırları geniştir. */
     private static final double SIDEBAR_MAX_WIDTH_SHARE = 0.25;
+    /**
+     * SOL yan çubuk satırı sayfanın sol kenarından, içerik genişliğinin bu oranı içinde
+     * BAŞLAR. {@link #SIDEBAR_START_SHARE}'in sol aynası: sağ aday kenara yakın başlamak
+     * zorundaysa sol aday da öyle olmalı; aksi hâlde ana kolonun kısa satırları sol adaya
+     * karışır (#213, 213-D).
+     */
+    private static final double LEFT_SIDEBAR_EDGE_SHARE = 0.10;
     private static final int MIN_LINES_FOR_SIDEBAR_SPLIT = 8;
     private static final int MIN_SIDEBAR_LINES = 3;
     /**
@@ -403,12 +420,31 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double sidebarMaxWidth = contentWidth * SIDEBAR_MAX_WIDTH_SHARE;
         double rightStart = minX + contentWidth * SIDEBAR_START_SHARE;
         double leftEnd = minX + contentWidth * (1 - SIDEBAR_START_SHARE);
+        double leftEdge = minX + contentWidth * LEFT_SIDEBAR_EDGE_SHARE;
 
         List<TextLine> right = lines.stream()
                 .filter(l -> l.x() >= rightStart && l.width() <= sidebarMaxWidth).toList();
+        // 213-D: önce v12 adayı (sağ ucu ve genişliği dar olan satırlar). Geçerliyse o
+        // kullanılır: sahip regresyonunda geniş, girintili bir sol kolonu yalnız bu aday doğru
+        // tutuyor; kenar filtresi girintili satırları dışarıda bırakıp adayı geçersiz kılınca
+        // sağ aday kazanıyor ve deneyim yan çubuğa çekiliyordu.
         List<TextLine> leftNarrow = lines.stream()
-                .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth).toList();
-        List<TextLine> left = restStartsRightOf(lines, leftNarrow) ? leftNarrow : List.of();
+                .filter(l -> l.x() + l.width() <= leftEnd && l.width() <= sidebarMaxWidth)
+                .toList();
+        List<TextLine> left;
+        if (restStartsRightOf(lines, leftNarrow)) {
+            left = leftNarrow;
+        } else {
+            // Yedek: yalnız sol KENARDAN başlayan satırlar. v12 adayına ana kolonun kısa bir
+            // başlığı (kariyer.net: x=176 "Diller") karışınca adayın sağ ucu ana kolonun içine
+            // uzanıyor, yatay ayrışma kontrolü gerçek sol yan çubuğu reddediyor ve tarih kolonu
+            // yan çubuk seçiliyordu.
+            List<TextLine> leftEdgeOnly = leftNarrow.stream()
+                    .filter(l -> l.x() <= leftEdge).toList();
+            left = restStartsRightOf(lines, leftEdgeOnly)
+                            && !isHeadingOrDateGutter(leftEdgeOnly, bodyFontSize(lines))
+                    ? leftEdgeOnly : List.of();
+        }
 
         List<TextLine> sidebar = pickSidebar(lines, left, right);
         if (sidebar == null) return List.of(lines);
@@ -487,6 +523,29 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double[] restStarts = all.stream().filter(l -> !candidate.contains(l))
                 .mapToDouble(TextLine::x).toArray();
         return restStarts.length > 0 && median(restStarts) > candidateRight;
+    }
+
+    /**
+     * #213 (213-D, sahip regresyonu): sol kenardaki aday bir başlık/tarih OLUĞU mu?
+     *
+     * <p>Bazı CV'ler bölüm başlıklarını, tarih aralıklarını ve madde işaretlerini sol kenara,
+     * içeriklerini sağa yazar. Bu oluk dar ve kenarda olduğu için yan çubuk ölçütlerini geçer;
+     * ayrı akışa alınınca başlıklar içeriklerinden kopar (gerçek 6 sayfalık CV: eğitim
+     * 342 → 26 karakter, beceriler ve diller kayıp). Gerçek bir yan çubuk ise kendi içeriğini
+     * taşır (kariyer.net kişisel kolonu: etiket + değer).
+     *
+     * <p>Satırların yarısından fazlası içerik taşımıyorsa oluk sayılır: madde işareti
+     * ({@code ≤ 2} karakter), harfsiz satır (tarih aralığı, numara) ya da gövdeden büyük
+     * başlık.
+     */
+    private static boolean isHeadingOrDateGutter(List<TextLine> candidate, double body) {
+        long markers = candidate.stream().filter(line -> {
+            String text = line.text().strip();
+            return text.length() <= 2
+                    || text.codePoints().noneMatch(Character::isLetter)
+                    || (hasHeadingShape(text) && isLargerThanBody(line, body));
+        }).count();
+        return markers * 2 > candidate.size();
     }
 
     private static double medianWidth(List<TextLine> lines) {
