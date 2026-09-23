@@ -391,6 +391,56 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #213 (213-D) — {@code Yetenekler} yaygın bir Türkçe beceri başlığı ama sözlükte yoktu.
+     *
+     * <p>Sentetik kariyer.net iki kolon PDF'inde ve sahibin gerçek CV regresyonunda (ats#270
+     * incelemesi, iki CV) görüldü: başlık tanınmıyor, beceri içeriği açık kalan bir önceki
+     * bölüme ekleniyordu. Tipografi (17pt kalın) başlık kapısını geçiyor; eksik olan sözlük
+     * karşılığı.
+     */
+    @Test
+    void a_yetenekler_heading_opens_the_skills_section() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|17|true|Egitim ve Nitelikler",
+                "60|736|12|true|Yonetim Bilisim Sistemleri",
+                "60|719|12|false|Ornek Universitesi",
+                "60|690|17|true|Yetenekler",
+                "60|666|12|false|Urun kesfi, kullanici arastirmasi, analitik",
+                "60|640|17|true|Diller",
+                "60|616|12|false|Ingilizce (ileri)");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Urun kesfi, kullanici arastirmasi, analitik", fields.get(ResumeField.SKILLS),
+                "Yetenekler kendi bolumunu acmali; alinan: " + fields);
+        assertFalse(fields.getOrDefault(ResumeField.EDUCATION, "").contains("Urun kesfi"),
+                "beceri icerigi egitime KARISMAMALI: " + fields.get(ResumeField.EDUCATION));
+    }
+
+    /**
+     * Yukarıdakinin sınırı: yalnız ÇOĞUL {@code yetenekler} eklendi. Ek toleransı tek yönlü
+     * (satır token'ı sözlük etiketini uzatabilir, kısaltamaz); tekil {@code yetenek} eklenseydi
+     * İK'nın yaygın unvanı "Yetenek Kazanımı Uzmanı" deneyim içinde beceri başlığı sayılırdı.
+     */
+    @Test
+    void a_talent_acquisition_job_title_is_not_a_skills_heading() throws Exception {
+        byte[] pdf = positionedPdf(
+                "60|760|17|true|Is deneyimi",
+                "60|736|12|true|Yetenek Kazanimi Uzmani",
+                "60|719|12|false|Ornek Teknoloji AS",
+                "60|702|12|false|Ise alim surecini yurutu.",
+                "60|673|17|true|Diller",
+                "60|649|12|false|Ingilizce (ileri)");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.containsKey(ResumeField.SKILLS),
+                "unvan beceri basligi SAYILMAMALI; alinan: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Yetenek Kazanimi Uzmani"),
+                "unvan deneyimde kalmali; alinan: " + fields);
+    }
+
+    /**
      * #213 (2026-09-11) — yukarıdaki SOL yan çubuk desteğinin yanlış pozitifi.
      *
      * <p>Sol aday {@code x + width <= leftEnd} ve dar genişlikle toplanıyor; aday ile geri
