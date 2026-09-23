@@ -447,6 +447,88 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #213 (213-D, sahip regresyonu 1) — sol kenardaki başlık/tarih OLUĞU yan çubuk değildir.
+     *
+     * <p>Gerçek 6 sayfalık bir CV'de (#270 incelemesi) bölüm başlıkları ve tarih aralıkları sol
+     * kenarda ({@code x≈24}), içerikleri sağda ({@code x≈152}) duruyordu. v12 bu sayfayı tek akış
+     * okuyordu: ana kolonun kısa satırları sol adaya girip yatay ayrışma kontrolünü
+     * geçirmiyordu. Sol kenar filtresi o kısa satırları dışarıda bırakınca oluk "yan çubuk"
+     * oldu; başlıklar içeriklerinden koptu (ölçüm: eğitim 342 → 26 karakter, beceriler ve
+     * diller kayboldu).
+     *
+     * <p>Fixture o şeklin sentetik karşılığı: sol olukta yalnız büyük başlıklar ve harfsiz tarih
+     * aralıkları; ana kolonda uzun ve kısa içerik satırları.
+     */
+    @Test
+    void a_left_gutter_of_headings_and_dates_is_not_a_sidebar() throws Exception {
+        byte[] pdf = positionedPdf(
+                "24|752|18|true|Egitim",
+                "24|730|10|false|2012 - 2016",
+                "152|734|12|false|Ornek Universitesi, Bilgisayar Muhendisligi lisans programi",
+                "152|717|12|false|Mezuniyet projesi dagitik sistemler uzerine calisma",
+                "24|696|10|false|2008 - 2012",
+                "152|700|12|false|Ornek Anadolu Lisesi, Fen Bilimleri",
+                "24|662|18|true|Beceriler",
+                "152|644|12|false|Java, Spring, PostgreSQL, Kubernetes, React ve TypeScript",
+                "152|627|12|false|Python",
+                "24|596|18|true|Diller",
+                "152|578|12|false|Ingilizce",
+                "152|561|12|false|Almanca");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertTrue(fields.getOrDefault(ResumeField.EDUCATION, "").contains("Ornek Universitesi"),
+                "egitim basligi icerigiyle ayni akista kalmali; alinan: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.SKILLS, "").contains("Java, Spring"),
+                "beceriler kaybolmamali; alinan: " + fields);
+        assertTrue(fields.getOrDefault(ResumeField.LANGUAGES, "").contains("Ingilizce"),
+                "diller kaybolmamali; alinan: " + fields);
+    }
+
+    /**
+     * #213 (213-D, sahip regresyonu 2) — v12'nin geçerli sol yan çubuğu kenar filtresiyle
+     * kaybolmamalı.
+     *
+     * <p>Gerçek 7 sayfalık yoğun bir CV'de (#270 incelemesi) v12 geniş bir sol kolonu
+     * ({@code x=[24..243]}) yan çubuk seçiyordu. O kolonun satırlarının çoğu girintili
+     * başlıyor; sol kenar filtresi yalnız kenardakileri bırakınca aday yatay ayrışma
+     * kontrolünden düştü ve SAĞ aday kazandı: ana kolonun sağa yaslı satırları yan çubuk oldu,
+     * deneyim 1361 karakterden hiç yoka indi.
+     *
+     * <p>Fixture: sol kolon (kenarda 4, girintili 30 satır), ana kolon başlığı ve geniş
+     * satırları, sağa yaslı dar deneyim satırları.
+     */
+    @Test
+    void a_valid_v12_left_sidebar_is_not_lost_to_the_edge_filter() throws Exception {
+        List<String> spec = new ArrayList<>();
+        // Sol kolon: y ızgarası ana kolondan 6pt kaydırılmış, taban çizgileri karışmasın.
+        spec.add("24|764|12|true|Beceriler");
+        for (int i = 1; i <= 3; i++) {
+            spec.add("24|" + (764 - 12 * i) + "|10|false|Sentetik yetkinlik " + i);
+        }
+        for (int i = 4; i <= 33; i++) {
+            spec.add("100|" + (764 - 12 * i) + "|10|false|Alt yetkinlik alani " + i);
+        }
+        // Ana kolon: başlık, sonra sağa yaslı dar deneyim satırları ve geniş satırlar.
+        spec.add("260|770|14|true|Is Deneyimi");
+        for (int i = 1; i <= 10; i++) {
+            spec.add("360|" + (770 - 12 * i) + "|10|false|Sentetik gorev " + i);
+        }
+        for (int i = 11; i <= 23; i++) {
+            spec.add("260|" + (770 - 12 * i)
+                    + "|10|false|Sentetik proje aciklamasi ve olculebilir teslimat sonucu " + i);
+        }
+
+        Map<ResumeField, String> fields = parse(positionedPdf(spec.toArray(String[]::new)));
+
+        String experience = fields.getOrDefault(ResumeField.EXPERIENCE, "");
+        assertTrue(experience.contains("Sentetik gorev 1"),
+                "deneyim satirlari yan cubuga CEKILMEMELI; alinan: " + fields);
+        assertTrue(experience.contains("olculebilir teslimat sonucu 11"),
+                "deneyim bolumu ana kolonun genis satirlarini tasimali; alinan: " + fields);
+    }
+
+    /**
      * #213 (213-D) — {@code Yetenekler} yaygın bir Türkçe beceri başlığı ama sözlükte yoktu.
      *
      * <p>Sentetik kariyer.net iki kolon PDF'inde ve sahibin gerçek CV regresyonunda (ats#270
