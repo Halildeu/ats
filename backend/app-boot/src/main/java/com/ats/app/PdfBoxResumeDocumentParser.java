@@ -645,6 +645,10 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
 
             String heading = normalizeLabel(line.replaceFirst("[:：]\\s*$", ""));
+            // #213 (213-F): kariyer.net'te etiketler kalın, değerler normal yazılır. Adresten
+            // sonraki etiket sözlükte olmasa da ({@code İlgi Alanları}) bloğu kapatır; aksi hâlde
+            // onun değeri son satır olur. Erken kapanma güvenli yöndedir: en fazla şehir çıkmaz.
+            if (address.isOpen() && looksLikeBoldLabel(line, source)) address.close();
             if (isProtected(heading)) {
                 protectedSuppressed++;
                 active = null;
