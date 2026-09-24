@@ -348,6 +348,73 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #272 (272-B) — güven, yerleşim kararının belirsizliğini yansıtmalı.
+     *
+     * <p>Bugün bölüm içeriğinden gelen her öneri sabit 0.92 ("Yüksek güven"). Sayfa iki kolona
+     * ayrıldığında hangi satırın hangi akışa düştüğü sezgisel bir karardır (#213'te tarih
+     * kolonu yan çubuk seçilmiş ve telefona unvan yazılmıştı); bu önerilerin "gözden geçirin"
+     * eşiğinin (0.85) altında gösterilmesi gerekir.
+     */
+    @Test
+    void values_from_a_page_split_into_columns_are_not_high_confidence() throws Exception {
+        ParseResult result = parseResult(positionedPdf(
+                "15|760|13|true|Kisisel",
+                "15|742|12|true|Isim",
+                "15|724|12|false|Ata Onat Kilic",
+                "15|706|12|true|Telefon numarasi",
+                "15|688|12|false|0555 111 22 33",
+                "15|670|12|true|E-posta",
+                "15|652|12|false|ata.onat@example.com",
+                "176|760|17|true|Is deneyimi",
+                "176|742|12|false|Kidemli Yazilim Muhendisi",
+                "176|724|12|false|Ornek Teknoloji AS",
+                "176|706|12|false|Odeme altyapisini yeniden kurdu",
+                "486|742|12|false|Eyl 2018 - Tem 2019"));
+
+        for (ResumeField field : List.of(ResumeField.EXPERIENCE, ResumeField.PHONE)) {
+            double confidence = confidenceOf(result, field);
+            assertTrue(confidence < 0.85,
+                    field + " kolonlara ayrilmis sayfadan geldi, yuksek guven olmamali: "
+                            + confidence);
+        }
+    }
+
+    /** 272-B: başlık sözlükle esnek (ek toleranslı) eşleştiyse içerik yüksek güven almaz. */
+    @Test
+    void values_under_a_flexibly_matched_heading_are_not_high_confidence() throws Exception {
+        ParseResult result = parseResult(typedPdf(
+                "40|12|false|Deniz Sentetik",
+                "40|12|true|IS DENEYIMLERIM",
+                "40|12|false|Kidemli Urun Uzmani, Ornek Teknoloji",
+                "40|12|false|Yol haritasini yurutup teslim etti"));
+
+        double confidence = confidenceOf(result, ResumeField.EXPERIENCE);
+        assertTrue(confidence > 0 && confidence < 0.85,
+                "esnek baslik eslesmesi yuksek guven olmamali: " + confidence);
+    }
+
+    /** 272-B koruma: tek kolon ve sözlükle TAM eşleşen başlık yüksek güvende kalır. */
+    @Test
+    void values_under_an_exact_heading_on_a_single_column_keep_high_confidence() throws Exception {
+        ParseResult result = parseResult(typedPdf(
+                "40|12|false|Deniz Sentetik",
+                "40|12|true|IS DENEYIMI",
+                "40|12|false|Kidemli Urun Uzmani, Ornek Teknoloji",
+                "40|12|false|Yol haritasini yurutup teslim etti"));
+
+        assertEquals(0.92, confidenceOf(result, ResumeField.EXPERIENCE), 1e-9,
+                "tek kolon + tam baslik bugunku guveni korumali");
+    }
+
+    private static double confidenceOf(ParseResult result, ResumeField field) {
+        return result.proposals().stream()
+                .filter(p -> p.field() == field)
+                .mapToDouble(p -> p.provenance().confidence())
+                .findFirst()
+                .orElse(-1);
+    }
+
+    /**
      * #213 kök neden 2 — YAN ÇUBUK YÖNÜ SABİT VARSAYILIYOR.
      *
      * <p>`splitIntoColumns` yan çubuğu YALNIZ sağda arıyor
