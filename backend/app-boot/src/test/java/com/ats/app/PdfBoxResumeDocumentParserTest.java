@@ -857,7 +857,7 @@ class PdfBoxResumeDocumentParserTest {
         assertTrue(outcome.isOk(), "parse basarili olmali");
         ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
 
-        assertEquals("pdfbox-3.0.5-rules-v15", PdfBoxResumeDocumentParser.VERSION,
+        assertEquals("pdfbox-3.0.5-rules-v16", PdfBoxResumeDocumentParser.VERSION,
                 "davranis degisti; provenance surumu artmali (daralma da davranis degisikligidir)");
         assertEquals(PdfBoxResumeDocumentParser.VERSION, result.parserVersion(),
                 "ParseResult.parserVersion sinif sabitiyle ayni olmali");
@@ -1159,10 +1159,10 @@ class PdfBoxResumeDocumentParserTest {
                 "daralmis davranis: EXPERIENCE korunmali; alinan: " + fields);
 
         // ...ve o davranisi raporlayan surum, ayirt edilebilir olmali
-        assertEquals("pdfbox-3.0.5-rules-v15", result.parserVersion(),
+        assertEquals("pdfbox-3.0.5-rules-v16", result.parserVersion(),
                 "degisen davranis ONCEKI surum kimligiyle raporlanmamali");
         assertTrue(result.proposals().stream()
-                        .allMatch(pr -> "pdfbox-3.0.5-rules-v15"
+                        .allMatch(pr -> "pdfbox-3.0.5-rules-v16"
                                 .equals(pr.provenance().parserVersion())),
                 "her kalici onerinin provenance surumu de ayirt edilebilir olmali");
     }
