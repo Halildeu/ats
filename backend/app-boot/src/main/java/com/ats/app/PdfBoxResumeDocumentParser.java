@@ -10,6 +10,7 @@ import com.ats.kernel.OutcomeCode;
 import java.io.IOException;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,8 +71,12 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * girintili bir sol kolon kenar filtresiyle kayboluyor, deneyim yan çubuğa çekiliyordu);
      * kenar adayı da başlık/tarih oluğuysa yan çubuk sayılmaz (başlıklar içeriklerinden
      * kopuyordu).
+     *
+     * <p>v15 (#271): başlık → alan sözlüğü bildirim sırasını korur; eşit uzunluktaki iki
+     * etiket bir başlığa birlikte uyduğunda kazanan alan artık JVM'e göre değişmez. v14'te
+     * sözlük {@code Map.copyOf} ile rastgele sırada geziliyordu.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v14";
+    static final String VERSION = "pdfbox-3.0.5-rules-v15";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -169,7 +174,10 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     + "eylül|eylul|ekim|kasım|kasim|aralık|aralik|"
                     + "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\\b");
     private static final Map<String, ResumeField> LABELS = labels();
-    /** Uzun etiket önce denenir: "work experience" > "experience". */
+    /**
+     * Uzun etiket önce denenir: "work experience" > "experience". Eşitlikte bildirim sırası
+     * (sıralama kararlı, {@link #LABELS} bildirim sırasını koruyor — #271).
+     */
     private static final List<Map.Entry<String, ResumeField>> LABELS_BY_LENGTH =
             LABELS.entrySet().stream()
                     .sorted((a, b) -> Integer.compare(
@@ -1582,7 +1590,10 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         // toleransı "SERTİFİKALARIM"ı da kapsar.
         add(labels, ResumeField.CERTIFICATIONS, "sertifika", "sertifikalar", "certifications",
                 "certificates");
-        return Map.copyOf(labels);
+        // #271: Map.copyOf'un gezinme sırası JVM başına rastgeledir; eşit uzunluktaki iki etiket
+        // bir başlığa birlikte uyduğunda kazanan alan pod her açıldığında değişiyordu. Bildirim
+        // sırası korunur.
+        return Collections.unmodifiableMap(labels);
     }
 
     /** #271: sözlüğün gezinme sırası (test için). */
