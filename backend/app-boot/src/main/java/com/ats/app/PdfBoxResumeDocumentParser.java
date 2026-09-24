@@ -1585,6 +1585,16 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         return Map.copyOf(labels);
     }
 
+    /** #271: sözlüğün gezinme sırası (test için). */
+    static List<String> labelKeys() {
+        return List.copyOf(LABELS.keySet());
+    }
+
+    /** #271: esnek başlık eşleşmesinin etiketleri denediği sıra (test için). */
+    static List<String> labelMatchOrder() {
+        return LABELS_BY_LENGTH.stream().map(Map.Entry::getKey).toList();
+    }
+
     private static void add(
             Map<String, ResumeField> labels, ResumeField field, String... aliases) {
         for (String alias : aliases) labels.put(alias, field);

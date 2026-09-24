@@ -348,6 +348,37 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #271 — başlık → alan eşlemesi her JVM'de aynı sırayla denenmeli.
+     *
+     * <p>Sahip ölçümü (21 gerçek CV, ayrı JVM'lerde 6 koşu): aynı CV'nin eğitim içeriği 4 koşuda
+     * EDUCATION, 2 koşuda CERTIFICATIONS alanına düştü. Kök neden: {@code labels()} sıralı
+     * kuruluyor ama {@code Map.copyOf} döndürüyordu; o kopyanın gezinme sırası JVM başına
+     * rastgele. Eşit uzunluktaki iki etiket bir başlığa birlikte uyduğunda kazanan alan pod her
+     * açıldığında değişebiliyordu.
+     */
+    @Test
+    void the_label_dictionary_keeps_its_declaration_order() {
+        assertEquals(
+                List.of("ad soyad", "isim", "name", "full name", "e posta", "eposta", "email",
+                        "email address", "telefon", "telefon numarasi", "phone", "mobile",
+                        "sehir", "ikamet sehri", "city", "location"),
+                PdfBoxResumeDocumentParser.labelKeys().subList(0, 16),
+                "sozluk bildirim sirasiyla gezilmeli (JVM'den bagimsiz)");
+    }
+
+    /** #271: esnek eşleşme sırası = kelime sayısı azalan, eşitlikte bildirim sırası. */
+    @Test
+    void flexible_matching_tries_labels_longest_first_then_in_declaration_order() {
+        List<String> declared = PdfBoxResumeDocumentParser.labelKeys();
+        List<String> expected = declared.stream()
+                .sorted(java.util.Comparator.comparingInt((String l) -> -l.split(" ").length)
+                        .thenComparingInt(declared::indexOf))
+                .toList();
+
+        assertEquals(expected, PdfBoxResumeDocumentParser.labelMatchOrder());
+    }
+
+    /**
      * #213 kök neden 2 — YAN ÇUBUK YÖNÜ SABİT VARSAYILIYOR.
      *
      * <p>`splitIntoColumns` yan çubuğu YALNIZ sağda arıyor
