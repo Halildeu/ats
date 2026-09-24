@@ -465,6 +465,29 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * 213-F: kariyer.net'te adresten sonra gelen etiket sözlükte olmayabilir ({@code Ilgi
+     * Alanlari}) ve gövde puntosunda KALIN yazılır. Sentetik v4 kabul PDF'inde blok bu etiketle
+     * kapanmıyor, sonraki değer ({@code Satranc…}) son satır oluyor ve şehir hiç çıkmıyordu.
+     * Blok, kalın ve başlık şeklindeki bir etiket satırında kapanır.
+     */
+    @Test
+    void a_bold_label_after_the_address_closes_the_block() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|Ankara",
+                "40|706|12|true|Ilgi Alanlari",
+                "40|688|12|false|Satranc, doga yuruyusu",
+                "40|652|17|true|Is deneyimi",
+                "40|634|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("Ankara", fields.get(ResumeField.CITY),
+                "adres blogu kalin etiketle kapanmali; alinan: " + fields);
+    }
+
+    /**
      * 213-F: il eşleşmesi Türkçe harf katlamasıyla birebir; kısaltma ve eski ad tahmini yok.
      *
      * <p>PDF fixture'ları Helvetica (WinAnsi) kullandığı için {@code İ}/{@code Ş} içeremez; bu
