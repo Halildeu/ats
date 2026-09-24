@@ -79,8 +79,12 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * <p>v16 (#272, 272-A): tek değerli alanlarda tip doğrulaması — telefon harfsiz ve 10–15
      * rakam, e-posta tam biçimli, ad soyad rakamsız ve {@code @}'sız olmalı; uymayan değer
      * önerilmez. v15'te telefon alanına iş unvanı yüksek güvenle önerilebiliyordu.
+     *
+     * <p>v17 (#272, 272-B): bölüm içeriğinin güveni yerleşim belirsizliğini yansıtır — sayfa
+     * kolonlara ayrıldıysa ya da başlık esnek eşleştiyse 0.80, aksi hâlde 0.92. v16'da
+     * bütün bölüm içeriği sabit 0.92 ("Yüksek güven") idi.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v16";
+    static final String VERSION = "pdfbox-3.0.5-rules-v17";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -222,6 +226,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final int MIN_SUFFIX_TOLERANT_LABEL = 5;
     private static final int HEADER_LINES_SCANNED = 10;
     private static final double FULL_NAME_CONFIDENCE = 0.60;
+    /** Bölüm içeriği: tek kolonlu sayfada, sözlükle TAM eşleşen başlığın altında. */
+    private static final double SECTION_CONFIDENCE = 0.92;
+    /**
+     * #272 (272-B): yerleşim kararı belirsizken bölüm içeriği — sayfa kolonlara ayrıldı ya da
+     * başlık esnek (ek toleranslı) eşleşmeyle tanındı. Formun "gözden geçirin" bandında
+     * (0.60–0.85): öneri gösterilir ama yüksek güvenle sunulmaz.
+     */
+    private static final double UNCERTAIN_SECTION_CONFIDENCE = 0.80;
     /** Yan çubuk satırı içerik genişliğinin bu oranından sonra BAŞLAR. */
     private static final double SIDEBAR_START_SHARE = 0.60;
     /** Yan çubuk satırı dardır; ana kolon satırları geniştir. */
@@ -372,8 +384,8 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 for (int index = 0; index < columns.size(); index++) {
                     // İki akış varsa ikincisi yan çubuktur (splitIntoColumns sırası).
                     boolean sidebar = columns.size() > 1 && index == columns.size() - 1;
-                    PageResult pageResult =
-                            parsePage(columns.get(index), values, sectionLines, sidebar);
+                    PageResult pageResult = parsePage(columns.get(index), values,
+                            sectionLines, sidebar, columns.size() > 1);
                     protectedSuppressed += pageResult.protectedSuppressed();
                 }
                 if (page == 1) proposeFullNameFromHeader(lines, values);
@@ -567,8 +579,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
 
     private static PageResult parsePage(
             List<TextLine> lines, Map<ResumeField, LocatedValue> values,
-            Map<ResumeField, List<TextLine>> sectionLines, boolean sidebar) {
+            Map<ResumeField, List<TextLine>> sectionLines, boolean sidebar,
+            boolean splitPage) {
         ResumeField active = null;
+        // #272 (272-B): açık bölümün başlığı sözlükle TAM mı eşleşti?
+        boolean activeExact = false;
         boolean headingJustOpened = false;
         int protectedSuppressed = 0;
         // #213: başlık kapısının tipografi ölçütü için sayfanın gövde puntosu.
@@ -619,6 +634,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     contentUnderActiveHeading ? null : headingField(line, heading, source, body);
             if (section != null) {
                 active = section;
+                activeExact = LABELS.containsKey(heading);
                 activeHeadingSize = source.fontSize();
                 headingJustOpened = true;
                 continue;
@@ -642,7 +658,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
             headingJustOpened = false;
             if (active != null) {
-                putOrAppend(values, active, sanitize(line, active), source, 0.92);
+                // #272 (272-B): kolon ayrımı ve esnek başlık eşleşmesi sezgiseldir; o
+                // durumda öneri "yüksek güven" değil "gözden geçirin" bandında sunulur.
+                double confidence = splitPage || !activeExact
+                        ? UNCERTAIN_SECTION_CONFIDENCE : SECTION_CONFIDENCE;
+                putOrAppend(values, active, sanitize(line, active), source, confidence);
                 // #218: aynı satır blob'a da, kayıt gruplaması için de gider. Tek
                 // kaynaktan beslenmesi şart — ayrı yollar iki farklı gerçek üretir.
                 if (active == ResumeField.EXPERIENCE || active == ResumeField.EDUCATION) {
