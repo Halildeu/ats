@@ -18,6 +18,7 @@ import com.ats.application.ResumeImportStore.ReplaceState;
 import com.ats.application.ResumeImportStore.TerminateResult;
 import com.ats.application.ResumeImportStore.TerminateState;
 import com.ats.kernel.Outcome;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -86,7 +87,11 @@ class ResumeImportApiController {
             additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
     record ProvenanceDto(
             int page, double x, double y, double width, double height,
-            double confidence, String parserVersion) {}
+            double confidence, String parserVersion,
+            // #213 (213-G): isteğe bağlı, kapalı küme; yoksa alan yanıtta hiç yer almaz.
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED,
+                    allowableValues = {"ADDRESS_LAST_LINE"}) String source) {}
 
     /**
      * #218: bir bolumden gruplanan TEK kayit. Alan adlari jenerik: ayni sekil hem
@@ -379,7 +384,7 @@ class ResumeImportApiController {
                 value.field().apiName(), value.proposedValue(), value.candidateValue(),
                 value.state().name(), value.version(), new ProvenanceDto(
                         p.page(), p.x(), p.y(), p.width(), p.height(), p.confidence(),
-                        p.parserVersion()),
+                        p.parserVersion(), p.source() == null ? null : p.source().name()),
                 value.proposedEntries().stream()
                         .map(ResumeImportApiController::proposedEntryDto).toList());
     }
