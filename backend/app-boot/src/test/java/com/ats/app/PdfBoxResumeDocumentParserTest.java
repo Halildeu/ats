@@ -488,6 +488,65 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * 213-F (review, Halil 2026-09-25): tek satırlık {@code Adres: Ankara} biçimi de aynı
+     * birebir kuralla şehir önerir; güven yine "kontrol edin" eşiğinin altında kalır ve etiket
+     * metni hiçbir alana yazılmaz.
+     */
+    @Test
+    void a_single_line_address_label_proposes_the_city() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|false|Adres: Ankara",
+                "40|724|17|true|Is deneyimi",
+                "40|706|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        ParseResult result = parseResult(pdf);
+        Map<ResumeField, String> fields = result.proposals().stream()
+                .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+        assertEquals("Ankara", fields.get(ResumeField.CITY),
+                "tek satirlik adres il ise sehir onerilmeli; alinan: " + fields);
+        double confidence = result.proposals().stream()
+                .filter(p -> p.field() == ResumeField.CITY)
+                .mapToDouble(p -> p.provenance().confidence()).findFirst().orElse(1);
+        assertTrue(confidence < 0.60,
+                "adresten cikan sehir DUSUK guvenle onerilmeli: " + confidence);
+        assertTrue(fields.values().stream().noneMatch(v -> v.contains("Adres")),
+                "adres etiketi hicbir alana yazilmamali: " + fields);
+    }
+
+    /**
+     * 213-F (review, Halil 2026-09-25): doğum yeri korumalı bir özniteliktir. Satır ya da blok
+     * bir il adıyla bitse de şehir önerisi olmaz; yalnız adres etiketleri çıkarıma kaynaktır.
+     */
+    @Test
+    void a_birthplace_ending_in_a_province_never_proposes_the_city() throws Exception {
+        byte[] block = positionedPdf(
+                "40|760|12|true|Dogum Yeri",
+                "40|742|12|false|Ankara",
+                "40|706|17|true|Is deneyimi",
+                "40|688|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+        byte[] inline = positionedPdf(
+                "40|760|12|false|Dogum Yeri: Istanbul",
+                "40|724|17|true|Is deneyimi",
+                "40|706|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        for (byte[] pdf : List.of(block, inline)) {
+            ParseResult result = parseResult(pdf);
+            Map<ResumeField, String> fields = result.proposals().stream()
+                    .collect(Collectors.toMap(p -> p.field(), p -> p.value()));
+
+            assertFalse(fields.containsKey(ResumeField.CITY),
+                    "dogum yeri sehir olarak onerilmemeli; alinan: " + fields);
+            assertTrue(fields.values().stream()
+                            .noneMatch(v -> v.contains("Ankara") || v.contains("Istanbul")),
+                    "dogum yeri hicbir alana yazilmamali: " + fields);
+            assertTrue(fields.getOrDefault(ResumeField.EXPERIENCE, "")
+                            .contains("Kidemli Urun Uzmani"),
+                    "korumali satir sonraki bolumu bozmamali: " + fields);
+        }
+    }
+
+    /**
      * 213-F: il eşleşmesi Türkçe harf katlamasıyla birebir; kısaltma ve eski ad tahmini yok.
      *
      * <p>PDF fixture'ları Helvetica (WinAnsi) kullandığı için {@code İ}/{@code Ş} içeremez; bu
