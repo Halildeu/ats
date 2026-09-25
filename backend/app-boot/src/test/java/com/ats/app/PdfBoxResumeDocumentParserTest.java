@@ -348,6 +348,57 @@ class PdfBoxResumeDocumentParserTest {
     }
 
     /**
+     * #272 (272-A) — tipine uymayan değer yüksek güvenle önerilmez.
+     *
+     * <p>TEST v12 kaydında (#213) telefon alanına iş unvanı %92 "Yüksek güven" ile geldi; sahip
+     * ölçümünde (21 gerçek CV) 3 CV'de e-posta önerisi e-posta biçiminde, 1 CV'de telefon önerisi
+     * telefon biçiminde değildi. Aday her alanı onaylıyor, ama yanlış değeri "yüksek güven"le
+     * sunmak onaylatmayı kolaylaştırır. Geçmeyen değer önerilmez; alan boş kalınca sayfadaki
+     * gerçek değer yedek taramayla bulunabilir.
+     */
+    @Test
+    void a_phone_label_whose_value_is_not_a_phone_number_is_not_proposed() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Telefon numarasi",
+                "40|742|12|false|Kidemli Urun Uzmani",
+                "40|700|12|false|Iletisim icin: +90 555 000 00 00");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("+90 555 000 00 00", fields.get(ResumeField.PHONE),
+                "unvan telefon SAYILMAMALI, gercek numara yedek taramayla bulunmali; alinan: "
+                        + fields);
+    }
+
+    /** 272-A: e-posta etiketinin değeri e-posta biçiminde değilse önerilmez. */
+    @Test
+    void an_email_label_whose_value_is_not_an_email_is_not_proposed() throws Exception {
+        byte[] pdf = typedPdf(
+                "40|12|false|E-posta: deniz at example nokta test",
+                "40|12|false|Iletisim: deniz.sentetik@example.test");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertEquals("deniz.sentetik@example.test", fields.get(ResumeField.EMAIL),
+                "bicimsiz deger e-posta SAYILMAMALI; alinan: " + fields);
+    }
+
+    /** 272-A: ad soyad rakam ya da {@code @} içermez. */
+    @Test
+    void a_name_label_whose_value_is_an_address_or_number_is_not_proposed() throws Exception {
+        byte[] pdf = typedPdf(
+                "40|12|false|Ad soyad: deniz.sentetik@example.test",
+                "40|12|false|Telefon: +90 555 000 00 00");
+
+        Map<ResumeField, String> fields = parse(pdf);
+
+        assertFalse(fields.getOrDefault(ResumeField.FULL_NAME, "").contains("@"),
+                "e-posta ad soyad SAYILMAMALI; alinan: " + fields);
+        assertEquals("+90 555 000 00 00", fields.get(ResumeField.PHONE),
+                "gecerli alanlar etkilenmemeli; alinan: " + fields);
+    }
+
+    /**
      * #213 kök neden 2 — YAN ÇUBUK YÖNÜ SABİT VARSAYILIYOR.
      *
      * <p>`splitIntoColumns` yan çubuğu YALNIZ sağda arıyor
@@ -775,7 +826,7 @@ class PdfBoxResumeDocumentParserTest {
         assertTrue(outcome.isOk(), "parse basarili olmali");
         ParseResult result = ((Outcome.Ok<ParseResult>) outcome).value();
 
-        assertEquals("pdfbox-3.0.5-rules-v14", PdfBoxResumeDocumentParser.VERSION,
+        assertEquals("pdfbox-3.0.5-rules-v15", PdfBoxResumeDocumentParser.VERSION,
                 "davranis degisti; provenance surumu artmali (daralma da davranis degisikligidir)");
         assertEquals(PdfBoxResumeDocumentParser.VERSION, result.parserVersion(),
                 "ParseResult.parserVersion sinif sabitiyle ayni olmali");
@@ -1077,10 +1128,10 @@ class PdfBoxResumeDocumentParserTest {
                 "daralmis davranis: EXPERIENCE korunmali; alinan: " + fields);
 
         // ...ve o davranisi raporlayan surum, ayirt edilebilir olmali
-        assertEquals("pdfbox-3.0.5-rules-v14", result.parserVersion(),
+        assertEquals("pdfbox-3.0.5-rules-v15", result.parserVersion(),
                 "degisen davranis ONCEKI surum kimligiyle raporlanmamali");
         assertTrue(result.proposals().stream()
-                        .allMatch(pr -> "pdfbox-3.0.5-rules-v14"
+                        .allMatch(pr -> "pdfbox-3.0.5-rules-v15"
                                 .equals(pr.provenance().parserVersion())),
                 "her kalici onerinin provenance surumu de ayirt edilebilir olmali");
     }

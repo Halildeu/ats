@@ -70,8 +70,12 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * girintili bir sol kolon kenar filtresiyle kayboluyor, deneyim yan çubuğa çekiliyordu);
      * kenar adayı da başlık/tarih oluğuysa yan çubuk sayılmaz (başlıklar içeriklerinden
      * kopuyordu).
+     *
+     * <p>v15 (#272, 272-A): tek değerli alanlarda tip doğrulaması — telefon harfsiz ve 10–15
+     * rakam, e-posta tam biçimli, ad soyad rakamsız ve {@code @}'sız olmalı; uymayan değer
+     * önerilmez. v14'te telefon alanına iş unvanı yüksek güvenle önerilebiliyordu.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v14";
+    static final String VERSION = "pdfbox-3.0.5-rules-v15";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -670,6 +674,39 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         return new PageResult(protectedSuppressed);
     }
 
+    /**
+     * #272 (272-A): tek değerli alanın değeri o alanın tipine uyuyor mu?
+     *
+     * <p>Etiket ya da bölüm eşleşmesi değerin tipini garanti etmiyor: TEST v12 kaydında (#213)
+     * telefon alanına iş unvanı %92 güvenle geldi; sahip ölçümünde (21 gerçek CV) 3 CV'de
+     * e-posta, 1 CV'de telefon önerisi biçimsizdi. Uymayan değer önerilmez ve alan boş kalır;
+     * böylece sayfanın sonundaki e-posta/telefon yedek taraması gerçek değeri bulabilir.
+     *
+     * <ul>
+     *   <li>{@code PHONE}: harf yok, 10–15 rakam (yedek {@link #PHONE} taramasıyla aynı sınır);
+     *   <li>{@code EMAIL}: değerin tamamı {@link #EMAIL} biçiminde;
+     *   <li>{@code FULL_NAME}: rakam ve {@code @} yok, en az bir harf.
+     * </ul>
+     *
+     * Diğer alanlar serbest metindir ve burada sınanmaz.
+     */
+    static boolean fitsFieldType(ResumeField field, String value) {
+        String text = value.strip();
+        return switch (field) {
+            case PHONE -> text.codePoints().noneMatch(Character::isLetter)
+                    && digitCount(text) >= 10 && digitCount(text) <= 15;
+            case EMAIL -> EMAIL.matcher(text).matches();
+            case FULL_NAME -> text.codePoints().noneMatch(Character::isDigit)
+                    && text.indexOf('@') < 0
+                    && text.codePoints().anyMatch(Character::isLetter);
+            default -> true;
+        };
+    }
+
+    private static long digitCount(String text) {
+        return text.codePoints().filter(Character::isDigit).count();
+    }
+
     private static void putOrAppend(
             Map<ResumeField, LocatedValue> values,
             ResumeField field,
@@ -677,6 +714,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             TextLine source,
             double confidence) {
         if (value == null || value.isBlank()) return;
+        if (!fitsFieldType(field, value)) return;
         LocatedValue previous = values.get(field);
         if (previous == null) {
             values.put(field, located(value, source, confidence));
