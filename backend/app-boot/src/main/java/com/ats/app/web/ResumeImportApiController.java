@@ -373,7 +373,7 @@ class ResumeImportApiController {
                 value.proposals().stream().map(ResumeImportApiController::proposalDto).toList());
     }
 
-    private static ProposalDto proposalDto(ResumeProposal value) {
+    static ProposalDto proposalDto(ResumeProposal value) {
         var p = value.provenance();
         return new ProposalDto(
                 value.field().apiName(), value.proposedValue(), value.candidateValue(),
