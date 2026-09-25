@@ -10,6 +10,7 @@ import com.ats.kernel.OutcomeCode;
 import java.io.IOException;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -70,8 +71,12 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
      * girintili bir sol kolon kenar filtresiyle kayboluyor, deneyim yan çubuğa çekiliyordu);
      * kenar adayı da başlık/tarih oluğuysa yan çubuk sayılmaz (başlıklar içeriklerinden
      * kopuyordu).
+     *
+     * <p>v15 (#213, 213-F): korumalı {@code Adres} bloğunun SON satırı 81 ilden biriyle
+     * birebir eşleşirse düşük güvenle (0.50) CITY önerisi olur; açık {@code Sehir} etiketi
+     * önce gelir. v14'te adres bloğundan hiçbir şey önerilmiyordu.
      */
-    static final String VERSION = "pdfbox-3.0.5-rules-v14";
+    static final String VERSION = "pdfbox-3.0.5-rules-v15";
     private static final int MAX_EXTRACTED_CHARACTERS = 120_000;
     private static final Pattern INLINE = Pattern.compile("^\\s*([^:：]{1,48})\\s*[:：]\\s*(.+?)\\s*$");
     private static final Pattern EMAIL = Pattern.compile("[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}");
@@ -210,6 +215,14 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
     private static final int MIN_SUFFIX_TOLERANT_LABEL = 5;
     private static final int HEADER_LINES_SCANNED = 10;
     private static final double FULL_NAME_CONFIDENCE = 0.60;
+    /**
+     * #213 (213-F): adres bloğunun son satırından çıkarılan şehir. Formun "Düşük güven —
+     * kontrol edin" eşiğinin (0.60) altında: aday öneriyi görür ama doğrulaması istenir.
+     */
+    private static final double ADDRESS_CITY_CONFIDENCE = 0.50;
+    /** Şehir çıkarımına kaynak olabilen korumalı etiketler; posta kodu dahil değil. */
+    private static final Set<String> ADDRESS_LABELS =
+            Set.of("adres", "adres bilgisi", "adres bilgileri", "tam adres");
     /** Yan çubuk satırı içerik genişliğinin bu oranından sonra BAŞLAR. */
     private static final double SIDEBAR_START_SHARE = 0.60;
     /** Yan çubuk satırı dardır; ana kolon satırları geniştir. */
@@ -346,6 +359,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             Map<ResumeField, List<TextLine>> sectionLines = new LinkedHashMap<>();
             int protectedSuppressed = 0;
             int extractedCharacters = 0;
+            LocatedValue cityFromAddress = null;
 
             for (int page = 1; page <= pageCount; page++) {
                 List<TextLine> lines = stripper.extract(document, page);
@@ -363,9 +377,13 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                     PageResult pageResult =
                             parsePage(columns.get(index), values, sectionLines, sidebar);
                     protectedSuppressed += pageResult.protectedSuppressed();
+                    if (cityFromAddress == null) cityFromAddress = pageResult.addressCity();
                 }
                 if (page == 1) proposeFullNameFromHeader(lines, values);
             }
+
+            // #213 (213-F): açık Şehir etiketi her zaman önce gelir; adres yalnız yedek.
+            if (cityFromAddress != null) values.putIfAbsent(ResumeField.CITY, cityFromAddress);
 
             List<ProposalDraft> proposals = new ArrayList<>();
             for (Map.Entry<ResumeField, LocatedValue> entry : values.entrySet()) {
@@ -384,7 +402,39 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         }
     }
 
-    private record PageResult(int protectedSuppressed) {}
+    /** @param addressCity bu akışta adres bloğundan çıkan ilk şehir; yoksa {@code null} */
+    private record PageResult(int protectedSuppressed, LocatedValue addressCity) {}
+
+    /**
+     * #213 (213-F): korumalı {@code Adres} başlığının altındaki satırlar. Bu satırlar hiçbir
+     * alana yazılmaz; blok kapanınca yalnız SON satır il adıysa şehir adayı çıkar.
+     */
+    private static final class AddressBlock {
+        private List<TextLine> lines;
+        private LocatedValue city;
+
+        void open() {
+            close();
+            lines = new ArrayList<>();
+        }
+
+        boolean isOpen() {
+            return lines != null;
+        }
+
+        void add(TextLine line) {
+            lines.add(line);
+        }
+
+        void close() {
+            if (lines != null && !lines.isEmpty() && city == null) {
+                TextLine last = lines.get(lines.size() - 1);
+                String province = provinceOf(last.text());
+                if (province != null) city = located(province, last, ADDRESS_CITY_CONFIDENCE);
+            }
+            lines = null;
+        }
+    }
 
     /**
      * Yan çubuk ayrımı (#204). Tek akış varsayımı, sağ kenar-çubuğu olan CV'lerde
@@ -563,6 +613,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
         double body = bodyFontSize(lines);
         // #213 (turu 2): açık bölümü AÇAN satırın puntosu — hiyerarşi ölçütünün dayanağı.
         double activeHeadingSize = 0;
+        AddressBlock address = new AddressBlock();
 
         for (TextLine source : lines) {
             String line = source.text().replaceAll("\\s+", " ").trim();
@@ -573,10 +624,20 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 if (isProtected(label)) {
                     protectedSuppressed++;
                     active = null;
+                    address.close();
+                    if (ADDRESS_LABELS.contains(label)) {
+                        // "Adres: Ankara" — tek satırlık blok; aynı birebir kural.
+                        address.open();
+                        address.add(new TextLine(inline.group(2), source.page(), source.x(),
+                                source.y(), source.width(), source.height(),
+                                source.fontSize(), source.bold()));
+                        address.close();
+                    }
                     continue;
                 }
                 ResumeField field = LABELS.get(label);
                 if (field != null) {
+                    address.close();
                     putOrAppend(values, field, sanitize(inline.group(2), field), source, 0.97);
                     active = null;
                     continue;
@@ -584,9 +645,15 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             }
 
             String heading = normalizeLabel(line.replaceFirst("[:：]\\s*$", ""));
+            // #213 (213-F): kariyer.net'te etiketler kalın, değerler normal yazılır. Adresten
+            // sonraki etiket sözlükte olmasa da ({@code İlgi Alanları}) bloğu kapatır; aksi hâlde
+            // onun değeri son satır olur. Erken kapanma güvenli yöndedir: en fazla şehir çıkmaz.
+            if (address.isOpen() && looksLikeBoldLabel(line, source)) address.close();
             if (isProtected(heading)) {
                 protectedSuppressed++;
                 active = null;
+                if (ADDRESS_LABELS.contains(heading)) address.open();
+                else address.close();
                 continue;
             }
             // #213 (turu 2): açık bölümün başlığından KÜÇÜK satır, o bölümün içeriğidir.
@@ -606,6 +673,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             ResumeField section =
                     contentUnderActiveHeading ? null : headingField(line, heading, source, body);
             if (section != null) {
+                address.close();
                 active = section;
                 activeHeadingSize = source.fontSize();
                 headingJustOpened = true;
@@ -626,6 +694,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 // certifications 467c -> eksik oldu. Sarma satırını yut, kapatma.
                 if (!headingJustOpened) active = null;
                 headingJustOpened = false;
+                address.close();
                 continue;
             }
             headingJustOpened = false;
@@ -639,8 +708,11 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                                     source.width(), source.height(), source.fontSize(),
                                     source.bold()));
                 }
+            } else if (address.isOpen()) {
+                address.add(source);
             }
         }
+        address.close();
 
         if (!values.containsKey(ResumeField.EMAIL)) {
             for (TextLine source : lines) {
@@ -667,7 +739,7 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
                 if (found) break;
             }
         }
-        return new PageResult(protectedSuppressed);
+        return new PageResult(protectedSuppressed, address.city);
     }
 
     private static void putOrAppend(
@@ -1545,6 +1617,48 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             if (MILITARY_STATUS_WORDS.contains(token)) return true;
         }
         return false;
+    }
+
+    /**
+     * #213 (213-F, sahip kararı): Türkiye'nin 81 ili, resmi adlarıyla. Eşleşme yalnız bu
+     * adlarla ve BİREBİR: kısa/eski adlar ({@code Urfa}, {@code Antep}, {@code İçel}), ilçeden
+     * il çıkarımı ve posta kodu bilinçli olarak yok — yanlış şehir, adayın düzeltmek zorunda
+     * kalacağı veri olur. Karşılaştırma {@link #normalizeLabel} ile: Türkçe harf katlaması
+     * ({@code İSTANBUL} = {@code istanbul}), büyük/küçük harf ve noktalama farkı yok sayılır;
+     * satırda ilden başka bir şey (posta kodu, ülke, ilçe) varsa eşleşme yoktur.
+     *
+     * @return ilin resmi adı; eşleşme yoksa {@code null}
+     */
+    static String provinceOf(String line) {
+        return line == null ? null : PROVINCES.get(normalizeLabel(line));
+    }
+
+    private static final Map<String, String> PROVINCES = provinces();
+
+    private static Map<String, String> provinces() {
+        List<String> names = List.of(
+                "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Aksaray", "Amasya", "Ankara",
+                "Antalya", "Ardahan", "Artvin", "Aydın", "Balıkesir", "Bartın", "Batman",
+                "Bayburt", "Bilecik", "Bingöl", "Bitlis", "Bolu", "Burdur", "Bursa", "Çanakkale",
+                "Çankırı", "Çorum", "Denizli", "Diyarbakır", "Düzce", "Edirne", "Elazığ",
+                "Erzincan", "Erzurum", "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane",
+                "Hakkari", "Hatay", "Iğdır", "Isparta", "İstanbul", "İzmir", "Kahramanmaraş",
+                "Karabük", "Karaman", "Kars", "Kastamonu", "Kayseri", "Kilis", "Kırıkkale",
+                "Kırklareli", "Kırşehir", "Kocaeli", "Konya", "Kütahya", "Malatya", "Manisa",
+                "Mardin", "Mersin", "Muğla", "Muş", "Nevşehir", "Niğde", "Ordu", "Osmaniye",
+                "Rize", "Sakarya", "Samsun", "Siirt", "Sinop", "Sivas", "Şanlıurfa", "Şırnak",
+                "Tekirdağ", "Tokat", "Trabzon", "Tunceli", "Uşak", "Van", "Yalova", "Yozgat",
+                "Zonguldak");
+        Map<String, String> byKey = new LinkedHashMap<>();
+        for (String name : names) {
+            if (byKey.put(normalizeLabel(name), name) != null) {
+                throw new IllegalStateException("il adı çakışıyor: " + name);
+            }
+        }
+        if (byKey.size() != 81) {
+            throw new IllegalStateException("81 il bekleniyordu: " + byKey.size());
+        }
+        return Collections.unmodifiableMap(byKey);
     }
 
     private static String normalizeLabel(String value) {
