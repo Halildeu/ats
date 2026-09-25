@@ -132,7 +132,21 @@ public final class ResumeImportService implements AutoCloseable {
             this(page, x, y, width, height, confidence, parserVersion, null);
         }
 
-        /** Öneriyi üreten çıkarım kuralı. Yeni değer sözleşme + göç + web ile birlikte eklenir. */
+        /**
+         * Öneriyi üreten çıkarım kuralı; kapalı küme, serbest metin taşınmaz.
+         *
+         * <p><strong>Yeni bir değer eklemek üç yeri birlikte değiştirir</strong> (#213 G, sahip
+         * incelemesi 2026-09-25); biri eksik kalırsa yazma ya da sözleşme kırılır:
+         * <ol>
+         *   <li>bu enum;</li>
+         *   <li>{@code ats_resume_proposal_source_check} CHECK kısıtı (yeni bir Flyway göçüyle;
+         *       V25 değiştirilmez);</li>
+         *   <li>{@code ResumeImportApiController.ProvenanceDto#source} üzerindeki
+         *       {@code allowableValues} ve {@code openapi-snapshot.json}.</li>
+         * </ol>
+         * Web tarafı ({@code PROVENANCE_SOURCE_LABELS}) bilinmeyen değeri etiketsiz gösterir; yeni
+         * değerin etiketi ayrı bir web değişikliğidir.
+         */
         public enum Source {
             /** 213-F: adres bloğunun son satırı 81 ilden biri. */
             ADDRESS_LAST_LINE
