@@ -491,6 +491,47 @@ class PostgresResumeImportStoreTest {
                 new ProposalDraft(ResumeField.EDUCATION, "Örnek eğitim", p));
     }
 
+    /**
+     * #213 (213-G): {@code provenance.source} yazılıp aynen okunur; kaynağı olmayan öneri
+     * {@code NULL} kalır. Sütun kapalı kümedir: serbest metin veritabanında reddedilir.
+     */
+    @Test
+    void provenance_source_round_trips_and_is_a_closed_set() throws Exception {
+        String importId = "ri_" + "S".repeat(24);
+        String access = "3c".repeat(32);
+        store.create(create(importId, access, "create-key-s0000001", "c1".repeat(32)))
+                .asOptional().orElseThrow();
+
+        Provenance address = new Provenance(1, 0, 0, 595, 842, 0.50, "parser-v9",
+                Provenance.Source.ADDRESS_LAST_LINE);
+        Provenance label = new Provenance(1, 0, 0, 595, 842, 0.97, "parser-v9");
+        var attached = reserveAndAttach(new AttachCommand(
+                importId, access, 0, "upload-key-s0000001", "c2".repeat(32), 1,
+                "parser-v9", 2, 0, "2026-07-18T12:11:00Z"),
+                List.of(
+                        new ProposalDraft(ResumeField.CITY, "Ankara", address),
+                        new ProposalDraft(ResumeField.EMAIL, "deniz@example.test", label)));
+        assertEquals(AttachState.ATTACHED, attached.state());
+
+        Map<ResumeField, Provenance> read = new java.util.EnumMap<>(ResumeField.class);
+        attached.resumeImport().proposals().forEach(x -> read.put(x.field(), x.provenance()));
+        assertEquals(Provenance.Source.ADDRESS_LAST_LINE, read.get(ResumeField.CITY).source(),
+                "kaynak okunurken korunmali: " + read);
+        assertNull(read.get(ResumeField.EMAIL).source(), "kaynaksiz oneri NULL kalmali: " + read);
+
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement(
+                        "UPDATE ats_resume_proposal SET provenance_source='adresten'"
+                                + " WHERE import_id=? AND field_key='CITY'")) {
+            ps.setString(1, importId);
+            java.sql.SQLException rejected =
+                    org.junit.jupiter.api.Assertions.assertThrows(
+                            java.sql.SQLException.class, ps::executeUpdate);
+            assertEquals("23514", rejected.getSQLState(),
+                    "serbest metin CHECK ile reddedilmeli: " + rejected.getMessage());
+        }
+    }
+
     private static com.ats.application.ResumeImportStore.AttachResult reserveAndAttach(
             AttachCommand command, List<ProposalDraft> proposals) {
         return reserveAndAttach(
