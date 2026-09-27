@@ -325,6 +325,63 @@ class PostgresApplicationStoreTest {
     }
 
     @Test
+    void another_job_is_listed_but_not_marked_as_the_same_job() {
+        // #226 madde 5: "ayni ilana mi?" isaretinin iki yonu de sabit olmali. Yalniz
+        // sameJob=true yonunu sinayan test "isaret hep true" hatasini yakalamaz; ayni
+        // adayin FARKLI ilandaki basvurusu listelenir ama ayni ilan sayilmaz.
+        String otherSlug = "urun-analisti";
+        publishJob(TENANT, "job_" + "S".repeat(24), otherSlug, "Ürün Analisti");
+        String here = "app_" + "S".repeat(24);
+        String there = "app_" + "T".repeat(24);
+        submitWithEmail(here, "6a".repeat(32), "app-otherjob-key-01", "6b".repeat(32),
+                OTHER_JOB_EMAIL);
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, otherSlug, there, "6c".repeat(32), "app-otherjob-key-02",
+                "6d".repeat(32), submissionWithEmail(OTHER_JOB_EMAIL), NOW))
+                .asOptional().orElseThrow();
+
+        var detail = applications.findRecruiterApplication(TENANT, here)
+                .asOptional().orElseThrow();
+        assertEquals(1, detail.otherApplications().size(),
+                "farkli ilandaki basvuru da ayni adayin basvurusudur: "
+                        + detail.otherApplications());
+        var other = detail.otherApplications().get(0);
+        assertEquals(there, other.publicRef());
+        assertEquals(otherSlug, other.jobSlug());
+        assertFalse(other.sameJob(), "farkli ilandaki basvuru sameJob=false olmali");
+    }
+
+    @Test
+    void another_tenants_application_is_never_counted_as_the_same_candidate()
+            throws SQLException {
+        // #226 madde 4: ayni e-posta baska bir tenant'ta da basvuru yapmis olabilir. Mukerrer
+        // gostergesi tenant sinirini asarsa IK baska firmanin aday verisini sayi olarak gorur.
+        // Ayni slug bilincli: ilan ve basvuru eslesmesi de tenant'a bagli kalmali.
+        String otherHandle = "app-other";
+        seedActiveCareerSite(OTHER, otherHandle);
+        publishJob(OTHER, "job_" + "U".repeat(24), SLUG, "Ürün Yöneticisi");
+        String mine = "app_" + "U".repeat(24);
+        String theirs = "app_" + "V".repeat(24);
+        submitWithEmail(mine, "5a".repeat(32), "app-tenant-key-01", "5b".repeat(32),
+                CROSS_TENANT_EMAIL);
+        applications.submit(new SubmitCommand(
+                OTHER, otherHandle, SLUG, theirs, "5c".repeat(32), "app-tenant-key-02",
+                "5d".repeat(32), submissionWithEmail(CROSS_TENANT_EMAIL), NOW))
+                .asOptional().orElseThrow();
+
+        var mineDetail = applications.findRecruiterApplication(TENANT, mine)
+                .asOptional().orElseThrow();
+        assertTrue(mineDetail.otherApplications().isEmpty(),
+                "baska tenant'taki ayni e-posta ayni aday sayilmamali: "
+                        + mineDetail.otherApplications());
+        var theirsDetail = applications.findRecruiterApplication(OTHER, theirs)
+                .asOptional().orElseThrow();
+        assertTrue(theirsDetail.otherApplications().isEmpty(),
+                "simetrik: diger tenant da bu tenant'in basvurusunu sayamaz: "
+                        + theirsDetail.otherApplications());
+    }
+
+    @Test
     void a_blank_email_never_groups_two_different_candidates() {
         // Bos e-posta normalize edilince esitlenir ve e-postasiz IKI FARKLI adayi
         // ayni kisi gosterirdi. Eslesmeye hic girmemeli.
@@ -425,6 +482,8 @@ class PostgresApplicationStoreTest {
      *  sayim belirsizlesir. */
     private static final String DUP_EMAIL = "mukerrer.aday@example.test";
     private static final String NORM_EMAIL = "normalize.aday@example.test";
+    private static final String OTHER_JOB_EMAIL = "farkli.ilan@example.test";
+    private static final String CROSS_TENANT_EMAIL = "tenant.siniri@example.test";
 
     private static void submitWithEmail(
             String publicRef, String accessDigest, String key, String requestDigest, String email) {
