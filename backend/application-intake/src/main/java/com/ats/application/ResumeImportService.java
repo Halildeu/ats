@@ -111,6 +111,11 @@ public final class ResumeImportService implements AutoCloseable {
         public boolean terminal() { return this != ACTIVE; }
     }
 
+    /**
+     * @param source öneriyi hangi kuralın ürettiği; kapalı küme. {@code null}: etiket ya da
+     *     bölüm okuması (#213 öncesi tek yol). #213 (213-G): form "Adresten" etiketini yalnız
+     *     {@link Source#ADDRESS_LAST_LINE} için gösterir; serbest metin taşınmaz.
+     */
     public record Provenance(
             int page,
             double x,
@@ -118,7 +123,35 @@ public final class ResumeImportService implements AutoCloseable {
             double width,
             double height,
             double confidence,
-            String parserVersion) {}
+            String parserVersion,
+            Source source) {
+
+        /** Etiket/bölüm okuması: kaynak alanı yok. */
+        public Provenance(int page, double x, double y, double width, double height,
+                double confidence, String parserVersion) {
+            this(page, x, y, width, height, confidence, parserVersion, null);
+        }
+
+        /**
+         * Öneriyi üreten çıkarım kuralı; kapalı küme, serbest metin taşınmaz.
+         *
+         * <p><strong>Yeni bir değer eklemek üç yeri birlikte değiştirir</strong> (#213 G, sahip
+         * incelemesi 2026-09-25); biri eksik kalırsa yazma ya da sözleşme kırılır:
+         * <ol>
+         *   <li>bu enum;</li>
+         *   <li>{@code ats_resume_proposal_source_check} CHECK kısıtı (yeni bir Flyway göçüyle;
+         *       V25 değiştirilmez);</li>
+         *   <li>{@code ResumeImportApiController.ProvenanceDto#source} üzerindeki
+         *       {@code allowableValues} ve {@code openapi-snapshot.json}.</li>
+         * </ol>
+         * Web tarafı ({@code PROVENANCE_SOURCE_LABELS}) bilinmeyen değeri etiketsiz gösterir; yeni
+         * değerin etiketi ayrı bir web değişikliğidir.
+         */
+        public enum Source {
+            /** 213-F: adres bloğunun son satırı 81 ilden biri. */
+            ADDRESS_LAST_LINE
+        }
+    }
 
     /**
      * #218 — bir bölüm içindeki TEK kayıt önerisi.

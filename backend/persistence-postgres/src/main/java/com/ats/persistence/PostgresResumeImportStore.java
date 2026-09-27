@@ -761,8 +761,9 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 INSERT INTO ats_resume_proposal
                     (tenant_id, import_id, field_key, proposed_value, candidate_value,
                      state, version, source_page, bbox_x, bbox_y, bbox_width, bbox_height,
-                     confidence, parser_version, created_at, updated_at, proposed_entries)
-                VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSONB))
+                     confidence, parser_version, created_at, updated_at, proposed_entries,
+                     provenance_source)
+                VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSONB), ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             for (ProposalDraft proposal : proposals) {
@@ -783,8 +784,9 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 // #218: gruplama yoksa NULL yazılır, '[]' DEĞİL. '[]' "gruplandı,
                 // sonuç boş" derdi; NULL "gruplama yok" der ve okuyucu blob'a düşer.
                 // İki farklı gerçeği tek değere indirmek sessiz bozulma üretir.
-                ps.setString(i, proposal.entries().isEmpty()
+                ps.setString(i++, proposal.entries().isEmpty()
                         ? null : Pg.proposedEntriesToJson(proposal.entries()));
+                ps.setString(i, p.source() == null ? null : p.source().name());
                 ps.addBatch();
             }
             int[] inserted = ps.executeBatch();
@@ -1008,12 +1010,17 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                 base.createdAt(), base.updatedAt(), base.purgedAt(), proposals);
     }
 
+    private static Provenance.Source source(String value) {
+        return value == null ? null : Provenance.Source.valueOf(value);
+    }
+
     private static List<ResumeProposal> readProposals(
             Connection c, TenantId tenantId, String importId) throws SQLException {
         String sql = """
                 SELECT field_key, proposed_value, candidate_value, state, version,
                        source_page, bbox_x, bbox_y, bbox_width, bbox_height,
-                       confidence, parser_version, proposed_entries::text AS proposed_entries
+                       confidence, parser_version, proposed_entries::text AS proposed_entries,
+                       provenance_source
                   FROM ats_resume_proposal
                  WHERE tenant_id=? AND import_id=? ORDER BY field_key
                 """;
@@ -1029,7 +1036,8 @@ public final class PostgresResumeImportStore implements ResumeImportStore {
                             new Provenance(rs.getInt("source_page"), rs.getDouble("bbox_x"),
                                     rs.getDouble("bbox_y"), rs.getDouble("bbox_width"),
                                     rs.getDouble("bbox_height"), rs.getDouble("confidence"),
-                                    rs.getString("parser_version")),
+                                    rs.getString("parser_version"),
+                                    source(rs.getString("provenance_source"))),
                             Pg.proposedEntriesFromJson(rs.getString("proposed_entries"))));
                 }
             }
