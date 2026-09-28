@@ -281,7 +281,7 @@ class InterviewWorkspaceApiController {
                     content = @Content(schema = @Schema(implementation = WorkspaceResponse.class))),
             @ApiResponse(responseCode = "400", description = "Geçersiz geçiş"),
             @ApiResponse(responseCode = "404", description = "Mülakat bulunamadı"),
-            @ApiResponse(responseCode = "409", description = "Sürüm, durum veya eksik scorecard")
+            @ApiResponse(responseCode = "409", description = "Sürüm, durum, eksik scorecard veya başlamamış görüşme")
     })
     ResponseEntity<?> transition(
             Authentication auth,
@@ -455,6 +455,8 @@ class InterviewWorkspaceApiController {
                     creating ? "başvuru mülakat planlamaya hazır değil" : "mülakat bu durumda değiştirilemez");
             case INCOMPLETE_SCORECARDS -> conflict("INCOMPLETE_SCORECARDS",
                     "tamamlama için tüm atanmış katılımcıların scorecard'ı gerekli");
+            case NOT_STARTED -> conflict("INTERVIEW_NOT_STARTED",
+                    "planlanan saat henüz gelmedi; görüşme erken yapıldıysa önce saati güncelleyin");
             case NOT_ASSIGNED -> noStore(ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(error("NOT_FOUND", "mülakat bulunamadı")));
         };

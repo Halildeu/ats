@@ -287,6 +287,15 @@ public final class PostgresInterviewStore implements InterviewStore {
                     return Outcome.ok(new WorkspaceResult(CommandState.ILLEGAL_TRANSITION,
                             findByIdValue(command.tenantId(), command.interviewId())));
                 }
+                // ats#278: gelecekteki bir görüşme gerçekleşmiş olamaz. Erken yapıldıysa İK önce
+                // saati günceller, sonra tamamlar; böylece denetim izi gerçekleşen saati taşır.
+                if (command.target() == InterviewStatus.COMPLETED
+                        && java.time.Instant.parse(current.startsAt())
+                                .isAfter(java.time.Instant.parse(command.occurredAt()))) {
+                    c.rollback();
+                    return Outcome.ok(new WorkspaceResult(CommandState.NOT_STARTED,
+                            findByIdValue(command.tenantId(), command.interviewId())));
+                }
                 if (command.target() == InterviewStatus.COMPLETED
                         && !allParticipantsHaveScorecards(c, command.tenantId(), command.interviewId())) {
                     c.rollback();
@@ -304,7 +313,7 @@ public final class PostgresInterviewStore implements InterviewStore {
                 c.commit();
                 return mapWorkspace(findById(command.tenantId(), command.interviewId()),
                         CommandState.UPDATED);
-            } catch (IllegalArgumentException ex) {
+            } catch (IllegalArgumentException | java.time.format.DateTimeParseException ex) {
                 c.rollback();
                 return corrupt("mülakat geçiş değeri bozuk (fail-closed)");
             } catch (SQLException ex) {

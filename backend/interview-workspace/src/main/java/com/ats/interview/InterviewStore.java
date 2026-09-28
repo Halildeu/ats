@@ -42,6 +42,8 @@ public interface InterviewStore {
         IDEMPOTENCY_CONFLICT,
         ILLEGAL_TRANSITION,
         INCOMPLETE_SCORECARDS,
+        /** ats#278: planlanan başlangıç gelmeden tamamlama istendi. */
+        NOT_STARTED,
         NOT_ASSIGNED,
         NOT_FOUND
     }
