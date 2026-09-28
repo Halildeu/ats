@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.ats.application.ResumeDocumentParser.ParseResult;
 import com.ats.application.ResumeImportService;
+import com.ats.application.ResumeImportService.Provenance;
 import com.ats.application.ResumeImportService.ResumeField;
 import com.ats.kernel.Outcome;
 import java.io.ByteArrayOutputStream;
@@ -577,6 +578,56 @@ class PdfBoxResumeDocumentParserTest {
                 "adresin kendisi hicbir alana yazilmamali: " + fields);
         assertTrue(fields.getOrDefault(ResumeField.EXPERIENCE, "").contains("Kidemli Urun Uzmani"),
                 "adres blogu sonraki bolumu bozmamali: " + fields);
+    }
+
+    /**
+     * #213 (213-G, sahip incelemesi 2026-09-25): adresin son satırından çıkan şehir önerisi
+     * kaynağını taşır ({@code provenance.source = ADDRESS_LAST_LINE}); form bu değerde
+     * "Adresten" der. Başka hiçbir öneri kaynak taşımaz.
+     */
+    @Test
+    void the_city_from_the_address_carries_its_source() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|ANKARA",
+                "40|688|17|true|Is deneyimi",
+                "40|670|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        ParseResult result = parseResult(pdf);
+
+        assertEquals(Provenance.Source.ADDRESS_LAST_LINE, result.proposals().stream()
+                        .filter(p -> p.field() == ResumeField.CITY)
+                        .findFirst().orElseThrow().provenance().source(),
+                "adresten cikan sehir kaynagini tasimali: " + result.proposals());
+        assertTrue(result.proposals().stream()
+                        .filter(p -> p.field() != ResumeField.CITY)
+                        .allMatch(p -> p.provenance().source() == null),
+                "diger oneriler kaynak tasimamali: " + result.proposals());
+    }
+
+    /**
+     * #213 (213-G): açık {@code Sehir} etiketinden gelen şehirde kaynak boş kalır; aksi hâlde
+     * "Adresten" etiketi her şehir önerisine yayılırdı.
+     */
+    @Test
+    void a_city_from_an_explicit_label_has_no_source() throws Exception {
+        byte[] pdf = positionedPdf(
+                "40|760|12|true|Adres",
+                "40|742|12|false|Ornek Mahallesi Cinar Sokak No 5",
+                "40|724|12|false|Ankara",
+                "40|700|12|true|Sehir",
+                "40|682|12|false|Istanbul",
+                "40|646|17|true|Is deneyimi",
+                "40|628|12|false|Kidemli Urun Uzmani, Ornek Teknoloji");
+
+        ParseResult result = parseResult(pdf);
+        var city = result.proposals().stream()
+                .filter(p -> p.field() == ResumeField.CITY).findFirst().orElseThrow();
+
+        assertEquals("Istanbul", city.value(), "acik etiket kazanmali");
+        assertEquals(null, city.provenance().source(),
+                "acik etiketten gelen sehir kaynak tasimamali: " + city.provenance());
     }
 
     /** 213-F: son satır il değilse (ilçe, sokak, posta kodu) tahmin yapılmaz; şehir boş kalır. */
