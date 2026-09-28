@@ -137,7 +137,8 @@ class V26LegacyTextBackfillTest {
 
     @Test
     void the_recruiter_detail_reads_the_moved_text_as_an_entry() {
-        CandidateApplication application = new PostgresApplicationStore(ds)
+        PostgresApplicationStore store = new PostgresApplicationStore(ds);
+        CandidateApplication application = store
                 .findRecruiterApplication(new TenantId(TENANT), LEGACY)
                 .asOptional().orElseThrow().application();
 
@@ -148,6 +149,16 @@ class V26LegacyTextBackfillTest {
         List<EducationEntry> education = application.educationEntries();
         assertEquals(1, education.size());
         assertEquals(LEGACY_EDUCATION, education.get(0).description());
+
+        // Review (2026-09-25): 4000 sınırı yalnız intake yazmasında. Okuma yoluna ileride bir
+        // sınır gelirse 6000 karakterlik eski metin İK detayında kısalır ya da patlar; burada
+        // yakalanır.
+        CandidateApplication longText = store
+                .findRecruiterApplication(new TenantId(TENANT), LONG_TEXT)
+                .asOptional().orElseThrow().application();
+        assertEquals(1, longText.experienceEntries().size());
+        assertEquals(LONG_EXPERIENCE, longText.experienceEntries().get(0).description(),
+                "uzun eski metin İK detayında kısalmadan okunmalı");
     }
 
     private static void insert(String publicRef, String experience, String education,
