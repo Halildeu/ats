@@ -411,10 +411,15 @@ public final class PdfBoxResumeDocumentParser implements ResumeDocumentParser {
             List<ProposalDraft> proposals = new ArrayList<>();
             for (Map.Entry<ResumeField, LocatedValue> entry : values.entrySet()) {
                 LocatedValue located = entry.getValue();
+                // #213 (213-G): yalnız adresten çıkan şehir kaynağını taşır; açık Şehir etiketi
+                // kazandıysa değer başka bir nesnedir ve kaynak boş kalır.
+                Provenance.Source source = located == cityFromAddress
+                        ? Provenance.Source.ADDRESS_LAST_LINE : null;
                 proposals.add(new ProposalDraft(
                         entry.getKey(), located.value(),
                         new Provenance(located.page(), located.x(), located.y(),
-                                located.width(), located.height(), located.confidence(), VERSION),
+                                located.width(), located.height(), located.confidence(), VERSION,
+                                source),
                         proposedEntries(entry.getKey(), sectionLines.get(entry.getKey()),
                                 located.page())));
             }
