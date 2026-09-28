@@ -494,7 +494,8 @@ class ApplicationApiTest {
         assertEquals(201, submit.getStatusCode().value(), submit.getBody());
         String publicRef = objectMapper.readTree(submit.getBody()).path("publicRef").asText();
 
-        Instant start = Instant.now().plusSeconds(86_400);
+        // ats#278: tamamlanan görüşme başlamış olmalı; planlama 5 dk geçmişe izin verir.
+        Instant start = Instant.now().minusSeconds(60);
         Instant end = start.plusSeconds(3_600);
         String schedulePayload = objectMapper.writeValueAsString(Map.ofEntries(
                 Map.entry("type", "BEHAVIORAL"),
@@ -686,6 +687,121 @@ class ApplicationApiTest {
                 + " WHERE interview_id = ?", secondInterviewId));
     }
 
+    /**
+     * ats#278 (sahip kararı 2026-09-25): gelecekteki bir görüşme gerçekleşmiş olamaz. Planlanan
+     * başlangıç henüz gelmediyse tamamlama 409 {@code INTERVIEW_NOT_STARTED} ile reddedilir ve
+     * görüşme {@code SCHEDULED} kalır. Erken yapılan görüşmede İK önce saati günceller, sonra
+     * tamamlar; denetim izi gerçekleşen saati taşır.
+     */
+    @Test
+    void an_interview_cannot_be_completed_before_it_starts_until_it_is_rescheduled()
+            throws Exception {
+        String acceptedAt = Instant.now().toString();
+        HttpHeaders submitHeaders = json();
+        submitHeaders.set("X-ATS-Idempotency-Key", "interview-278-submit-001");
+        submitHeaders.set("X-ATS-Candidate-Access", "Q".repeat(43));
+        ResponseEntity<String> submit = rest.exchange(
+                "/api/v1/jobs/urun-yoneticisi/applications", HttpMethod.POST,
+                new HttpEntity<>(payload("Erken Tamamlama Adayı", acceptedAt), submitHeaders),
+                String.class);
+        assertEquals(201, submit.getStatusCode().value(), submit.getBody());
+        String publicRef = objectMapper.readTree(submit.getBody()).path("publicRef").asText();
+
+        HttpHeaders manager = bearer(token(
+                TENANT, "ats.application.status.write", "interview-278-recruiter"));
+        manager.setContentType(MediaType.APPLICATION_JSON);
+        assertEquals(200, rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/status", HttpMethod.PUT,
+                new HttpEntity<>("{\"expectedVersion\":0,\"toStatus\":\"UNDER_REVIEW\"}", manager),
+                String.class).getStatusCode().value());
+
+        Instant planned = Instant.now().plusSeconds(86_400);
+        manager.set("X-ATS-Idempotency-Key", "interview-278-create-001");
+        ResponseEntity<String> create = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews", HttpMethod.POST,
+                new HttpEntity<>(objectMapper.writeValueAsString(Map.ofEntries(
+                        Map.entry("type", "BEHAVIORAL"),
+                        Map.entry("startsAt", planned.toString()),
+                        Map.entry("endsAt", planned.plusSeconds(3_600).toString()),
+                        Map.entry("timeZone", "Europe/Istanbul"),
+                        Map.entry("mode", "VIDEO"),
+                        Map.entry("location", "https://meet.example.test/erken-oda"),
+                        Map.entry("participants", List.of(Map.of(
+                                "actorRef", "interviewer-278",
+                                "displayLabel", "Sentetik Görüşmeci",
+                                "role", "LEAD"))),
+                        Map.entry("criteria", List.of(Map.of(
+                                "key", "discovery",
+                                "label", "Ürün keşfi",
+                                "question", "Müşteri ihtiyacını hangi kanıtlarla doğruladığınızı anlatın.",
+                                "evidencePrompt", "Adayın kullandığı araştırma yöntemini ve ölçülebilir sonucu yazın."))))),
+                        manager), String.class);
+        assertEquals(201, create.getStatusCode().value(), create.getBody());
+        String interviewId = objectMapper.readTree(create.getBody()).path("interviewId").asText();
+
+        HttpHeaders scorer = bearer(token(
+                TENANT, "ats.application.status.write", "interviewer-278"));
+        scorer.setContentType(MediaType.APPLICATION_JSON);
+        scorer.set("X-ATS-Idempotency-Key", "interview-278-scorecard-01");
+        ResponseEntity<String> scored = rest.exchange(
+                "/api/v1/interviews/" + interviewId + "/scorecards", HttpMethod.POST,
+                new HttpEntity<>(objectMapper.writeValueAsString(Map.ofEntries(
+                        Map.entry("policyVersion", "structured-interview-v1"),
+                        Map.entry("jobRelatednessConfirmed", true),
+                        Map.entry("recommendation", "ADVANCE"),
+                        Map.entry("ratings", List.of(Map.of(
+                                "criterionKey", "discovery", "rating", 4,
+                                "evidence", "Aday üç kullanıcı görüşmesiyle ihtiyacı doğruladı."))),
+                        Map.entry("summary", "İşle ilgili kriter insan tarafından kanıtla değerlendirildi."))),
+                        scorer), String.class);
+        assertEquals(201, scored.getStatusCode().value(), scored.getBody());
+
+        // Scorecard tamam; tek engel saat. Gelecekteki görüşme tamamlanamaz.
+        manager.set("X-ATS-Idempotency-Key", "interview-278-complete-early");
+        ResponseEntity<String> early = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews/" + interviewId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":0,\"target\":\"COMPLETED\","
+                        + "\"reason\":\"Görüşme planlanan saatten önce yapıldı\"}", manager),
+                String.class);
+        assertEquals(409, early.getStatusCode().value(), early.getBody());
+        assertEquals("INTERVIEW_NOT_STARTED",
+                objectMapper.readTree(early.getBody()).path("error").asText(), early.getBody());
+        assertEquals("SCHEDULED", scalarString(
+                "SELECT status FROM ats_interview WHERE interview_id = ?", interviewId),
+                "reddedilen tamamlama durumu değiştirmemeli");
+
+        // İK saati gerçekleşen zamana günceller; ardından tamamlama kabul edilir.
+        Instant held = Instant.now().minusSeconds(60);
+        manager.set("X-ATS-Idempotency-Key", "interview-278-reschedule-01");
+        ResponseEntity<String> rescheduled = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews/" + interviewId,
+                HttpMethod.PUT,
+                new HttpEntity<>(objectMapper.writeValueAsString(Map.of(
+                        "expectedVersion", 0,
+                        "startsAt", held.toString(),
+                        "endsAt", held.plusSeconds(1_800).toString(),
+                        "timeZone", "Europe/Istanbul",
+                        "mode", "VIDEO",
+                        "location", "https://meet.example.test/erken-oda",
+                        "reason", "Görüşme planlanandan önce yapıldı; saat güncellendi")), manager),
+                String.class);
+        assertEquals(200, rescheduled.getStatusCode().value(), rescheduled.getBody());
+
+        manager.set("X-ATS-Idempotency-Key", "interview-278-complete-001");
+        ResponseEntity<String> completed = rest.exchange(
+                "/api/v1/recruiter/applications/" + publicRef + "/interviews/" + interviewId
+                        + "/transitions",
+                HttpMethod.POST,
+                new HttpEntity<>("{\"expectedVersion\":1,\"target\":\"COMPLETED\","
+                        + "\"reason\":\"Görüşme gerçekleşti, scorecard tamam\"}", manager),
+                String.class);
+        assertEquals(200, completed.getStatusCode().value(), completed.getBody());
+        assertEquals("COMPLETED",
+                objectMapper.readTree(completed.getBody()).path("status").asText());
+    }
+
     @Test
     void completed_human_interview_offer_candidate_acceptance_and_hire_are_persistent()
             throws Exception {
@@ -708,7 +824,8 @@ class ApplicationApiTest {
                 new HttpEntity<>("{\"expectedVersion\":0,\"toStatus\":\"UNDER_REVIEW\"}", manager),
                 String.class).getStatusCode().value());
 
-        Instant startsAt = Instant.now().plusSeconds(86_400);
+        // ats#278: tamamlanan görüşme başlamış olmalı; planlama 5 dk geçmişe izin verir.
+        Instant startsAt = Instant.now().minusSeconds(60);
         String schedulePayload = objectMapper.writeValueAsString(Map.ofEntries(
                 Map.entry("type", "FINAL"),
                 Map.entry("startsAt", startsAt.toString()),
