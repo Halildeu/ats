@@ -408,7 +408,7 @@ class PostgresApplicationStoreTest {
      */
     @Test
     void a_replay_whose_digest_predates_the_formula_change_is_not_a_conflict() {
-        String publicRef = "app_" + "D".repeat(21);
+        String publicRef = "app_" + "W".repeat(24);
         String access = "f1".repeat(32);
         String key = "app-digest-transition-01";
 
@@ -418,7 +418,7 @@ class PostgresApplicationStoreTest {
         assertEquals(SubmitState.CREATED, created.state());
 
         SubmitResult replay = applications.submit(new SubmitCommand(
-                TENANT, HANDLE, SLUG, "app_" + "E".repeat(21), access, key,
+                TENANT, HANDLE, SLUG, "app_" + "X".repeat(24), access, key,
                 "b2".repeat(32), "a1".repeat(32), submission("Deniz Sentetik"), NOW))
                 .asOptional().orElseThrow();
         assertEquals(SubmitState.REPLAYED, replay.state(),
@@ -428,7 +428,7 @@ class PostgresApplicationStoreTest {
         assertEquals(1, eventCount(TENANT, publicRef), "replay yeni event üretmez");
 
         SubmitResult conflict = applications.submit(new SubmitCommand(
-                TENANT, HANDLE, SLUG, "app_" + "F".repeat(21), access, key,
+                TENANT, HANDLE, SLUG, "app_" + "P".repeat(24), access, key,
                 "c3".repeat(32), "d4".repeat(32), submission("Farklı Payload"), NOW))
                 .asOptional().orElseThrow();
         assertEquals(SubmitState.IDEMPOTENCY_CONFLICT, conflict.state(),
