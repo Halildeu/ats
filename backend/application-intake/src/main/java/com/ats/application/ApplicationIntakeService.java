@@ -986,8 +986,13 @@ public final class ApplicationIntakeService {
         return List.copyOf(out);
     }
 
-    /** #250: istek özeti formülünün sürümü; formül değişince bu önek de değişir. */
-    private static final String DIGEST_VERSION = "v2";
+    /**
+     * #250: istek özeti formülünün sürümü. Hash'in ÇIKTISINA eklenemez — şemada
+     * {@code request_digest CHAR(64)} ve {@code CHECK (request_digest ~ '^[0-9a-f]{64}$')}
+     * var, okunabilir bir önek her yazmayı reddettirirdi. Bu yüzden sürüm hash'in İLK
+     * PARÇASI olarak girer: formülü eskiden ayırmaya yeter, şema sözleşmesini bozmaz.
+     */
+    private static final String DIGEST_VERSION = "ats-request-digest/2";
 
     /**
      * #250 (sahip şartı 4): v2 özeti TÜREV TEXT'e bağlı DEĞİLDİR. Adayın kendi yazdığı metin
@@ -997,8 +1002,8 @@ public final class ApplicationIntakeService {
      */
     private static String requestDigestV2(
             String jobSlug, String accessDigest, Submission s, Submission raw) {
-        return DIGEST_VERSION + ":" + hashParts(List.of(
-                jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(),
+        return hashParts(List.of(
+                DIGEST_VERSION, jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(),
                 nullToEmpty(s.linkedIn()), nullToEmpty(s.portfolio()), s.summary(),
                 nullToEmpty(raw == null ? null : raw.experience()).trim(),
                 nullToEmpty(raw == null ? null : raw.education()).trim(),
