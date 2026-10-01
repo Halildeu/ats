@@ -400,6 +400,41 @@ class PostgresApplicationStoreTest {
                 "e-postasiz kayitlar ayni kisi sayilmamali: " + detail.otherApplications());
     }
 
+    /**
+     * #250 (sahip şartı 4): özet formülü değiştiğinde, ESKİ formülle yazılmış bir satırın
+     * dağıtım anında yeniden denenmesi temiz REPLAY olmalı — IDEMPOTENCY_CONFLICT değil.
+     * Komut iki özet taşır; depo ikisinden birinin eşleşmesini kabul eder. Gerçekten farklı
+     * bir gövde ise fail-closed davranış korunur.
+     */
+    @Test
+    void a_replay_whose_digest_predates_the_formula_change_is_not_a_conflict() {
+        String publicRef = "app_" + "D".repeat(21);
+        String access = "f1".repeat(32);
+        String key = "app-digest-transition-01";
+
+        SubmitResult created = applications.submit(
+                command(publicRef, access, key, "eski-formul-ozeti", "Deniz Sentetik"))
+                .asOptional().orElseThrow();
+        assertEquals(SubmitState.CREATED, created.state());
+
+        SubmitResult replay = applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, "app_" + "E".repeat(21), access, key,
+                "v2:yeni-ozet", "eski-formul-ozeti", submission("Deniz Sentetik"), NOW))
+                .asOptional().orElseThrow();
+        assertEquals(SubmitState.REPLAYED, replay.state(),
+                "eski özetle yazılmış satırın yeniden denenmesi temiz replay olmalı");
+        assertEquals(created.application(), replay.application(),
+                "replay ilk makbuzu döndürmeli, ikinci başvuru yazmamalı");
+        assertEquals(1, eventCount(TENANT, publicRef), "replay yeni event üretmez");
+
+        SubmitResult conflict = applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, "app_" + "F".repeat(21), access, key,
+                "v2:baska-govde", "eski-baska-govde", submission("Farklı Payload"), NOW))
+                .asOptional().orElseThrow();
+        assertEquals(SubmitState.IDEMPOTENCY_CONFLICT, conflict.state(),
+                "iki özetten hiçbiri eşleşmiyorsa fail-closed çakışma sürmeli");
+    }
+
     // --- helpers ---
 
     private static SubmitCommand command(

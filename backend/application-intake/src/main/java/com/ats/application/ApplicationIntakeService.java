@@ -628,6 +628,7 @@ public final class ApplicationIntakeService {
                 accessDigest,
                 idempotencyKey,
                 requestDigest(jobSlug, accessDigest, submission),
+                requestDigest(jobSlug, accessDigest, submission),
                 submission,
                 occurredAt);
         Outcome<SubmitResult> stored = store.submit(command);
