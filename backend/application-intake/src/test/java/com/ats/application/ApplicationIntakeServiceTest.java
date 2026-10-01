@@ -93,9 +93,12 @@ class ApplicationIntakeServiceTest {
         SubmitCommand base = capture(withEntries("Kıdemli Ürün Uzmanı", "2019-01"));
         String v2 = base.requestDigest();
 
-        assertTrue(v2.startsWith("v2:"), "özet sürümü okunabilir olmalı: " + v2);
         assertFalse(v2.equals(base.legacyRequestDigest()),
                 "v2 formülü eski formülden ayrılmalı; aksi hâlde geçiş yapılmamış demektir");
+        // Sürüm hash'in ÇIKTISINA eklenemez: şemada request_digest CHAR(64) ve
+        // CHECK (request_digest ~ '^[0-9a-f]{64}$') var.
+        assertTrue(v2.matches("[0-9a-f]{64}"),
+                "özet şemanın 64 haneli onaltılık biçimini korumalı: " + v2);
 
         assertFalse(v2.equals(capture(withEntries("Ürün Uzmanı", "2019-01")).requestDigest()),
                 "yalnız girdi unvanı değişse bile özet değişmeli");

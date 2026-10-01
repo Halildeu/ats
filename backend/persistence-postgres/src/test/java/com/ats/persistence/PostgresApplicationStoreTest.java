@@ -413,13 +413,13 @@ class PostgresApplicationStoreTest {
         String key = "app-digest-transition-01";
 
         SubmitResult created = applications.submit(
-                command(publicRef, access, key, "eski-formul-ozeti", "Deniz Sentetik"))
+                command(publicRef, access, key, "a1".repeat(32), "Deniz Sentetik"))
                 .asOptional().orElseThrow();
         assertEquals(SubmitState.CREATED, created.state());
 
         SubmitResult replay = applications.submit(new SubmitCommand(
                 TENANT, HANDLE, SLUG, "app_" + "E".repeat(21), access, key,
-                "v2:yeni-ozet", "eski-formul-ozeti", submission("Deniz Sentetik"), NOW))
+                "b2".repeat(32), "a1".repeat(32), submission("Deniz Sentetik"), NOW))
                 .asOptional().orElseThrow();
         assertEquals(SubmitState.REPLAYED, replay.state(),
                 "eski özetle yazılmış satırın yeniden denenmesi temiz replay olmalı");
@@ -429,7 +429,7 @@ class PostgresApplicationStoreTest {
 
         SubmitResult conflict = applications.submit(new SubmitCommand(
                 TENANT, HANDLE, SLUG, "app_" + "F".repeat(21), access, key,
-                "v2:baska-govde", "eski-baska-govde", submission("Farklı Payload"), NOW))
+                "c3".repeat(32), "d4".repeat(32), submission("Farklı Payload"), NOW))
                 .asOptional().orElseThrow();
         assertEquals(SubmitState.IDEMPOTENCY_CONFLICT, conflict.state(),
                 "iki özetten hiçbiri eşleşmiyorsa fail-closed çakışma sürmeli");
