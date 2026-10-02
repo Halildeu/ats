@@ -435,6 +435,32 @@ class PostgresApplicationStoreTest {
                 "iki özetten hiçbiri eşleşmiyorsa fail-closed çakışma sürmeli");
     }
 
+    /**
+     * #250 6. adım: türetme servis sözleşmesinden kalkınca eski TEXT kolonları
+     * girdi-tabanlı başvurularda BOŞ kalırdı ve İK detayı, export ve DSAR yüzeyleri
+     * sessizce boşalırdı. Türetme kalıcılık katmanında, yalnız bu geriye dönük
+     * kolonları beslemek için kalır.
+     */
+    @Test
+    void the_legacy_text_columns_stay_readable_for_an_entries_only_submission() {
+        String publicRef = "app_" + "O".repeat(24);
+        applications.submit(new SubmitCommand(
+                TENANT, HANDLE, SLUG, publicRef, "a7".repeat(32), "app-legacy-text-key-01",
+                "e5".repeat(32), structuredSubmission(), NOW)).asOptional().orElseThrow();
+
+        CandidateApplication app = applications.findRecruiterApplication(TENANT, publicRef)
+                .asOptional().orElseThrow().application();
+
+        assertNotNull(app.experience(), "eski deneyim kolonu İK görünümü için dolu kalmalı");
+        assertTrue(app.experience().contains("Ürün Uzmanı"),
+                "eski kolon girdilerden türetilmeli: " + app.experience());
+        assertTrue(app.experience().contains("Analist"),
+                "ikinci girdi de tek dizeli görünüme girmeli: " + app.experience());
+        assertNotNull(app.education(), "eski eğitim kolonu da dolu kalmalı");
+        assertTrue(app.education().contains("Örnek Üniversitesi"),
+                "eski eğitim kolonu girdilerden türetilmeli: " + app.education());
+    }
+
     // --- helpers ---
 
     private static SubmitCommand command(
