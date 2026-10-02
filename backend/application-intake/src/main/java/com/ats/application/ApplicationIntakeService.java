@@ -627,6 +627,7 @@ public final class ApplicationIntakeService {
                 publicRef,
                 accessDigest,
                 idempotencyKey,
+                requestDigestV2(jobSlug, accessDigest, submission, raw),
                 requestDigest(jobSlug, accessDigest, submission),
                 submission,
                 occurredAt);
@@ -985,6 +986,59 @@ public final class ApplicationIntakeService {
         return List.copyOf(out);
     }
 
+    /**
+     * #250: istek özeti formülünün sürümü. Hash'in ÇIKTISINA eklenemez — şemada
+     * {@code request_digest CHAR(64)} ve {@code CHECK (request_digest ~ '^[0-9a-f]{64}$')}
+     * var, okunabilir bir önek her yazmayı reddettirirdi. Bu yüzden sürüm hash'in İLK
+     * PARÇASI olarak girer: formülü eskiden ayırmaya yeter, şema sözleşmesini bozmaz.
+     */
+    private static final String DIGEST_VERSION = "ats-request-digest/2";
+
+    /**
+     * #250 (sahip şartı 4): v2 özeti TÜREV TEXT'e bağlı DEĞİLDİR. Adayın kendi yazdığı metin
+     * ({@code raw} — modern formda boş) ve yapısal girdiler ayrı ayrı girer; böylece 6. adımda
+     * türetme kesildiğinde özet değişmez. Dil ve sertifika alanları da kapsanır: eski formülde
+     * yokturlar ve yalnız onların değiştiği iki gövde aynı özeti üretiyordu.
+     */
+    private static String requestDigestV2(
+            String jobSlug, String accessDigest, Submission s, Submission raw) {
+        return hashParts(List.of(
+                DIGEST_VERSION, jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(),
+                nullToEmpty(s.linkedIn()), nullToEmpty(s.portfolio()), s.summary(),
+                nullToEmpty(raw == null ? null : raw.experience()).trim(),
+                nullToEmpty(raw == null ? null : raw.education()).trim(),
+                entriesDigestPart(s.experienceEntries(), s.educationEntries()),
+                String.join("\u001f", s.skills()), nullToEmpty(s.note()),
+                nullToEmpty(s.languages()), nullToEmpty(s.certifications()),
+                s.noticeVersion(), s.noticeAcceptedAt(), s.accuracyConfirmedAt(),
+                nullToEmpty(s.resumeImportId()),
+                s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()),
+                answersDigestPart(s.answers())));
+    }
+
+    /**
+     * #250: girdiler özete AÇIKÇA girer. Alan ayracı birim (US), kayıt ayracı grup (RS),
+     * iki liste arasındaki ayraç dosya (GS) ayracıdır — hiçbiri kullanıcı metninde geçmez,
+     * dolayısıyla iki farklı girdi kümesi aynı diziye düşemez.
+     */
+    private static String entriesDigestPart(
+            List<ExperienceEntry> experience, List<EducationEntry> education) {
+        StringBuilder sb = new StringBuilder();
+        for (ExperienceEntry e : experience) {
+            sb.append(e.title()).append('\u001f').append(e.company()).append('\u001f')
+                    .append(e.startDate()).append('\u001f').append(e.endDate()).append('\u001f')
+                    .append(e.ongoing()).append('\u001f').append(e.description()).append('\u001e');
+        }
+        sb.append('\u001d');
+        for (EducationEntry e : education) {
+            sb.append(e.school()).append('\u001f').append(e.degree()).append('\u001f')
+                    .append(e.field()).append('\u001f').append(e.startYear()).append('\u001f')
+                    .append(e.endYear()).append('\u001f').append(e.ongoing()).append('\u001f')
+                    .append(e.description()).append('\u001e');
+        }
+        return sb.toString();
+    }
+
     private static String requestDigest(String jobSlug, String accessDigest, Submission s) {
         List<String> parts = List.of(
                 jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(), nullToEmpty(s.linkedIn()),
@@ -994,6 +1048,11 @@ public final class ApplicationIntakeService {
                 s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()),
                 // #240 B: aynı anahtar + farklı cevap = farklı istek (sessiz replay olmasın).
                 answersDigestPart(s.answers()));
+        return hashParts(parts);
+    }
+
+    /** Uzunluk-önekli SHA-256: parçalar birleşirken sınırlar kaybolmaz. */
+    private static String hashParts(List<String> parts) {
         MessageDigest digest = sha256();
         for (String part : parts) {
             byte[] bytes = part.getBytes(StandardCharsets.UTF_8);

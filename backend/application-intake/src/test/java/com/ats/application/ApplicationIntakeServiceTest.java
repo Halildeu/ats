@@ -80,6 +80,77 @@ class ApplicationIntakeServiceTest {
         assertFalse(store.command.candidateAccessDigest().equals(receipt.candidateAccessToken()));
     }
 
+    /**
+     * #250 (sahip şartı 4): istek özeti bugün TÜREV TEXT'i içeriyor. Modern form
+     * {@code experience}/{@code education} metnini hiç göndermiyor — backend'in girdilerden
+     * türettiği metin özete giriyor. Türetme 6. adımda kesilince eski formül bütün modern
+     * gönderimler için aynı boş metni hash'ler. v2 özeti sürüm öneki taşır, adayın kendi
+     * yazdığı ham metni ve yapısal girdileri AYRI AYRI kapsar; böylece türetme kalkınca
+     * özet değişmez. Eski özet komutta yan yana durur.
+     */
+    @Test
+    void the_request_digest_is_versioned_and_covers_the_structured_entries() {
+        SubmitCommand base = capture(withEntries("Kıdemli Ürün Uzmanı", "2019-01"));
+        String v2 = base.requestDigest();
+
+        assertFalse(v2.equals(base.legacyRequestDigest()),
+                "v2 formülü eski formülden ayrılmalı; aksi hâlde geçiş yapılmamış demektir");
+        // Sürüm hash'in ÇIKTISINA eklenemez: şemada request_digest CHAR(64) ve
+        // CHECK (request_digest ~ '^[0-9a-f]{64}$') var.
+        assertTrue(v2.matches("[0-9a-f]{64}"),
+                "özet şemanın 64 haneli onaltılık biçimini korumalı: " + v2);
+
+        assertFalse(v2.equals(capture(withEntries("Ürün Uzmanı", "2019-01")).requestDigest()),
+                "yalnız girdi unvanı değişse bile özet değişmeli");
+        assertFalse(v2.equals(capture(withEntries("Kıdemli Ürün Uzmanı", "2020-01")).requestDigest()),
+                "yalnız girdi tarihi değişse bile özet değişmeli");
+        assertEquals(v2, capture(withEntries("Kıdemli Ürün Uzmanı", "2019-01")).requestDigest(),
+                "aynı gövde aynı özeti vermeli");
+    }
+
+    /**
+     * #250: dil ve sertifika alanları eski formülde HİÇ kapsanmıyordu — yalnız onların
+     * değiştiği iki gövde aynı özeti üretiyor ve ikincisi sessizce replay sayılıyordu.
+     * Özet sürümlenirken bu boşluk da kapanır.
+     */
+    @Test
+    void the_request_digest_covers_languages_and_certifications() {
+        assertFalse(capture(withLanguages("İngilizce (ileri)")).requestDigest()
+                        .equals(capture(withLanguages("Almanca (orta)")).requestDigest()),
+                "yalnız diller değişse bile özet değişmeli");
+    }
+
+    private static SubmitCommand capture(ApplicationIntakeService.Submission submission) {
+        CapturingStore store = new CapturingStore();
+        assertTrue(service(store).submit("urun-yoneticisi", "idem-key-12345678",
+                CANDIDATE_ACCESS, submission).isOk(), "gönderim doğrulamadan geçmeli");
+        return store.command;
+    }
+
+    /** Modern form: TEXT yok, yalnız yapısal girdi. */
+    private static ApplicationIntakeService.Submission withEntries(String title, String start) {
+        return modern(List.of(new ApplicationIntakeService.ExperienceEntry(
+                title, "Örnek Teknoloji", start, "2023-01", false, "Sentetik")), null);
+    }
+
+    private static ApplicationIntakeService.Submission withLanguages(String languages) {
+        return modern(List.of(new ApplicationIntakeService.ExperienceEntry(
+                "Ürün Uzmanı", "Örnek Teknoloji", "2019-01", "2023-01", false, "Sentetik")),
+                languages);
+    }
+
+    private static ApplicationIntakeService.Submission modern(
+            List<ApplicationIntakeService.ExperienceEntry> experience, String languages) {
+        return new ApplicationIntakeService.Submission(
+                "Deniz", "deniz@example.test", "+905550000000", "İstanbul", null, null,
+                "Ürün alanında deneyimli sentetik aday", null, null, List.of("Ürün"), null,
+                ApplicationIntakeService.NOTICE_VERSION, NOW.toString(), NOW.toString(),
+                null, null, experience,
+                List.of(new ApplicationIntakeService.EducationEntry(
+                        "Örnek Üniversitesi", "Lisans", "YBS", "2015", "2019", false, "")),
+                languages, null, List.of());
+    }
+
     @Test
     void idempotency_conflict_and_stale_notice_fail_closed() {
         CapturingStore store = new CapturingStore();

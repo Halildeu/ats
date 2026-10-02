@@ -141,7 +141,11 @@ public final class PostgresApplicationStore implements ApplicationStore {
                         return Outcome.fail(OutcomeCode.NOT_CONFIGURED,
                                 "idempotency kaydı tamamlanmamış (fail-closed)");
                     }
-                    if (!existing.requestDigest().equals(command.requestDigest())) {
+                    // #250: özet formülü değişikliğinin penceresinde ESKİ formülle yazılmış
+                    // satırın yeniden denenmesi de temiz replay olmalı. Komut iki özet taşır;
+                    // birinin eşleşmesi yeter, hiçbiri eşleşmezse fail-closed sürer.
+                    if (!existing.requestDigest().equals(command.requestDigest())
+                            && !existing.requestDigest().equals(command.legacyRequestDigest())) {
                         return Outcome.ok(new SubmitResult(SubmitState.IDEMPOTENCY_CONFLICT, null));
                     }
                     Outcome<CandidateApplication> replay = findByApplicationId(

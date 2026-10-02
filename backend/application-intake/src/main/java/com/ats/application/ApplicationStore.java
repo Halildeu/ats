@@ -19,8 +19,23 @@ public interface ApplicationStore {
             String candidateAccessDigest,
             String idempotencyKey,
             String requestDigest,
+            /**
+             * #250: dağıtım anında yeniden denenen eski bir istek, eski formülle yazılmış
+             * özeti taşır. Depo replay'de ikisinden birini kabul eder; böylece özet formülü
+             * değişikliğinin penceresinde temiz bir replay 400'e dönüşmez.
+             */
+            String legacyRequestDigest,
             Submission submission,
-            String occurredAt) {}
+            String occurredAt) {
+
+        /** Geri uyum: tek özetli çağrı yerleri aynı değeri iki slota koyar. */
+        public SubmitCommand(TenantId publicTenantId, String publicHandle, String jobSlug,
+                String publicRef, String candidateAccessDigest, String idempotencyKey,
+                String requestDigest, Submission submission, String occurredAt) {
+            this(publicTenantId, publicHandle, jobSlug, publicRef, candidateAccessDigest,
+                    idempotencyKey, requestDigest, requestDigest, submission, occurredAt);
+        }
+    }
 
     enum SubmitState { CREATED, REPLAYED, IDEMPOTENCY_CONFLICT }
 
