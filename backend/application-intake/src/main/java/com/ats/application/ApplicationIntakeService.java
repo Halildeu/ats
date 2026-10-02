@@ -393,6 +393,23 @@ public final class ApplicationIntakeService {
             }).collect(java.util.stream.Collectors.joining("\n\n"));
         }
 
+        /**
+         * #250 6. adim: eski tek-string kolonlari besleyen kopya. Dogrulama ve istek ozeti
+         * adayin HAM metnini gorur; kalicilik katmanina giden kopya, IK detayi, export ve
+         * DSAR yuzeyleri icin turevi tasir. Turetme boylece sozlesmeden cikar ama okuyucular
+         * kirilmaz; eski kolonlar kaldirildiginda bu kopya da gider.
+         *
+         * <p>Depo turetme YAPMAZ, cagiranin verdigini saklar -- bu ayrim bilerek korunuyor.
+         */
+        public Submission withLegacyText() {
+            return new Submission(
+                    fullName, email, phone, city, linkedIn, portfolio, summary,
+                    effectiveExperience(), effectiveEducation(), skills, note,
+                    noticeVersion, noticeAcceptedAt, accuracyConfirmedAt,
+                    resumeImportId, resumeDraftVersion, experienceEntries, educationEntries,
+                    languages, certifications, answers);
+        }
+
         public String effectiveEducation() {
             if (educationEntries.isEmpty()) return education;
             return educationEntries.stream().map(e -> {
@@ -629,7 +646,8 @@ public final class ApplicationIntakeService {
                 idempotencyKey,
                 requestDigestV2(jobSlug, accessDigest, submission, raw),
                 requestDigest(jobSlug, accessDigest, submission),
-                submission,
+                // #250 6. adim: eski kolonlari besleyen turev yalniz bu kopyada.
+                submission.withLegacyText(),
                 occurredAt);
         Outcome<SubmitResult> stored = store.submit(command);
         if (stored instanceof Outcome.Fail<SubmitResult> fail) {
@@ -834,7 +852,9 @@ public final class ApplicationIntakeService {
                 // türetilir; gelmediyse adayın yazdığı string aynen kalır. Böylece İK
                 // görünümü/export/DSAR yüzeyleri her iki gönderim biçiminde de aynı içeriği
                 // görür ve iki tarafı aynı anda deploy etmek gerekmez.
-                trim(raw.effectiveExperience()), trim(raw.effectiveEducation()),
+                // #250 6. adım: TEXT alanı yalnız adayın kendi yazdığını taşır. Türetme
+                // kalıcılık katmanında, eski kolonları beslemek için sürüyor.
+                trim(raw.experience()), trim(raw.education()),
                 normalizeSkills(raw.skills()),
                 trimToNull(raw.note()), trim(raw.noticeVersion()), trim(raw.noticeAcceptedAt()),
                 trim(raw.accuracyConfirmedAt()), trimToNull(raw.resumeImportId()),
@@ -889,8 +909,17 @@ public final class ApplicationIntakeService {
             return invalid("languages en fazla 2000 karakter olmalı");
         if (value.certifications() != null && value.certifications().length() > 4000)
             return invalid("certifications en fazla 4000 karakter olmalı");
-        if (!between(value.experience(), 1, 8000)) return invalid("experience 1..8000 karakter olmalı");
-        if (!between(value.education(), 1, 4000)) return invalid("education 1..4000 karakter olmalı");
+        // #250 6. adım: deneyim/eğitim ZORUNLU kalır, ama dayanağı türev metnin uzunluğu
+        // değil yapısal girdinin varlığı. Metin gönderen eski istemci geçiş penceresinde
+        // kabul edilir ve sınırı korur; modern form girdiyle gelir.
+        if (value.experienceEntries().isEmpty() && !between(value.experience(), 1, 8000))
+            return invalid("experience en az bir girdi içermeli (ya da 1..8000 karakter metin)");
+        if (value.educationEntries().isEmpty() && !between(value.education(), 1, 4000))
+            return invalid("education en az bir girdi içermeli (ya da 1..4000 karakter metin)");
+        if (value.experience() != null && !between(value.experience(), 1, 8000))
+            return invalid("experience 1..8000 karakter olmalı");
+        if (value.education() != null && !between(value.education(), 1, 4000))
+            return invalid("education 1..4000 karakter olmalı");
         if (value.skills().isEmpty() || value.skills().size() > 50
                 || value.skills().stream().anyMatch(s -> !between(s, 1, 80)))
             return invalid("skills 1..50 öğe, her öğe 1..80 karakter olmalı");
@@ -1042,7 +1071,12 @@ public final class ApplicationIntakeService {
     private static String requestDigest(String jobSlug, String accessDigest, Submission s) {
         List<String> parts = List.of(
                 jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(), nullToEmpty(s.linkedIn()),
-                nullToEmpty(s.portfolio()), s.summary(), s.experience(), s.education(),
+                nullToEmpty(s.portfolio()), s.summary(),
+                // #250 6. adim: ESKI formul, dagitim oncesi yazilmis satirlarla birebir
+                // ayni degeri uretmek zorunda. O satirlar turev metinle hesaplanmisti, bu
+                // yuzden turetme servis sozlesmesinden kalktiktan sonra burada ACIKCA
+                // cagrilir. (`List.of` ayrica null kabul etmez.)
+                s.effectiveExperience(), s.effectiveEducation(),
                 String.join("\u001f", s.skills()), nullToEmpty(s.note()), s.noticeVersion(),
                 s.noticeAcceptedAt(), s.accuracyConfirmedAt(), nullToEmpty(s.resumeImportId()),
                 s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()),

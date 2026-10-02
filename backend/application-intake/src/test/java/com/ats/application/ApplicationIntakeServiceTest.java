@@ -2,6 +2,7 @@ package com.ats.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -149,6 +150,46 @@ class ApplicationIntakeServiceTest {
                 List.of(new ApplicationIntakeService.EducationEntry(
                         "Örnek Üniversitesi", "Lisans", "YBS", "2015", "2019", false, "")),
                 languages, null, List.of());
+    }
+
+    /**
+     * #250 6. adım: TEXT alanı artık TÜREV taşımaz, yalnız adayın kendi yazdığı metni.
+     * Modern form bu alanı hiç göndermediği için sözleşmede boş kalır; İK'nın gördüğü
+     * tek dizeli görünümü kalıcılık katmanı eski kolon uyumluluğu için türetir.
+     */
+    @Test
+    void the_validated_submission_keeps_the_text_the_candidate_actually_wrote() {
+        // Doğrulamadan geçen gövde: türev metin ARTIK buraya yazılmıyor.
+        ApplicationIntakeService.Submission modern = withEntries("Kıdemli Ürün Uzmanı", "2019-01");
+        assertNull(modern.experience(), "modern form metin göndermiyor");
+        assertTrue(modern.effectiveExperience().contains("Kıdemli Ürün Uzmanı"),
+                "tek dizeli görünüm girdilerden üretilebilmeli");
+
+        // Depoya giden KOPYA eski kolonları besler; depo türetme yapmaz, bu yüzden
+        // türevi servis katmanı taşır (#215'teki katman ayrımı korunuyor).
+        SubmitCommand command = capture(modern);
+        assertNotNull(command.submission().experience(),
+                "eski kolonu besleyen kopya boş olmamalı");
+        assertTrue(command.submission().experience().contains("Kıdemli Ürün Uzmanı"),
+                "kopya girdilerden türetilmeli: " + command.submission().experience());
+        assertNotNull(command.submission().education(), "eski eğitim kolonu da beslenmeli");
+        assertEquals(1, command.submission().experienceEntries().size(),
+                "yapısal girdi tek gerçek kaynak olarak duruyor");
+    }
+
+    /**
+     * #250 6. adım: deneyim/eğitim bilgisi ZORUNLU kalır — kuralın dayanağı türev
+     * metnin uzunluğu değil, yapısal girdinin varlığıdır. Eski istemci metin
+     * gönderiyorsa geçiş penceresinde o da kabul edilir.
+     */
+    @Test
+    void experience_stays_required_but_the_entries_now_carry_it() {
+        assertFalse(service(new CapturingStore()).submit("urun-yoneticisi", "idem-key-12345678",
+                        CANDIDATE_ACCESS, modern(List.of(), null)).isOk(),
+                "ne girdi ne metin varsa başvuru kabul edilmemeli");
+        assertTrue(service(new CapturingStore()).submit("urun-yoneticisi", "idem-key-12345678",
+                        CANDIDATE_ACCESS, withEntries("Ürün Uzmanı", "2019-01")).isOk(),
+                "girdi varken metin istenmemeli");
     }
 
     @Test
