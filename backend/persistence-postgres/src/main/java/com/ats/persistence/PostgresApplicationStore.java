@@ -996,7 +996,11 @@ public final class PostgresApplicationStore implements ApplicationStore {
             ps.setString(i++, command.publicRef()); ps.setString(i++, job.jobId());
             ps.setString(i++, s.fullName()); ps.setString(i++, s.email()); ps.setString(i++, s.phone());
             ps.setString(i++, s.city()); ps.setString(i++, s.linkedIn()); ps.setString(i++, s.portfolio());
-            ps.setString(i++, s.summary()); ps.setString(i++, s.experience()); ps.setString(i++, s.education());
+            ps.setString(i++, s.summary());
+            // #250 6. adim: servis artik turev yazmiyor. Eski kolonlar IK detayi, export ve
+            // DSAR yuzeyleri icin dolu kalmali, bu yuzden turetme BURADA yapilir -- yani
+            // geriye donuk kolonu besleyen katmanda. Kolonlar kaldirildiginda bu da gider.
+            ps.setString(i++, s.effectiveExperience()); ps.setString(i++, s.effectiveEducation());
             ps.setString(i++, Pg.stringsToJson(s.skills())); ps.setString(i++, s.note());
             ps.setString(i++, command.candidateAccessDigest()); ps.setString(i++, s.noticeVersion());
             ps.setTimestamp(i++, timestamp(s.noticeAcceptedAt()));
@@ -1139,8 +1143,10 @@ public final class PostgresApplicationStore implements ApplicationStore {
             case "PHONE" -> submission.phone();
             case "CITY" -> submission.city();
             case "SUMMARY" -> submission.summary();
-            case "EXPERIENCE" -> submission.experience();
-            case "EDUCATION" -> submission.education();
+            // #250 6. adim: aday metni girdilere boldugunde ham alan bostur; taslak
+            // karsilastirmasi girdilerden turetilen tek dizeli gorunumu gormeli.
+            case "EXPERIENCE" -> submission.effectiveExperience();
+            case "EDUCATION" -> submission.effectiveEducation();
             case "SKILLS" -> String.join(", ", submission.skills());
             case "LANGUAGES", "CERTIFICATIONS" -> null;
             default -> throw new ResumeBindingException("CV taslağı desteklenmeyen alan içeriyor");
