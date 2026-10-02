@@ -2,6 +2,7 @@ package com.ats.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -149,6 +150,40 @@ class ApplicationIntakeServiceTest {
                 List.of(new ApplicationIntakeService.EducationEntry(
                         "Örnek Üniversitesi", "Lisans", "YBS", "2015", "2019", false, "")),
                 languages, null, List.of());
+    }
+
+    /**
+     * #250 6. adım: TEXT alanı artık TÜREV taşımaz, yalnız adayın kendi yazdığı metni.
+     * Modern form bu alanı hiç göndermediği için sözleşmede boş kalır; İK'nın gördüğü
+     * tek dizeli görünümü kalıcılık katmanı eski kolon uyumluluğu için türetir.
+     */
+    @Test
+    void the_text_fields_carry_only_what_the_candidate_wrote() {
+        SubmitCommand command = capture(withEntries("Kıdemli Ürün Uzmanı", "2019-01"));
+
+        assertNull(command.submission().experience(),
+                "türev metin artık sözleşmeye yazılmamalı: " + command.submission().experience());
+        assertNull(command.submission().education(),
+                "türev metin artık sözleşmeye yazılmamalı: " + command.submission().education());
+        assertEquals(1, command.submission().experienceEntries().size(),
+                "yapısal girdi tek gerçek kaynak olarak duruyor");
+        assertTrue(command.submission().effectiveExperience().contains("Kıdemli Ürün Uzmanı"),
+                "tek dizeli görünüm hâlâ girdilerden üretilebilmeli");
+    }
+
+    /**
+     * #250 6. adım: deneyim/eğitim bilgisi ZORUNLU kalır — kuralın dayanağı türev
+     * metnin uzunluğu değil, yapısal girdinin varlığıdır. Eski istemci metin
+     * gönderiyorsa geçiş penceresinde o da kabul edilir.
+     */
+    @Test
+    void experience_stays_required_but_the_entries_now_carry_it() {
+        assertFalse(service(new CapturingStore()).submit("urun-yoneticisi", "idem-key-12345678",
+                        CANDIDATE_ACCESS, modern(List.of(), null)).isOk(),
+                "ne girdi ne metin varsa başvuru kabul edilmemeli");
+        assertTrue(service(new CapturingStore()).submit("urun-yoneticisi", "idem-key-12345678",
+                        CANDIDATE_ACCESS, withEntries("Ürün Uzmanı", "2019-01")).isOk(),
+                "girdi varken metin istenmemeli");
     }
 
     @Test
