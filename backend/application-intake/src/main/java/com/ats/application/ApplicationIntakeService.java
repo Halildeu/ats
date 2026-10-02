@@ -834,7 +834,9 @@ public final class ApplicationIntakeService {
                 // türetilir; gelmediyse adayın yazdığı string aynen kalır. Böylece İK
                 // görünümü/export/DSAR yüzeyleri her iki gönderim biçiminde de aynı içeriği
                 // görür ve iki tarafı aynı anda deploy etmek gerekmez.
-                trim(raw.effectiveExperience()), trim(raw.effectiveEducation()),
+                // #250 6. adım: TEXT alanı yalnız adayın kendi yazdığını taşır. Türetme
+                // kalıcılık katmanında, eski kolonları beslemek için sürüyor.
+                trim(raw.experience()), trim(raw.education()),
                 normalizeSkills(raw.skills()),
                 trimToNull(raw.note()), trim(raw.noticeVersion()), trim(raw.noticeAcceptedAt()),
                 trim(raw.accuracyConfirmedAt()), trimToNull(raw.resumeImportId()),
@@ -889,8 +891,17 @@ public final class ApplicationIntakeService {
             return invalid("languages en fazla 2000 karakter olmalı");
         if (value.certifications() != null && value.certifications().length() > 4000)
             return invalid("certifications en fazla 4000 karakter olmalı");
-        if (!between(value.experience(), 1, 8000)) return invalid("experience 1..8000 karakter olmalı");
-        if (!between(value.education(), 1, 4000)) return invalid("education 1..4000 karakter olmalı");
+        // #250 6. adım: deneyim/eğitim ZORUNLU kalır, ama dayanağı türev metnin uzunluğu
+        // değil yapısal girdinin varlığı. Metin gönderen eski istemci geçiş penceresinde
+        // kabul edilir ve sınırı korur; modern form girdiyle gelir.
+        if (value.experienceEntries().isEmpty() && !between(value.experience(), 1, 8000))
+            return invalid("experience en az bir girdi içermeli (ya da 1..8000 karakter metin)");
+        if (value.educationEntries().isEmpty() && !between(value.education(), 1, 4000))
+            return invalid("education en az bir girdi içermeli (ya da 1..4000 karakter metin)");
+        if (value.experience() != null && !between(value.experience(), 1, 8000))
+            return invalid("experience 1..8000 karakter olmalı");
+        if (value.education() != null && !between(value.education(), 1, 4000))
+            return invalid("education 1..4000 karakter olmalı");
         if (value.skills().isEmpty() || value.skills().size() > 50
                 || value.skills().stream().anyMatch(s -> !between(s, 1, 80)))
             return invalid("skills 1..50 öğe, her öğe 1..80 karakter olmalı");
