@@ -393,6 +393,23 @@ public final class ApplicationIntakeService {
             }).collect(java.util.stream.Collectors.joining("\n\n"));
         }
 
+        /**
+         * #250 6. adim: eski tek-string kolonlari besleyen kopya. Dogrulama ve istek ozeti
+         * adayin HAM metnini gorur; kalicilik katmanina giden kopya, IK detayi, export ve
+         * DSAR yuzeyleri icin turevi tasir. Turetme boylece sozlesmeden cikar ama okuyucular
+         * kirilmaz; eski kolonlar kaldirildiginda bu kopya da gider.
+         *
+         * <p>Depo turetme YAPMAZ, cagiranin verdigini saklar -- bu ayrim bilerek korunuyor.
+         */
+        public Submission withLegacyText() {
+            return new Submission(
+                    fullName, email, phone, city, linkedIn, portfolio, summary,
+                    effectiveExperience(), effectiveEducation(), skills, note,
+                    noticeVersion, noticeAcceptedAt, accuracyConfirmedAt,
+                    resumeImportId, resumeDraftVersion, experienceEntries, educationEntries,
+                    languages, certifications, answers);
+        }
+
         public String effectiveEducation() {
             if (educationEntries.isEmpty()) return education;
             return educationEntries.stream().map(e -> {
@@ -629,7 +646,8 @@ public final class ApplicationIntakeService {
                 idempotencyKey,
                 requestDigestV2(jobSlug, accessDigest, submission, raw),
                 requestDigest(jobSlug, accessDigest, submission),
-                submission,
+                // #250 6. adim: eski kolonlari besleyen turev yalniz bu kopyada.
+                submission.withLegacyText(),
                 occurredAt);
         Outcome<SubmitResult> stored = store.submit(command);
         if (stored instanceof Outcome.Fail<SubmitResult> fail) {

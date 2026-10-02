@@ -158,17 +158,23 @@ class ApplicationIntakeServiceTest {
      * tek dizeli görünümü kalıcılık katmanı eski kolon uyumluluğu için türetir.
      */
     @Test
-    void the_text_fields_carry_only_what_the_candidate_wrote() {
-        SubmitCommand command = capture(withEntries("Kıdemli Ürün Uzmanı", "2019-01"));
+    void the_validated_submission_keeps_the_text_the_candidate_actually_wrote() {
+        // Doğrulamadan geçen gövde: türev metin ARTIK buraya yazılmıyor.
+        ApplicationIntakeService.Submission modern = withEntries("Kıdemli Ürün Uzmanı", "2019-01");
+        assertNull(modern.experience(), "modern form metin göndermiyor");
+        assertTrue(modern.effectiveExperience().contains("Kıdemli Ürün Uzmanı"),
+                "tek dizeli görünüm girdilerden üretilebilmeli");
 
-        assertNull(command.submission().experience(),
-                "türev metin artık sözleşmeye yazılmamalı: " + command.submission().experience());
-        assertNull(command.submission().education(),
-                "türev metin artık sözleşmeye yazılmamalı: " + command.submission().education());
+        // Depoya giden KOPYA eski kolonları besler; depo türetme yapmaz, bu yüzden
+        // türevi servis katmanı taşır (#215'teki katman ayrımı korunuyor).
+        SubmitCommand command = capture(modern);
+        assertNotNull(command.submission().experience(),
+                "eski kolonu besleyen kopya boş olmamalı");
+        assertTrue(command.submission().experience().contains("Kıdemli Ürün Uzmanı"),
+                "kopya girdilerden türetilmeli: " + command.submission().experience());
+        assertNotNull(command.submission().education(), "eski eğitim kolonu da beslenmeli");
         assertEquals(1, command.submission().experienceEntries().size(),
                 "yapısal girdi tek gerçek kaynak olarak duruyor");
-        assertTrue(command.submission().effectiveExperience().contains("Kıdemli Ürün Uzmanı"),
-                "tek dizeli görünüm hâlâ girdilerden üretilebilmeli");
     }
 
     /**
