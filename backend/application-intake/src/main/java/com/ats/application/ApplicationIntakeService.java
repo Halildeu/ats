@@ -1053,7 +1053,12 @@ public final class ApplicationIntakeService {
     private static String requestDigest(String jobSlug, String accessDigest, Submission s) {
         List<String> parts = List.of(
                 jobSlug, accessDigest, s.fullName(), s.email(), s.phone(), s.city(), nullToEmpty(s.linkedIn()),
-                nullToEmpty(s.portfolio()), s.summary(), s.experience(), s.education(),
+                nullToEmpty(s.portfolio()), s.summary(),
+                // #250 6. adim: ESKI formul, dagitim oncesi yazilmis satirlarla birebir
+                // ayni degeri uretmek zorunda. O satirlar turev metinle hesaplanmisti, bu
+                // yuzden turetme servis sozlesmesinden kalktiktan sonra burada ACIKCA
+                // cagrilir. (`List.of` ayrica null kabul etmez.)
+                s.effectiveExperience(), s.effectiveEducation(),
                 String.join("\u001f", s.skills()), nullToEmpty(s.note()), s.noticeVersion(),
                 s.noticeAcceptedAt(), s.accuracyConfirmedAt(), nullToEmpty(s.resumeImportId()),
                 s.resumeDraftVersion() == null ? "" : Integer.toString(s.resumeDraftVersion()),
